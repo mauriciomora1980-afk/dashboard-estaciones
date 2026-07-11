@@ -145,24 +145,64 @@ if not df.empty:
     
     # --- KPIs ---
     col1, col2, col3, col4 = st.columns(4)
-    
-    with col1:
-        temp = float(row['temperatura']) if pd.notna(row['temperatura']) else 0
-        st.metric("🌡️ Temperatura", f"{temp:.1f} °C")
-    
-    with col2:
-        precip = float(row['precipitacion']) if pd.notna(row['precipitacion']) else 0
-        st.metric("🌧️ Precipitación", f"{precip:.1f} mm")
-    
-    with col3:
-        humedad = float(row['humedad']) if pd.notna(row['humedad']) else 0
-        st.metric("💧 Humedad", f"{humedad:.1f} %")
-    
-    with col4:
-        voltaje = float(row['voltaje_bateria']) if pd.notna(row['voltaje_bateria']) else 0
-        estado = row.get('estado_bateria', 'DESCONOCIDO')
-        emoji = "🟢" if estado == "OK" else "🟡" if estado == "ADVERTENCIA" else "🔴"
-        st.metric(f"{emoji} Voltaje", f"{voltaje:.1f} V")
+
+    # --- DETECTAR SI ES EMBALSE ---
+    if seleccion == "Embalse":
+        # Para el Embalse: mostrar nivel en metros y excedente
+        nivel = float(row['temperatura']) if pd.notna(row['temperatura']) else 0
+        nivel_maximo = 885.80  # Nivel máximo del embalse en msnm
+        
+        with col1:
+            st.metric("🌊 Nivel Embalse", f"{nivel:.2f} msnm")
+        
+        with col2:
+            # Calcular excedente
+            excedente = nivel - nivel_maximo
+            if excedente > 0:
+                st.metric("📈 Excedente", f"+{excedente:.2f} m", delta=f"{excedente*100:.1f} cm sobre máximo", delta_color="off")
+            else:
+                st.metric("📉 Margen", f"{-excedente:.2f} m", delta=f"{-excedente*100:.1f} cm bajo máximo", delta_color="normal")
+        
+        with col3:
+            # Precipitación (si existe)
+            precip = float(row['precipitacion']) if pd.notna(row['precipitacion']) else 0
+            st.metric("🌧️ Precipitación", f"{precip:.1f} mm")
+        
+        with col4:
+            # Voltaje de batería
+            voltaje = float(row['voltaje_bateria']) if pd.notna(row['voltaje_bateria']) else 0
+            estado = row.get('estado_bateria', 'DESCONOCIDO')
+            emoji = "🟢" if estado == "OK" else "🟡" if estado == "ADVERTENCIA" else "🔴"
+            st.metric(f"{emoji} Voltaje", f"{voltaje:.1f} V")
+        
+        # --- INFORMACIÓN DE EXCEDENTE ---
+        if excedente > 0:
+            excedente_cm = excedente * 100  # Convertir a centímetros
+            st.info(f"📊 **Nivel actual:** {nivel:.2f} msnm | **Máximo:** {nivel_maximo} msnm")
+            st.success(f"💧 **Excedente:** {excedente_cm:.1f} cm por encima del nivel máximo.")
+            st.caption("📐 A la espera de datos batimétricos para calcular el volumen exacto del excedente.")
+        else:
+            st.info(f"✅ Nivel del embalse dentro del rango normal. Máximo: {nivel_maximo} msnm.")
+
+    else:
+        # --- PARA LAS DEMÁS ESTACIONES (TEMPERATURA, ETC.) ---
+        with col1:
+            temp = float(row['temperatura']) if pd.notna(row['temperatura']) else 0
+            st.metric("🌡️ Temperatura", f"{temp:.1f} °C")
+        
+        with col2:
+            precip = float(row['precipitacion']) if pd.notna(row['precipitacion']) else 0
+            st.metric("🌧️ Precipitación", f"{precip:.1f} mm")
+        
+        with col3:
+            humedad = float(row['humedad']) if pd.notna(row['humedad']) else 0
+            st.metric("💧 Humedad", f"{humedad:.1f} %")
+        
+        with col4:
+            voltaje = float(row['voltaje_bateria']) if pd.notna(row['voltaje_bateria']) else 0
+            estado = row.get('estado_bateria', 'DESCONOCIDO')
+            emoji = "🟢" if estado == "OK" else "🟡" if estado == "ADVERTENCIA" else "🔴"
+            st.metric(f"{emoji} Voltaje", f"{voltaje:.1f} V")
     
     # --- Información adicional ---
     st.info(f"📅 Última lectura: {row['timestamp']}")
