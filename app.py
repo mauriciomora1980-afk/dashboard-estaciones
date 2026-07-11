@@ -11,12 +11,12 @@ from datetime import datetime
 # 1. CONFIGURACIÓN DE PÁGINA
 # ============================================================
 st.set_page_config(
-    page_title="AMB Hidrología",
+    page_title="Centro de Monitoreo - Acueducto Metropolitano de Bucaramanga",
     page_icon="🌧️",
     layout="wide"
 )
 
-st.title("🌧️ Centro de Monitoreo: Red Meteorológica AMB")
+st.title("🌧️ Centro de Monitoreo: Red Meteorológica amb")
 st.caption(f"Última actualización: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
 
 # ============================================================
@@ -36,13 +36,11 @@ def init_bigquery_client():
         # --- SI NO HAY VARIABLE DE ENTORNO, USAR SECRETS.TOML (LOCAL) ---
         else:
             st.info("🔐 Conectando con secrets.toml (modo local)...")
-            # Para Python 3.11+: usar tomllib
             try:
                 import tomllib
                 with open('.streamlit/secrets.toml', 'rb') as f:
                     secrets = tomllib.load(f)
             except ImportError:
-                # Para versiones anteriores: usar toml
                 import toml
                 with open('.streamlit/secrets.toml', 'r') as f:
                     secrets = toml.load(f)
@@ -198,7 +196,7 @@ else:
 st.divider()
 col1, col2, col3 = st.columns(3)
 with col1:
-    st.caption("🏢 Área Metropolitana de Bucaramanga")
+    st.caption("🏢 Acueducto Metropolitano de Bucaramanga")
 with col2:
     st.caption("📊 Datos hidrometeorológicos")
 with col3:
