@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import json
 import os
+import base64
 from google.cloud import bigquery
 from google.oauth2 import service_account
 from datetime import datetime
@@ -19,36 +20,29 @@ st.title("🌧️ Centro de Monitoreo: Red Meteorológica AMB")
 st.caption(f"Última actualización: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
 
 # ============================================================
-# 2. CONEXIÓN A BIGQUERY (USANDO VARIABLE DE ENTORNO)
+# 2. CONEXIÓN A BIGQUERY (VARIABLE DE ENTORNO)
 # ============================================================
 @st.cache_resource
 def init_bigquery_client():
     try:
-        # Leer credenciales desde variable de entorno
+        # --- OPCIÓN 1: Variable de entorno (Cloud Run) ---
         creds_json = os.environ.get("GCP_CREDENTIALS_JSON")
         
         if creds_json:
             key_dict = json.loads(creds_json)
+            st.success("✅ Conectado usando variable de entorno")
+        
+        # --- OPCIÓN 2: Base64 desde st.secrets (desarrollo local) ---
         else:
-            # Fallback para desarrollo local (usando st.secrets)
-            key_dict = {
-                "type": "service_account",
-                "project_id": st.secrets["gcp_service_account"]["project_id"],
-                "private_key_id": st.secrets["gcp_service_account"]["private_key_id"],
-                "private_key": st.secrets["gcp_service_account"]["private_key"].replace("\\n", "\n"),
-                "client_email": st.secrets["gcp_service_account"]["client_email"],
-                "client_id": st.secrets["gcp_service_account"]["client_id"],
-                "auth_uri": st.secrets["gcp_service_account"]["auth_uri"],
-                "token_uri": st.secrets["gcp_service_account"]["token_uri"],
-                "auth_provider_x509_cert_url": st.secrets["gcp_service_account"]["auth_provider_x509_cert_url"],
-                "client_x509_cert_url": st.secrets["gcp_service_account"]["client_x509_cert_url"],
-                "universe_domain": st.secrets["gcp_service_account"]["universe_domain"]
-            }
+            b64_json = st.secrets["GCP_JSON_B64"]
+            json_str = base64.b64decode(b64_json).decode('utf-8')
+            key_dict = json.loads(json_str)
+            st.success("✅ Conectado usando st.secrets")
         
         creds = service_account.Credentials.from_service_account_info(key_dict)
         client = bigquery.Client(credentials=creds, project=key_dict["project_id"])
-        
         return client
+        
     except Exception as e:
         st.error(f"❌ Error de conexión con BigQuery: {e}")
         st.stop()
@@ -136,6 +130,7 @@ df = get_last_reading(seleccion)
 if not df.empty:
     row = df.iloc[0]
     
+    # --- KPIs ---
     col1, col2, col3, col4 = st.columns(4)
     
     with col1:
@@ -156,15 +151,19 @@ if not df.empty:
         emoji = "🟢" if estado == "OK" else "🟡" if estado == "ADVERTENCIA" else "🔴"
         st.metric(f"{emoji} Voltaje", f"{voltaje:.1f} V")
     
+    # --- Información adicional ---
     st.info(f"📅 Última lectura: {row['timestamp']}")
     
-    with st.expander("📋 Ver detalles técnicos"):
-        st.dataframe(df)
+    # --- Tabla detallada ---
+    with st.expander("📋 Ver detalles técnicos del registro"):
+        st.dataframe(df, use_container_width=True)
     
+    # --- Gráfico histórico ---
     with st.expander("📈 Tendencia últimas 24 horas"):
-        df_hist = get_historical_data(seleccion)
+        df_hist = get_historical_data(seleccion, hours=24)
         if not df_hist.empty:
             df_hist['timestamp'] = pd.to_datetime(df_hist['timestamp'])
+            
             col1, col2 = st.columns(2)
             with col1:
                 st.line_chart(df_hist.set_index('timestamp')[['temperatura']], height=300)
@@ -174,6 +173,7 @@ if not df.empty:
                 st.caption("🌧️ Precipitación (mm)")
         else:
             st.info("No hay datos históricos disponibles")
+
 else:
     st.warning("⚠️ No hay datos disponibles para esta estación")
 
@@ -181,4 +181,35 @@ else:
 # 6. PIE DE PÁGINA
 # ============================================================
 st.divider()
-st.caption(f"🏢 Área Metropolitana de Bucaramanga | ⏱️ {datetime.now().strftime('%H:%M:%S')}")
+col1, col2, col3 = st.columns(3)
+with col1:
+    st.caption("🏢 Área Metropolitana de Bucaramanga")
+with col2:
+    st.caption("📊 Datos hidrometeorológicos")
+with col3:
+    st.caption(f"⏱️ {datetime.now().strftime('%H:%M:%S')}")
+
+# ============================================================
+# 7. TABS (FUTURAS FUNCIONALIDADES)
+# ============================================================
+tab1, tab2, tab3 = st.tabs(["📊 Históricos", "📈 Reportes", "🤖 Asistente IA"])
+
+with tab1:
+    st.info("📊 Módulo de históricos en desarrollo...")
+    with st.expander("Seleccionar rango de fechas"):
+        col1, col2 = st.columns(2)
+        with col1:
+            fecha_inicio = st.date_input("Fecha inicio")
+        with col2:
+            fecha_fin = st.date_input("Fecha fin")
+        st.button("Consultar histórico")
+
+with tab2:
+    st.info("📈 Módulo de reportes en desarrollo...")
+    st.selectbox("Tipo de reporte:", ["Diario", "Semanal", "Mensual"])
+    st.button("Generar reporte")
+
+with tab3:
+    st.info("🤖 Asistente IA en desarrollo...")
+    st.text_area("Haz una pregunta sobre los datos:")
+    st.button("Consultar")
