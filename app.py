@@ -6,6 +6,7 @@ import base64
 from google.cloud import bigquery
 from google.oauth2 import service_account
 from datetime import datetime
+from pytz import timezone
 
 # ============================================================
 # 1. CONFIGURACIÓN DE PÁGINA
@@ -17,7 +18,11 @@ st.set_page_config(
 )
 
 st.title("🌧️ Centro de Monitoreo: Red Meteorológica amb")
-st.caption(f"Última actualización: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+
+# --- ZONA HORARIA DE COLOMBIA ---
+colombia_tz = timezone('America/Bogota')
+hora_colombia = datetime.now(colombia_tz).strftime('%Y-%m-%d %H:%M:%S')
+st.caption(f"🕐 Última actualización: {hora_colombia} (hora Colombia)")
 
 # ============================================================
 # 2. CONEXIÓN A BIGQUERY
@@ -236,7 +241,8 @@ with col1:
 with col2:
     st.caption("📊 Datos hidrometeorológicos")
 with col3:
-    st.caption(f"⏱️ {datetime.now().strftime('%H:%M:%S')}")
+    hora_colombia_pie = datetime.now(colombia_tz).strftime('%H:%M:%S')
+    st.caption(f"⏱️ {hora_colombia_pie} (hora Colombia)")
 
 # ============================================================
 # 7. TABS (FUTURAS FUNCIONALIDADES)
