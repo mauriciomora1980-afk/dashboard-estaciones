@@ -8,6 +8,8 @@ from google.oauth2 import service_account
 from datetime import datetime
 from pytz import timezone
 
+# --- LOGO ---
+st.image("amb_4_punto_cero.jpg", width=200)
 # ============================================================
 # 1. CONFIGURACIÓN DE PÁGINA
 # ============================================================
