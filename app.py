@@ -11,60 +11,56 @@ from pytz import timezone
 # ============================================================
 # 1. CONFIGURACIÓN DE PÁGINA
 # ============================================================
-st.set_page_config(
-    page_title="Centro de Monitoreo - Acueducto Metropolitano de Bucaramanga",
-    page_icon="🌧️",
-    layout="wide"
-)
-
+st.set_page_config(page_title="Centro de Monitoreo - amb", page_icon="🌧️", layout="wide")
 st.title("🌧️ Centro de Monitoreo: Red Meteorológica amb")
 
-# --- ZONA HORARIA DE COLOMBIA ---
 colombia_tz = timezone('America/Bogota')
 hora_colombia = datetime.now(colombia_tz).strftime('%Y-%m-%d %H:%M:%S')
 st.caption(f"🕐 Última actualización: {hora_colombia} (hora Colombia)")
 
+# --- MATRIZ DE UMBRALES ---
+umbrales = {
+    "El_Pajal":          {"amarilla": 12.3, "naranja": 15.1, "roja": 20.4},
+    "Yerbabuena":        {"amarilla": 10.9, "naranja": 20.0, "roja": 40.8},
+    "La_Mariana":        {"amarilla": 11.7, "naranja": 18.0, "roja": 35.0},
+    "Vegas_del_Quemado": {"amarilla": 27.2, "naranja": 36.8, "roja": 55.8}
+}
+
+def obtener_alerta(precipitacion, estacion):
+    if estacion == "Monsalve":
+        return "AZUL", "🛠️ En Aprendizaje", "#3399FF", "0s"
+    if estacion not in umbrales:
+        return "GRIS", "☁️ Sin umbrales definidos", "#CCCCCC", "0s"
+    
+    u = umbrales[estacion]
+    if precipitacion >= u["roja"]:
+        return "ROJA", f"🚨 ROJA: Excede {u['roja']}mm", "#FF4B4B", "0.5s"
+    elif precipitacion >= u["naranja"]:
+        return "NARANJA", f"⚠️ NARANJA: Excede {u['naranja']}mm", "#FF9933", "1s"
+    elif precipitacion >= u["amarilla"]:
+        return "AMARILLA", f"🟡 AMARILLA: Excede {u['amarilla']}mm", "#FFFF00", "2s"
+    elif precipitacion > 0:
+        return "VERDE", "✅ Lluvia Normal", "#00CC96", "0s"
+    return "GRIS", "☁️ Sin lluvia", "#CCCCCC", "0s"
+
 # ============================================================
-# 2. CONEXIÓN A BIGQUERY
+# 2. CONEXIÓN A BIGQUERY (Simplificada)
 # ============================================================
 @st.cache_resource
 def init_bigquery_client():
     try:
-        # --- INTENTAR PRIMERO CON VARIABLE DE ENTORNO (CLOUD RUN) ---
         creds_json = os.environ.get("GCP_CREDENTIALS_JSON")
-        
         if creds_json:
-            st.info("🔐 Conectando con variable de entorno...")
             key_dict = json.loads(creds_json)
-            st.success("✅ Conectado usando variable de entorno")
-        
-        # --- SI NO HAY VARIABLE DE ENTORNO, USAR SECRETS.TOML (LOCAL) ---
         else:
-            st.info("🔐 Conectando con secrets.toml (modo local)...")
-            try:
-                import tomllib
-                with open('.streamlit/secrets.toml', 'rb') as f:
-                    secrets = tomllib.load(f)
-            except ImportError:
-                import toml
-                with open('.streamlit/secrets.toml', 'r') as f:
-                    secrets = toml.load(f)
-            
-            b64_json = secrets["GCP_JSON_B64"]
-            json_str = base64.b64decode(b64_json).decode('utf-8')
-            key_dict = json.loads(json_str)
-            st.success("✅ Conectado usando secrets.toml")
-        
-        # --- CREAR CREDENCIALES Y CLIENTE ---
+            with open('gcp_key.json', 'r') as f:
+                key_dict = json.load(f)
         creds = service_account.Credentials.from_service_account_info(key_dict)
-        client = bigquery.Client(credentials=creds, project=key_dict["project_id"])
-        return client
-        
+        return bigquery.Client(credentials=creds, project=key_dict["project_id"])
     except Exception as e:
-        st.error(f"❌ Error de conexión con BigQuery: {e}")
+        st.error(f"❌ Error de conexión: {e}")
         st.stop()
 
-# Inicializar el cliente
 client = init_bigquery_client()
 
 # ============================================================
@@ -72,75 +68,15 @@ client = init_bigquery_client()
 # ============================================================
 @st.cache_data(ttl=300)
 def get_last_reading(estacion):
-    query = f"""
-        SELECT 
-            timestamp,
-            id_estacion,
-            temperatura,
-            precipitacion,
-            humedad,
-            voltaje_bateria,
-            estado_bateria
-        FROM `gen-lang-client-0342049346.amb_hidrologia.telemetria_estaciones`
-        WHERE id_estacion = '{estacion}'
-        ORDER BY timestamp DESC 
-        LIMIT 1
-    """
-    try:
-        df = client.query(query).to_dataframe()
-        return df
-    except Exception as e:
-        st.error(f"Error en consulta: {e}")
-        return pd.DataFrame()
-
-@st.cache_data(ttl=600)
-def get_historical_data(estacion, hours=24):
-    query = f"""
-        SELECT 
-            timestamp,
-            temperatura,
-            precipitacion,
-            humedad,
-            voltaje_bateria
-        FROM `gen-lang-client-0342049346.amb_hidrologia.telemetria_estaciones`
-        WHERE id_estacion = '{estacion}'
-        AND timestamp >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL {hours} HOUR)
-        ORDER BY timestamp ASC
-    """
-    try:
-        df = client.query(query).to_dataframe()
-        return df
-    except Exception as e:
-        st.error(f"Error en consulta histórica: {e}")
-        return pd.DataFrame()
-
-# ============================================================
-# 4. SIDEBAR
-# ============================================================
-estaciones = [
-    "La_Mariana",
-    "Yerbabuena", 
-    "Vegas_del_Quemado",
-    "El_Pajal",
-    "Monsalve",
-    "Embalse"
-]
-
-with st.sidebar:
-    st.header("⚙️ Configuración")
-    seleccion = st.selectbox("Seleccione Estación:", estaciones)
-    
-    st.divider()
-    st.caption("🔹 Datos en tiempo real")
-    st.caption("🔹 Actualización cada 5 minutos")
-    
-    if st.button("🔄 Refrescar Datos", use_container_width=True):
-        st.cache_data.clear()
-        st.rerun()
+    query = f"""SELECT * FROM `gen-lang-client-0342049346.amb_hidrologia.telemetria_estaciones`
+                WHERE id_estacion = '{estacion}' ORDER BY timestamp DESC LIMIT 1"""
+    return client.query(query).to_dataframe()
 
 # ============================================================
 # 5. INTERFAZ PRINCIPAL
 # ============================================================
+estaciones = ["La_Mariana", "Yerbabuena", "Vegas_del_Quemado", "El_Pajal", "Monsalve", "Embalse"]
+seleccion = st.sidebar.selectbox("Seleccione Estación:", estaciones)
 st.subheader(f"📡 Datos en Tiempo Real: {seleccion}")
 
 df = get_last_reading(seleccion)
@@ -148,123 +84,30 @@ df = get_last_reading(seleccion)
 if not df.empty:
     row = df.iloc[0]
     
-    # --- DETECTAR SI ES EMBALSE ---
+    # --- SEMÁFORO (Solo para meteo) ---
+    if seleccion != "Embalse":
+        precip_actual = float(row.get('precipitacion', 0))
+        nombre, msg, color, vel = obtener_alerta(precip_actual, seleccion)
+        st.markdown(f"""
+            <div style="background-color:{color}; padding:20px; border-radius:15px; text-align:center; color:black; animation: blink {vel} infinite; border: 2px solid #333;">
+                <h2 style="margin:0;">{nombre}</h2><b>{msg}</b>
+            </div>
+            <style>@keyframes blink {{0%{{opacity:1}} 50%{{opacity:0.3}} 100%{{opacity:1}}}}</style>
+        """, unsafe_allow_html=True)
+        st.write("") # Espacio
+
+    # --- MÉTRICAS ---
     if seleccion == "Embalse":
-        # Para el Embalse: solo mostrar nivel en metros y excedente
-        nivel = float(row['temperatura']) if pd.notna(row['temperatura']) else 0
-        nivel_maximo = 885.80  # Nivel máximo del embalse en msnm
-        
-        # --- KPIs SOLO PARA EMBALSE ---
-        col1, col2 = st.columns(2)  # Solo 2 columnas
-        
-        with col1:
-            st.metric("🌊 Nivel Embalse", f"{nivel:.2f} msnm")
-        
-        with col2:
-            # Calcular excedente
-            excedente = nivel - nivel_maximo
-            if excedente > 0:
-                st.metric("📈 Excedente", f"+{excedente:.2f} m", delta=f"{excedente*100:.1f} cm sobre máximo", delta_color="off")
-            else:
-                st.metric("📉 Margen", f"{-excedente:.2f} m", delta=f"{-excedente*100:.1f} cm bajo máximo", delta_color="normal")
-        
-        # --- INFORMACIÓN DE EXCEDENTE ---
-        if excedente > 0:
-            excedente_cm = excedente * 100
-            st.info(f"📊 **Nivel actual:** {nivel:.2f} msnm | **Máximo:** {nivel_maximo} msnm")
-            st.success(f"💧 **Excedente:** {excedente_cm:.1f} cm por encima del nivel máximo.")
-            st.caption("📐 A la espera de datos batimétricos para calcular el volumen exacto del excedente.")
-        else:
-            st.info(f"✅ Nivel del embalse dentro del rango normal. Máximo: {nivel_maximo} msnm.")
-        
-        # --- Mostrar también el voltaje (opcional, pero útil) ---
-        voltaje = float(row['voltaje_bateria']) if pd.notna(row['voltaje_bateria']) else 0
-        if voltaje > 0:
-            estado = row.get('estado_bateria', 'DESCONOCIDO')
-            emoji = "🟢" if estado == "OK" else "🟡" if estado == "ADVERTENCIA" else "🔴"
-            st.caption(f"{emoji} Voltaje de batería: {voltaje:.1f} V")
-
-    else:
-        # --- PARA LAS DEMÁS ESTACIONES (TEMPERATURA, ETC.) ---
-        col1, col2, col3, col4 = st.columns(4)
-        with col1:
-            temp = float(row['temperatura']) if pd.notna(row['temperatura']) else 0
-            st.metric("🌡️ Temperatura", f"{temp:.1f} °C")
-        
-        with col2:
-            precip = float(row['precipitacion']) if pd.notna(row['precipitacion']) else 0
-            st.metric("🌧️ Precipitación", f"{precip:.1f} mm")
-        
-        with col3:
-            humedad = float(row['humedad']) if pd.notna(row['humedad']) else 0
-            st.metric("💧 Humedad", f"{humedad:.1f} %")
-        
-        with col4:
-            voltaje = float(row['voltaje_bateria']) if pd.notna(row['voltaje_bateria']) else 0
-            estado = row.get('estado_bateria', 'DESCONOCIDO')
-            emoji = "🟢" if estado == "OK" else "🟡" if estado == "ADVERTENCIA" else "🔴"
-            st.metric(f"{emoji} Voltaje", f"{voltaje:.1f} V")
-    
-    # --- Información adicional ---
-    st.info(f"📅 Última lectura: {row['timestamp']}")
-    
-    # --- Tabla detallada ---
-    with st.expander("📋 Ver detalles técnicos del registro"):
-        st.dataframe(df, use_container_width=True)
-    
-    # --- Gráfico histórico ---
-    with st.expander("📈 Tendencia últimas 24 horas"):
-        df_hist = get_historical_data(seleccion, hours=24)
-        if not df_hist.empty:
-            df_hist['timestamp'] = pd.to_datetime(df_hist['timestamp'])
-            
-            col1, col2 = st.columns(2)
-            with col1:
-                st.line_chart(df_hist.set_index('timestamp')[['temperatura']], height=300)
-                st.caption("🌡️ Temperatura (°C)")
-            with col2:
-                st.line_chart(df_hist.set_index('timestamp')[['precipitacion']], height=300)
-                st.caption("🌧️ Precipitación (mm)")
-        else:
-            st.info("No hay datos históricos disponibles")
-
-else:
-    st.warning("⚠️ No hay datos disponibles para esta estación")
-
-# ============================================================
-# 6. PIE DE PÁGINA
-# ============================================================
-st.divider()
-col1, col2, col3 = st.columns(3)
-with col1:
-    st.caption("🏢 Acueducto Metropolitano de Bucaramanga")
-with col2:
-    st.caption("📊 Datos hidrometeorológicos")
-with col3:
-    hora_colombia_pie = datetime.now(colombia_tz).strftime('%H:%M:%S')
-    st.caption(f"⏱️ {hora_colombia_pie} (hora Colombia)")
-
-# ============================================================
-# 7. TABS (FUTURAS FUNCIONALIDADES)
-# ============================================================
-tab1, tab2, tab3 = st.tabs(["📊 Históricos", "📈 Reportes", "🤖 Asistente IA"])
-
-with tab1:
-    st.info("📊 Módulo de históricos en desarrollo...")
-    with st.expander("Seleccionar rango de fechas"):
         col1, col2 = st.columns(2)
-        with col1:
-            fecha_inicio = st.date_input("Fecha inicio")
-        with col2:
-            fecha_fin = st.date_input("Fecha fin")
-        st.button("Consultar histórico")
+        col1.metric("🌊 Nivel", f"{float(row['temperatura']):.2f} msnm")
+        col2.metric("🔋 Voltaje", f"{float(row['voltaje_bateria']):.1f} V")
+    else:
+        c1, c2, c3, c4 = st.columns(4)
+        c1.metric("🌡️ Temp", f"{float(row['temperatura']):.1f} °C")
+        c2.metric("🌧️ Precip", f"{float(row['precipitacion']):.1f} mm")
+        c3.metric("💧 Humedad", f"{float(row['humedad']):.1f} %")
+        c4.metric("🔋 Voltaje", f"{float(row['voltaje_bateria']):.1f} V")
 
-with tab2:
-    st.info("📈 Módulo de reportes en desarrollo...")
-    st.selectbox("Tipo de reporte:", ["Diario", "Semanal", "Mensual"])
-    st.button("Generar reporte")
-
-with tab3:
-    st.info("🤖 Asistente IA en desarrollo...")
-    st.text_area("Haz una pregunta sobre los datos:")
-    st.button("Consultar")
+    st.info(f"📅 Última lectura: {row['timestamp']}")
+else:
+    st.warning("⚠️ Sin datos")
