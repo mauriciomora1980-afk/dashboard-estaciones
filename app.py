@@ -50,7 +50,7 @@ def obtener_alerta_embalse(nivel_actual):
         return "ROJA", f"🚨 REBOSE SUPERADO: +{excedente:.2f} msnm", "#FF4B4B", "0.5s"
     elif excedente == 0:
         return "NARANJA", "⚖️ EN PUNTO DE REBOSE", "#FF9933", "1s"
-    elif excedente >= -0.30:  # A 30cm del rebose
+    elif excedente >= -0.30:
         return "AMARILLA", f"⚠️ CERCA DEL REBOSE: {abs(excedente):.2f} msnm", "#FFFF00", "2s"
     else:
         return "VERDE", f"✅ NORMAL: {abs(excedente):.2f} msnm bajo rebose", "#00CC96", "0s"
@@ -83,23 +83,31 @@ def obtener_alerta(precipitacion, estacion):
     return "GRIS", "☁️ Sin lluvia", "#CCCCCC", "0s"
 
 # ============================================================
-# 5. CONEXIÓN A BIGQUERY
+# 5. CONEXIÓN A BIGQUERY (CON MANEJO DE ERRORES MEJORADO)
 # ============================================================
 @st.cache_resource
 def init_bigquery_client():
     try:
+        # Verificar si existen los secrets
+        if "GCP_JSON_B64" not in st.secrets:
+            st.error("❌ Error: No se encontró la clave 'GCP_JSON_B64' en los secrets.")
+            st.error("Asegúrate de que el archivo secrets.toml contenga: GCP_JSON_B64 = 'tu_base64_aqui'")
+            st.stop()
+        
         json_str = st.secrets["GCP_JSON_B64"]
         key_dict = json.loads(base64.b64decode(json_str))
         creds = service_account.Credentials.from_service_account_info(key_dict)
         return bigquery.Client(credentials=creds, project=key_dict["project_id"])
     except Exception as e:
-        st.error(f"❌ Error de conexión: {e}")
+        st.error(f"❌ Error de conexión a BigQuery: {e}")
+        st.error("Verifica que las credenciales sean correctas y estén en formato base64.")
         st.stop()
 
+# Intentar inicializar el cliente
 client = init_bigquery_client()
 
 # ============================================================
-# 6. FUNCIONES DE CONSULTA
+# 6. FUNCIONES DE CONSULTA (SIN CAMBIOS)
 # ============================================================
 @st.cache_data(ttl=300)
 def get_last_reading(estacion):
@@ -117,7 +125,7 @@ def get_historical_data(estacion):
     return df
 
 # ============================================================
-# 7. INTERFAZ PRINCIPAL
+# 7. INTERFAZ PRINCIPAL (SIN CAMBIOS)
 # ============================================================
 estaciones = ["La_Mariana", "Yerbabuena", "Vegas_del_Quemado", "El_Pajal", "Monsalve", "Embalse"]
 seleccion = st.sidebar.selectbox("Seleccione Estación:", estaciones)
