@@ -16,7 +16,7 @@ st.set_page_config(page_title="Centro de Monitoreo - amb", page_icon="🌧️", 
 try:
     st.sidebar.image("amb_4_punto_cero.jpg", use_container_width=True)
 except:
-    st.sidebar.warning("Logo no encontrado")
+    st.sidebar.warning("Logo amb_4_punto_cero.jpg no encontrado en el repo")
 
 st.title("🌧️ Centro de Monitoreo: Red Meteorológica amb")
 
@@ -48,8 +48,12 @@ def obtener_alerta(precipitacion, estacion):
 @st.cache_resource
 def init_bigquery_client():
     try:
-        json_str = st.secrets["GCP_JSON_B64"]
-        key_dict = json.loads(base64.b64decode(json_str))
+        creds_json = os.environ.get("GCP_CREDENTIALS_JSON")
+        if creds_json:
+            key_dict = json.loads(creds_json)
+        else:
+            with open('gcp_key.json', 'r') as f:
+                key_dict = json.load(f)
         creds = service_account.Credentials.from_service_account_info(key_dict)
         return bigquery.Client(credentials=creds, project=key_dict["project_id"])
     except Exception as e:
@@ -58,9 +62,7 @@ def init_bigquery_client():
 
 client = init_bigquery_client()
 
-# ============================================================
-# 3. FUNCIONES DE CONSULTA (Con ajuste horario)
-# ============================================================
+# --- FUNCIONES DE CONSULTA (Con ajuste horario) ---
 @st.cache_data(ttl=300)
 def get_last_reading(estacion):
     query = f"SELECT * FROM `gen-lang-client-0342049346.amb_hidrologia.telemetria_estaciones` WHERE id_estacion = '{estacion}' ORDER BY timestamp DESC LIMIT 1"
@@ -77,7 +79,7 @@ def get_historical_data(estacion):
     return df
 
 # ============================================================
-# 4. INTERFAZ PRINCIPAL
+# 3. INTERFAZ PRINCIPAL
 # ============================================================
 estaciones = ["La_Mariana", "Yerbabuena", "Vegas_del_Quemado", "El_Pajal", "Monsalve", "Embalse"]
 seleccion = st.sidebar.selectbox("Seleccione Estación:", estaciones)
@@ -88,39 +90,37 @@ df = get_last_reading(seleccion)
 if not df.empty:
     row = df.iloc[0]
     
-    # --- SEMÁFORO (Solo para meteo) ---
-    if seleccion != "Embalse":
-        precip_actual = float(row.get('precipitacion', 0))
-        nombre, msg, color, vel = obtener_alerta(precip_actual, seleccion)
-        st.markdown(f'<div style="background-color:{color}; padding:20px; border-radius:15px; text-align:center; color:black; animation: blink {vel} infinite; border: 2px solid #333;"><h2>{nombre}</h2><b>{msg}</b></div><style>@keyframes blink {{0%{{opacity:1}} 50%{{opacity:0.3}} 100%{{opacity:1}}}}</style>', unsafe_allow_html=True)
-        st.write("") 
-
-    # --- MÉTRICAS ---
-    if seleccion == "Embalse":
-        col1, col2 = st.columns(2)
-        col1.metric("🌊 Nivel", f"{float(row['temperatura']):.2f} msnm")
-        col2.metric("🔋 Voltaje", f"{float(row['voltaje_bateria']):.1f} V")
-    else:
-        c1, c2, c3, c4 = st.columns(4)
-        c1.metric("🌡️ Temp", f"{float(row['temperatura']):.1f} °C")
-        c2.metric("🌧️ Precip", f"{float(row['precipitacion']):.1f} mm")
-        c3.metric("💧 Humedad", f"{float(row['humedad']):.1f} %")
-        c4.metric("🔋 Voltaje", f"{float(row['voltaje_bateria']):.1f} V")
-
-    st.info(f"📅 Última lectura (Hora Colombia): {row['timestamp'].strftime('%Y-%m-%d %H:%M:%S')}")
-
     # --- TABS ---
-    tab1, tab2, tab3 = st.tabs(["📈 Históricos", "📊 Reportes", "🤖 Asistente IA"])
+    tab1, tab2, tab3 = st.tabs(["📊 Situación Actual", "📈 Históricos", "🤖 Asistente IA"])
     
     with tab1:
+        if seleccion != "Embalse":
+            nombre, msg, color, vel = obtener_alerta(float(row.get('precipitacion', 0)), seleccion)
+            st.markdown(f'<div style="background-color:{color}; padding:20px; border-radius:15px; text-align:center; color:black; animation: blink {vel} infinite; border: 2px solid #333;"><h2>{nombre}</h2><b>{msg}</b></div><style>@keyframes blink {{0%{{opacity:1}} 50%{{opacity:0.3}} 100%{{opacity:1}}}}</style>', unsafe_allow_html=True)
+            st.write("")
+            c1, c2, c3, c4 = st.columns(4)
+            c1.metric("Temperatura", f"{float(row['temperatura']):.1f} °C")
+            c2.metric("Precipitación", f"{float(row['precipitacion']):.1f} mm")
+            c3.metric("Humedad", f"{float(row['humedad']):.1f} %")
+            c4.metric("Voltaje", f"{float(row['voltaje_bateria']):.1f} V")
+        else:
+            st.metric("🌊 Nivel Embalse", f"{float(row['temperatura']):.2f} msnm")
+        st.info(f"📅 Última lectura (Hora Colombia): {row['timestamp'].strftime('%Y-%m-%d %H:%M:%S')}")
+
+    with tab2:
+        st.subheader("Series de Tiempo")
         df_hist = get_historical_data(seleccion)
         if not df_hist.empty:
+            df_hist['timestamp'] = pd.to_datetime(df_hist['timestamp'])
             st.line_chart(df_hist.set_index('timestamp')[['temperatura', 'precipitacion']])
         else:
             st.warning("No hay datos históricos.")
-    with tab2:
-        st.write("Módulo de reportes en desarrollo.")
+
     with tab3:
-        st.write("Asistente IA en desarrollo.")
+        st.subheader("🤖 Asistente IA")
+        st.info("Módulo en fase de entrenamiento...")
+        st.text_area("Haz una pregunta sobre la cuenca:")
+        st.button("Consultar Asistente")
+
 else:
     st.warning("⚠️ Sin datos disponibles.")
