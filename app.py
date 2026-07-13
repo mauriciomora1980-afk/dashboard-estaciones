@@ -42,22 +42,27 @@ umbrales = {
 # 3. CONFIGURACIÓN DEL EMBALSE
 # ============================================================
 CONFIG_EMBALSE = {
-    "nivel_rebose": 885.80  # msnm - Nivel antes de rebose
+    "nivel_rebose": 885.80,  # msnm - Nivel antes de rebose
+    "nivel_minimo": 860.00   # msnm - Nivel mínimo de operación (preocupación)
 }
 
-def obtener_alerta_embalse(nivel_actual):
-    """Determina el nivel de alerta para el embalse"""
+def obtener_estado_embalse(nivel_actual):
+    """Determina el estado del embalse - SIN SEMÁFORO PARPADEANTE"""
     nivel_rebose = CONFIG_EMBALSE["nivel_rebose"]
+    nivel_minimo = CONFIG_EMBALSE["nivel_minimo"]
     excedente = nivel_actual - nivel_rebose
     
+    # Determinar estado
     if excedente > 0:
-        return "ROJA", f"🚨 REBOSE SUPERADO: +{excedente:.2f} msnm", "#FF4B4B", "0.5s"
-    elif excedente == 0:
-        return "NARANJA", "⚖️ EN PUNTO DE REBOSE", "#FF9933", "1s"
-    elif excedente >= -0.30:
-        return "AMARILLA", f"⚠️ CERCA DEL REBOSE: {abs(excedente):.2f} msnm", "#FFFF00", "2s"
+        return "REBOSE", f"⚠️ Nivel supera el rebose: +{excedente:.2f} msnm", "#FFE5E5"
+    elif nivel_actual < nivel_minimo:
+        return "CRITICO", f"🔴 ¡Nivel críticamente bajo! {nivel_actual:.2f} msnm", "#FFE5E5"
+    elif nivel_actual < 870.00:
+        return "BAJO", f"🟡 Nivel bajo: {nivel_actual:.2f} msnm", "#FFF3CD"
+    elif nivel_actual >= 885.50:
+        return "ALTO", f"🟠 Nivel alto: {nivel_actual:.2f} msnm", "#FFE5CC"
     else:
-        return "VERDE", f"✅ NORMAL: {abs(excedente):.2f} msnm bajo rebose", "#00CC96", "0s"
+        return "NORMAL", f"✅ Nivel normal: {nivel_actual:.2f} msnm", "#D4EDDA"
 
 # ============================================================
 # 4. FUNCIÓN DE ALERTAS (CON MONSALVE MEJORADO)
@@ -85,7 +90,7 @@ def obtener_alerta(precipitacion, estacion):
     return "GRIS", "☁️ Sin lluvia", "#CCCCCC", "0s"
 
 # ============================================================
-# 5. CONEXIÓN A BIGQUERY (DE TU CÓDIGO QUE FUNCIONA)
+# 5. CONEXIÓN A BIGQUERY (TU CÓDIGO QUE FUNCIONA)
 # ============================================================
 @st.cache_resource
 def init_bigquery_client():
@@ -108,7 +113,7 @@ def init_bigquery_client():
 client = init_bigquery_client()
 
 # ============================================================
-# 6. FUNCIONES DE CONSULTA (MEJORADAS CON HISTÓRICOS)
+# 6. FUNCIONES DE CONSULTA (CORREGIDAS)
 # ============================================================
 @st.cache_data(ttl=300)
 def get_last_reading(estacion):
@@ -125,11 +130,11 @@ def get_last_reading(estacion):
 
 @st.cache_data(ttl=600)
 def get_historical_data(estacion, dias=1):
-    """Obtiene datos históricos de los últimos N días"""
+    """Obtiene datos históricos de los últimos N días - CORREGIDO"""
     query = f"""
     SELECT * FROM `gen-lang-client-0342049346.amb_hidrologia.telemetria_estaciones` 
     WHERE id_estacion = '{estacion}' 
-    AND timestamp >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL {dias} DAY)
+    AND DATE(timestamp) >= DATE_SUB(CURRENT_DATE(), INTERVAL {dias} DAY)
     ORDER BY timestamp ASC
     """
     df = client.query(query).to_dataframe()
@@ -139,12 +144,11 @@ def get_historical_data(estacion, dias=1):
 
 @st.cache_data(ttl=600)
 def get_historical_data_range(estacion, fecha_inicio, fecha_fin):
-    """Obtiene datos históricos en un rango de fechas específico"""
+    """Obtiene datos históricos en un rango de fechas específico - CORREGIDO"""
     query = f"""
     SELECT * FROM `gen-lang-client-0342049346.amb_hidrologia.telemetria_estaciones` 
     WHERE id_estacion = '{estacion}' 
-    AND timestamp >= '{fecha_inicio}'
-    AND timestamp <= '{fecha_fin}'
+    AND DATE(timestamp) BETWEEN DATE('{fecha_inicio}') AND DATE('{fecha_fin}')
     ORDER BY timestamp ASC
     """
     df = client.query(query).to_dataframe()
@@ -201,46 +205,60 @@ if not df.empty:
     
     # --- SEMÁFORO ---
     if seleccion == "Embalse":
+        # Embalse: SIN SEMÁFORO PARPADEANTE
         nivel_actual = float(row['temperatura'])
-        nombre, msg, color, vel = obtener_alerta_embalse(nivel_actual)
+        estado, mensaje, color_fondo = obtener_estado_embalse(nivel_actual)
+        
+        # Mostrar solo un indicador visual suave (sin parpadeo)
+        st.markdown(f"""
+            <div style="background-color:{color_fondo}; padding:15px; border-radius:10px; 
+                        text-align:center; color:#333; border: 2px solid #ddd; margin: 10px 0;">
+                <b style="font-size:18px;">📊 Estado del Embalse</b><br>
+                <span style="font-size:16px;">{mensaje}</span>
+            </div>
+        """, unsafe_allow_html=True)
+        st.write("")
     else:
+        # Estaciones meteorológicas: SEMÁFORO CON PARPADEO
         precip_actual = float(row.get('precipitacion', 0))
         nombre, msg, color, vel = obtener_alerta(precip_actual, seleccion)
-    
-    st.markdown(f"""
-        <div style="background-color:{color}; padding:20px; border-radius:15px; text-align:center; color:black; animation: blink {vel} infinite; border: 2px solid #333;">
-            <h2 style="margin:0;">{nombre}</h2>
-            <b>{msg}</b>
-        </div>
-        <style>@keyframes blink {{0%{{opacity:1}} 50%{{opacity:0.3}} 100%{{opacity:1}}}}</style>
-    """, unsafe_allow_html=True)
-    st.write("")
+        st.markdown(f"""
+            <div style="background-color:{color}; padding:20px; border-radius:15px; text-align:center; color:black; animation: blink {vel} infinite; border: 2px solid #333;">
+                <h2 style="margin:0;">{nombre}</h2>
+                <b>{msg}</b>
+            </div>
+            <style>@keyframes blink {{0%{{opacity:1}} 50%{{opacity:0.3}} 100%{{opacity:1}}}}</style>
+        """, unsafe_allow_html=True)
+        st.write("")
 
     # --- MÉTRICAS ---
     if seleccion == "Embalse":
         nivel_actual = float(row['temperatura'])
         nivel_rebose = CONFIG_EMBALSE["nivel_rebose"]
+        nivel_minimo = CONFIG_EMBALSE["nivel_minimo"]
         excedente = nivel_actual - nivel_rebose
+        
+        # Calcular margen antes de preocupación (nivel mínimo)
+        margen_minimo = nivel_actual - nivel_minimo
         
         col1, col2, col3 = st.columns(3)
         col1.metric("🌊 Nivel Actual", f"{nivel_actual:.2f} msnm")
         col2.metric("📏 Nivel de Rebose", f"{nivel_rebose:.2f} msnm")
+        col3.metric("📉 Nivel Mínimo", f"{nivel_minimo:.2f} msnm")
         
+        # Mostrar estado detallado
         if excedente > 0:
-            col3.metric("⚠️ EXCEDENTE", f"+{excedente:.2f} msnm", 
-                       delta=f"{excedente:.2f} msnm", delta_color="inverse")
-            st.error(f"🚨 **¡ALERTA DE REBOSE!** El nivel ({nivel_actual:.2f} msnm) **EXCEDE** el rebose ({nivel_rebose:.2f} msnm) en **{excedente:.2f} msnm**")
+            st.error(f"⚠️ **¡ALERTA!** El nivel ({nivel_actual:.2f} msnm) **EXCEDE** el rebose ({nivel_rebose:.2f} msnm) en **{excedente:.2f} msnm**")
             st.info(f"💧 **Excedente:** {excedente*100:.1f} cm por encima del nivel máximo.")
-        elif excedente < 0:
-            col3.metric("📉 MARGEN", f"{abs(excedente):.2f} msnm", 
-                       delta=f"{excedente:.2f} msnm", delta_color="normal")
-            if abs(excedente) < 0.30:
-                st.warning(f"⚠️ El nivel está a solo **{abs(excedente):.2f} msnm** del rebose")
-            else:
-                st.success(f"✅ El nivel está **{abs(excedente):.2f} msnm** por debajo del rebose")
+        elif nivel_actual < nivel_minimo:
+            st.error(f"🔴 **¡ALERTA CRÍTICA!** El nivel ({nivel_actual:.2f} msnm) está por DEBAJO del nivel mínimo de operación ({nivel_minimo:.2f} msnm)")
+            st.warning(f"📉 **Déficit:** {abs(margen_minimo):.2f} msnm por debajo del mínimo")
+        elif nivel_actual < 870.00:
+            st.warning(f"🟡 **Precaución:** El nivel ({nivel_actual:.2f} msnm) está bajo. Monitorear evolución.")
+        elif nivel_actual >= 885.50:
+            st.warning(f"🟠 **Precaución:** El nivel ({nivel_actual:.2f} msnm) está alto. Cerca del rebose.")
         else:
-            col3.metric("⚖️ EN REBOSE", f"{nivel_actual:.2f} msnm")
-            st.warning(f"⚖️ El nivel está exactamente en el punto de rebose")
+            st.success(f"✅ Nivel normal: {nivel_actual:.2f} msnm")
         
         # Voltaje
         col4, col5 = st.columns(2)
@@ -249,7 +267,7 @@ if not df.empty:
         col5.metric("📊 Estado", estado_bateria)
         
         # Información adicional del embalse
-        st.caption("📐 A la espera de datos batimétricos para calcular el volumen exacto del excedente.")
+        st.caption("📐 A la espera de datos batimétricos para calcular el volumen exacto.")
         
     else:
         # Estaciones meteorológicas
@@ -261,7 +279,7 @@ if not df.empty:
 
     st.info(f"📅 Última lectura (Hora Colombia): {row['timestamp'].strftime('%Y-%m-%d %H:%M:%S')}")
 
-    # --- TAB 1: HISTÓRICOS (MEJORADO) ---
+    # --- TAB 1: HISTÓRICOS ---
     tab1, tab2, tab3 = st.tabs(["📈 Históricos", "📊 Reportes", "🤖 Asistente IA"])
     
     with tab1:
@@ -281,8 +299,16 @@ if not df.empty:
                 st.line_chart(df_hist.set_index('timestamp')[['temperatura']], height=400)
                 st.caption("🌊 Nivel del embalse (msnm)")
                 
-                # Agregar línea de rebose
-                st.info(f"📏 Línea de rebose: {CONFIG_EMBALSE['nivel_rebose']} msnm")
+                # Mostrar líneas de referencia
+                col1, col2 = st.columns(2)
+                with col1:
+                    st.metric("📏 Línea de rebose", f"{CONFIG_EMBALSE['nivel_rebose']:.2f} msnm")
+                with col2:
+                    st.metric("📉 Nivel mínimo", f"{CONFIG_EMBALSE['nivel_minimo']:.2f} msnm")
+                
+                # Últimos valores
+                ultimo_nivel = df_hist['temperatura'].iloc[-1]
+                st.info(f"📊 Último nivel registrado: {ultimo_nivel:.2f} msnm")
             else:
                 # Para estaciones meteorológicas: temperatura, precipitación, humedad
                 col1, col2 = st.columns(2)
@@ -366,20 +392,24 @@ if not df.empty:
                 time.sleep(2)
                 if seleccion == "Embalse":
                     nivel = float(row['temperatura'])
-                    excedente = nivel - CONFIG_EMBALSE["nivel_rebose"]
                     st.success("🤖 Análisis del embalse:")
                     st.write(f"- Nivel actual: {nivel:.2f} msnm")
-                    st.write(f"- Estado: {nombre}")
-                    if excedente > 0:
-                        st.warning("⚠️ ¡ALERTA! El nivel ha superado el rebose. Se recomienda monitoreo constante.")
-                    elif abs(excedente) < 0.30:
-                        st.warning("⚡ El nivel se acerca al rebose. Mantener vigilancia.")
+                    st.write(f"- Rebose: {CONFIG_EMBALSE['nivel_rebose']:.2f} msnm")
+                    st.write(f"- Mínimo: {CONFIG_EMBALSE['nivel_minimo']:.2f} msnm")
+                    
+                    if nivel < CONFIG_EMBALSE['nivel_minimo']:
+                        st.error("🔴 ¡ALERTA! Nivel críticamente bajo. Se requiere acción inmediata.")
+                    elif nivel > CONFIG_EMBALSE['nivel_rebose']:
+                        st.warning("⚠️ El nivel supera el rebose. Monitorear constantemente.")
+                    elif nivel < 870.00:
+                        st.warning("🟡 Nivel bajo. Mantener vigilancia.")
                     else:
                         st.info("✅ Nivel dentro de parámetros normales.")
                 else:
                     st.success(f"🤖 Análisis de la estación {seleccion}:")
                     st.write(f"- Temperatura: {float(row['temperatura']):.1f}°C")
                     st.write(f"- Precipitación: {float(row['precipitacion']):.1f} mm")
+                    st.write(f"- Humedad: {float(row['humedad']):.1f}%")
                     st.write(f"- Estado: {nombre}")
 
 else:
