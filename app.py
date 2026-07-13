@@ -1,4 +1,3 @@
-código min.py del repositorio versión inicial publicado en la web antes de las alertas tempranas import streamlit as st
 import pandas as pd
 import json
 import os
