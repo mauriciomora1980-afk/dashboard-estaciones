@@ -1,6 +1,8 @@
-streamlit>=1.28.0
-pandas>=2.0.0
-google-cloud-bigquery>=3.0.0
-google-auth>=2.0.0
-cryptography>=39.0.0
-db-dtypes>=1.0.0
+streamlit
+pandas
+google-cloud-bigquery
+google-auth
+pytz
+openpyxl
+reportlab
+matplotlib
