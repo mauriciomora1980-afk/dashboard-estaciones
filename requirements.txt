@@ -6,3 +6,5 @@ pytz
 openpyxl
 reportlab
 matplotlib
+db-dtypes
+pyarrow
