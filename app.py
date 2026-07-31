@@ -155,15 +155,30 @@ def get_historical_data_range(estacion, fecha_inicio, fecha_fin):
 # ============================================================
 # 7. FUNCIONES DE EXPORTACIÓN
 # ============================================================
+def preparar_df_para_exportar(df):
+    """
+    Prepara el DataFrame para exportación eliminando timezone
+    """
+    df_export = df.copy()
+    
+    # Convertir timestamp a naive (sin timezone) para Excel
+    if 'timestamp' in df_export.columns:
+        df_export['timestamp'] = df_export['timestamp'].dt.tz_localize(None)
+    
+    return df_export
+
 def generar_excel_con_formato(df, nombre_estacion, periodo_descripcion):
     """
     Genera un archivo Excel con formato profesional
     """
+    # Preparar datos para Excel (eliminar timezone)
+    df_export = preparar_df_para_exportar(df)
+    
     output = BytesIO()
     
     with pd.ExcelWriter(output, engine='openpyxl') as writer:
         # Hoja principal con datos
-        df.to_excel(writer, sheet_name='Datos', index=False)
+        df_export.to_excel(writer, sheet_name='Datos', index=False)
         
         # Obtener el libro y la hoja
         workbook = writer.book
@@ -175,7 +190,7 @@ def generar_excel_con_formato(df, nombre_estacion, periodo_descripcion):
         header_alignment = Alignment(horizontal="center", vertical="center")
         
         # Aplicar estilos a los encabezados
-        for col in range(1, len(df.columns) + 1):
+        for col in range(1, len(df_export.columns) + 1):
             cell = worksheet.cell(row=1, column=col)
             cell.font = header_font
             cell.fill = header_fill
@@ -204,7 +219,7 @@ def generar_excel_con_formato(df, nombre_estacion, periodo_descripcion):
                 periodo_descripcion,
                 datetime.now(colombia_tz).strftime('%Y-%m-%d %H:%M:%S'),
                 LICENCIA,
-                len(df),
+                len(df_export),
                 VERSION
             ]
         })
@@ -526,67 +541,24 @@ with tab2:
     # SECCIÓN: OPCIONES DE PERÍODO PARA DESCARGA
     st.markdown("### 📅 Selecciona el período para descargar")
     
-    col_periodo1, col_periodo2, col_periodo3 = st.columns(3)
+    # Opciones en una sola fila con radio buttons
+    col_periodo1, col_periodo2 = st.columns(2)
     
     with col_periodo1:
         opcion_periodo = st.radio(
-            "Tipo de período:",
-            ["Diario", "Semanal", "Mensual"],
-            index=0,
-            horizontal=False
+            "Período:",
+            ["Diario", "Semanal", "Mensual", "Semestral", "Anual"],
+            index=0
         )
     
     with col_periodo2:
-        opcion_periodo_extra = st.radio(
-            " ",
-            ["Semestral", "Anual", "Personalizado"],
-            index=0,
-            horizontal=False
-        )
-    
-    # Determinar el período seleccionado
-    if opcion_periodo == "Diario":
-        periodo_seleccionado_descarga = "Diario"
-    elif opcion_periodo == "Semanal":
-        periodo_seleccionado_descarga = "Semanal"
-    elif opcion_periodo == "Mensual":
-        periodo_seleccionado_descarga = "Mensual"
-    elif opcion_periodo_extra == "Semestral":
-        periodo_seleccionado_descarga = "Semestral"
-    elif opcion_periodo_extra == "Anual":
-        periodo_seleccionado_descarga = "Anual"
-    else:
-        periodo_seleccionado_descarga = "Personalizado"
+        opcion_personalizado = st.checkbox("📅 Personalizar fechas")
     
     # Calcular fechas según el período seleccionado
     hoy = datetime.now(colombia_tz)
     
-    if periodo_seleccionado_descarga == "Diario":
-        fecha_inicio_descarga = hoy - timedelta(days=1)
-        fecha_fin_descarga = hoy
-        periodo_descripcion = f"Diario ({fecha_inicio_descarga.strftime('%d/%m/%Y')})"
-        
-    elif periodo_seleccionado_descarga == "Semanal":
-        fecha_inicio_descarga = hoy - timedelta(days=7)
-        fecha_fin_descarga = hoy
-        periodo_descripcion = f"Semanal ({fecha_inicio_descarga.strftime('%d/%m/%Y')} - {fecha_fin_descarga.strftime('%d/%m/%Y')})"
-        
-    elif periodo_seleccionado_descarga == "Mensual":
-        fecha_inicio_descarga = hoy - timedelta(days=30)
-        fecha_fin_descarga = hoy
-        periodo_descripcion = f"Mensual ({fecha_inicio_descarga.strftime('%d/%m/%Y')} - {fecha_fin_descarga.strftime('%d/%m/%Y')})"
-        
-    elif periodo_seleccionado_descarga == "Semestral":
-        fecha_inicio_descarga = hoy - timedelta(days=180)
-        fecha_fin_descarga = hoy
-        periodo_descripcion = f"Semestral ({fecha_inicio_descarga.strftime('%d/%m/%Y')} - {fecha_fin_descarga.strftime('%d/%m/%Y')})"
-        
-    elif periodo_seleccionado_descarga == "Anual":
-        fecha_inicio_descarga = hoy - timedelta(days=365)
-        fecha_fin_descarga = hoy
-        periodo_descripcion = f"Anual ({fecha_inicio_descarga.strftime('%d/%m/%Y')} - {fecha_fin_descarga.strftime('%d/%m/%Y')})"
-        
-    else:  # Personalizado
+    if opcion_personalizado:
+        # Selector de fechas personalizado
         st.markdown("### 📅 Selecciona las fechas personalizadas")
         col_fecha1, col_fecha2 = st.columns(2)
         with col_fecha1:
@@ -608,6 +580,28 @@ with tab2:
             st.stop()
         
         periodo_descripcion = f"Personalizado ({fecha_inicio_descarga.strftime('%d/%m/%Y')} - {fecha_fin_descarga.strftime('%d/%m/%Y')})"
+    else:
+        # Períodos predefinidos
+        if opcion_periodo == "Diario":
+            fecha_inicio_descarga = hoy - timedelta(days=1)
+            fecha_fin_descarga = hoy
+            periodo_descripcion = f"Diario ({fecha_inicio_descarga.strftime('%d/%m/%Y')})"
+        elif opcion_periodo == "Semanal":
+            fecha_inicio_descarga = hoy - timedelta(days=7)
+            fecha_fin_descarga = hoy
+            periodo_descripcion = f"Semanal ({fecha_inicio_descarga.strftime('%d/%m/%Y')} - {fecha_fin_descarga.strftime('%d/%m/%Y')})"
+        elif opcion_periodo == "Mensual":
+            fecha_inicio_descarga = hoy - timedelta(days=30)
+            fecha_fin_descarga = hoy
+            periodo_descripcion = f"Mensual ({fecha_inicio_descarga.strftime('%d/%m/%Y')} - {fecha_fin_descarga.strftime('%d/%m/%Y')})"
+        elif opcion_periodo == "Semestral":
+            fecha_inicio_descarga = hoy - timedelta(days=180)
+            fecha_fin_descarga = hoy
+            periodo_descripcion = f"Semestral ({fecha_inicio_descarga.strftime('%d/%m/%Y')} - {fecha_fin_descarga.strftime('%d/%m/%Y')})"
+        else:  # Anual
+            fecha_inicio_descarga = hoy - timedelta(days=365)
+            fecha_fin_descarga = hoy
+            periodo_descripcion = f"Anual ({fecha_inicio_descarga.strftime('%d/%m/%Y')} - {fecha_fin_descarga.strftime('%d/%m/%Y')})"
     
     # Mostrar resumen del período
     st.info(f"📊 **Período seleccionado:** {periodo_descripcion}")
@@ -642,12 +636,16 @@ with tab2:
             st.dataframe(df_descarga, use_container_width=True)
         
         # ============================================================
-        # SECCIÓN DE EXPORTACIÓN - SOLO HOJAS DE DATOS
+        # SECCIÓN DE EXPORTACIÓN - HOJAS DE DATOS
         # ============================================================
         st.markdown("### 📥 Descargar hoja de datos")
         st.caption("Selecciona el formato para descargar los datos históricos")
         
         col_export1, col_export2 = st.columns(2)
+        
+        # Preparar datos para exportar (sin timezone)
+        df_export = preparar_df_para_exportar(df_descarga)
+        csv_data = df_export.to_csv(index=False).encode('utf-8-sig')
         
         with col_export1:
             # Excel con formato (PRINCIPAL)
@@ -664,10 +662,9 @@ with tab2:
             except Exception as e:
                 st.error(f"Error al generar Excel: {e}")
                 # Fallback: ofrecer descarga alternativa
-                csv = df_descarga.to_csv(index=False).encode('utf-8-sig')
                 st.download_button(
                     "📊 Hoja de datos (alternativo)",
-                    csv,
+                    csv_data,
                     f"{seleccion}_{datetime.now(colombia_tz).strftime('%Y%m%d_%H%M')}.csv",
                     "text/csv",
                     use_container_width=True
@@ -675,10 +672,9 @@ with tab2:
         
         with col_export2:
             # Google Sheets
-            csv = df_descarga.to_csv(index=False).encode('utf-8-sig')
             st.download_button(
                 "📝 Google Sheets",
-                csv,
+                csv_data,
                 f"{seleccion}_{datetime.now(colombia_tz).strftime('%Y%m%d_%H%M')}.csv",
                 "text/csv",
                 use_container_width=True,
