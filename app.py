@@ -1,4 +1,3 @@
-# Versión completa con todas las mejoras
 import streamlit as st
 import pandas as pd
 import json
@@ -6,16 +5,16 @@ import os
 import base64
 from google.cloud import bigquery
 from google.oauth2 import service_account
-from datetime import datetime, timedelta
+from datetime import datetime
 from pytz import timezone
 import plotly.express as px
 import plotly.graph_objects as go
-from io import BytesIO
 
-# Configuración
+# ============================================================
+# 1. CONFIGURACIÓN Y LOGO
+# ============================================================
 st.set_page_config(page_title="Centro de Monitoreo - amb", page_icon="🌧️", layout="wide")
 
-# Logo
 logo_path = os.path.join(os.path.dirname(__file__), "amb_4_punto_cero.jpg")
 try:
     st.sidebar.image(logo_path, use_column_width=True)
@@ -26,7 +25,7 @@ st.title("🌧️ Centro de Monitoreo: Red Meteorológica amb")
 colombia_tz = timezone('America/Bogota')
 st.caption(f"🕐 Última actualización: {datetime.now(colombia_tz).strftime('%Y-%m-%d %H:%M:%S')} (hora Colombia)")
 
-# Umbrales
+# --- UMBRALES Y ALERTAS ---
 umbrales = {
     "El_Pajal": {"amarilla": 12.3, "naranja": 15.1, "roja": 20.4},
     "Yerbabuena": {"amarilla": 10.9, "naranja": 20.0, "roja": 40.8},
@@ -34,7 +33,6 @@ umbrales = {
     "Vegas_del_Quemado": {"amarilla": 27.2, "naranja": 36.8, "roja": 55.8}
 }
 
-# Función de alerta
 def obtener_alerta(precipitacion, estacion):
     if estacion == "Monsalve": return "AZUL", "🛠️ En Aprendizaje", "#3399FF", "0s"
     if estacion not in umbrales: return "GRIS", "☁️ Sin umbrales definidos", "#CCCCCC", "0s"
@@ -45,7 +43,9 @@ def obtener_alerta(precipitacion, estacion):
     elif precipitacion > 0: return "VERDE", "✅ Lluvia Normal", "#00CC96", "0s"
     return "GRIS", "☁️ Sin lluvia", "#CCCCCC", "0s"
 
-# Cliente BigQuery
+# ============================================================
+# 2. CLIENTE BIGQUERY
+# ============================================================
 @st.cache_resource
 def init_bigquery_client():
     try:
@@ -53,43 +53,75 @@ def init_bigquery_client():
         key_dict = json.loads(json_str)
         creds = service_account.Credentials.from_service_account_info(key_dict)
         return bigquery.Client(credentials=creds, project=key_dict["project_id"])
-    except:
+    except Exception as e:
+        st.error(f"❌ Error al conectar con BigQuery: {e}")
         st.stop()
 
 client = init_bigquery_client()
 
-# Funciones de datos
+# ============================================================
+# 3. FUNCIONES DE DATOS CON MANEJO DE ERRORES
+# ============================================================
 @st.cache_data(ttl=300)
 def get_last_reading(estacion):
-    query = f"SELECT * FROM `gen-lang-client-0342049346.amb_hidrologia.telemetria_estaciones` WHERE id_estacion = '{estacion}' ORDER BY timestamp DESC LIMIT 1"
-    df = client.query(query).to_dataframe()
-    if not df.empty: 
-        df['timestamp'] = pd.to_datetime(df['timestamp']).dt.tz_localize('UTC').dt.tz_convert('America/Bogota')
-    return df
+    try:
+        query = f"""
+        SELECT * FROM `gen-lang-client-0342049346.amb_hidrologia.telemetria_estaciones` 
+        WHERE id_estacion = '{estacion}' 
+        ORDER BY timestamp DESC 
+        LIMIT 1
+        """
+        df = client.query(query).to_dataframe()
+        if not df.empty:
+            df['timestamp'] = pd.to_datetime(df['timestamp']).dt.tz_localize('UTC').dt.tz_convert('America/Bogota')
+        return df
+    except Exception as e:
+        st.error(f"❌ Error al obtener última lectura: {e}")
+        return pd.DataFrame()
 
 @st.cache_data(ttl=600)
 def get_historical_data(estacion, horas=24):
-    query = f"""
-    SELECT * FROM `gen-lang-client-0342049346.amb_hidrologia.telemetria_estaciones` 
-    WHERE id_estacion = '{estacion}' 
-    AND timestamp >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL {horas} HOUR)
-    ORDER BY timestamp DESC 
-    LIMIT 1000
-    """
-    df = client.query(query).to_dataframe()
-    df['timestamp'] = pd.to_datetime(df['timestamp']).dt.tz_localize('UTC').dt.tz_convert('America/Bogota')
-    return df
+    try:
+        # Validación de parámetros
+        if horas < 1:
+            horas = 1
+        if horas > 72:  # Limitamos a 72 horas para evitar timeout
+            horas = 72
+            st.sidebar.info("⏱️ Máximo 72 horas permitido")
+        
+        query = f"""
+        SELECT * FROM `gen-lang-client-0342049346.amb_hidrologia.telemetria_estaciones` 
+        WHERE id_estacion = '{estacion}' 
+        AND timestamp >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL {horas} HOUR)
+        ORDER BY timestamp DESC 
+        LIMIT 1000
+        """
+        
+        df = client.query(query).to_dataframe()
+        
+        if df.empty:
+            st.sidebar.warning(f"⚠️ No hay datos para {estacion} en las últimas {horas} horas")
+            return df
+            
+        df['timestamp'] = pd.to_datetime(df['timestamp']).dt.tz_localize('UTC').dt.tz_convert('America/Bogota')
+        st.sidebar.success(f"✅ {len(df)} registros históricos")
+        return df
+        
+    except Exception as e:
+        st.error(f"❌ Error en datos históricos: {str(e)}")
+        return pd.DataFrame()
 
-# Sidebar
+# ============================================================
+# 4. INTERFAZ PRINCIPAL
+# ============================================================
 estaciones = ["La_Mariana", "Yerbabuena", "Vegas_del_Quemado", "El_Pajal", "Monsalve", "Embalse"]
 seleccion = st.sidebar.selectbox("Seleccione Estación:", estaciones)
+horas = st.sidebar.slider("⏱️ Horas históricas:", 1, 72, 24, step=1, help="Máximo 72 horas (3 días)")
 
-# Filtro de horas
-horas = st.sidebar.slider("⏱️ Horas históricas:", 1, 168, 24, help="1-24 horas, hasta 7 días (168 horas)")
-
-# Cargar datos
-df = get_last_reading(seleccion)
-df_hist = get_historical_data(seleccion, horas)
+# Cargar datos con manejo de errores
+with st.spinner("Cargando datos..."):
+    df = get_last_reading(seleccion)
+    df_hist = get_historical_data(seleccion, horas)
 
 # Tabs
 tab1, tab2, tab3 = st.tabs(["📊 Situación Actual", "📈 Históricos", "🤖 Asistente IA"])
@@ -101,7 +133,13 @@ with tab1:
         
         if seleccion != "Embalse":
             nombre, msg, color, vel = obtener_alerta(float(row.get('precipitacion', 0)), seleccion)
-            st.markdown(f'<div style="background-color:{color}; padding:20px; border-radius:15px; text-align:center; color:black; animation: blink {vel} infinite; border: 2px solid #333;"><h2>{nombre}</h2><b>{msg}</b></div><style>@keyframes blink {{0%{{opacity:1}} 50%{{opacity:0.3}} 100%{{opacity:1}}}}</style>', unsafe_allow_html=True)
+            st.markdown(f'''
+            <div style="background-color:{color}; padding:20px; border-radius:15px; text-align:center; color:black; animation: blink {vel} infinite; border: 2px solid #333;">
+                <h2>{nombre}</h2>
+                <b>{msg}</b>
+            </div>
+            <style>@keyframes blink {{0%{{opacity:1}} 50%{{opacity:0.3}} 100%{{opacity:1}}}}</style>
+            ''', unsafe_allow_html=True)
             st.write("")
             
             c1, c2, c3, c4 = st.columns(4)
@@ -111,9 +149,10 @@ with tab1:
             c4.metric("🔋 Voltaje", f"{float(row['voltaje_bateria']):.1f} V")
         else:
             st.metric("🌊 Nivel", f"{float(row['temperatura']):.2f} msnm")
+        
         st.info(f"📅 Última lectura: {row['timestamp'].strftime('%Y-%m-%d %H:%M:%S')}")
         
-        # Estadísticas
+        # Estadísticas rápidas
         if not df_hist.empty:
             st.markdown("### 📊 Estadísticas del Período")
             col1, col2, col3 = st.columns(3)
@@ -124,7 +163,7 @@ with tab1:
             with col3:
                 st.metric("📊 Promedio Temp", f"{df_hist['temperatura'].mean():.1f}°C")
     else:
-        st.warning("⚠️ Sin datos.")
+        st.warning("⚠️ No hay datos disponibles para esta estación")
 
 with tab2:
     if not df_hist.empty:
@@ -162,11 +201,17 @@ with tab2:
         # Descarga
         st.markdown("### 📥 Exportar Datos")
         csv = df_hist.to_csv(index=False).encode('utf-8')
-        st.download_button("📥 Descargar CSV", csv, f"datos_{seleccion}_{datetime.now().strftime('%Y%m%d_%H%M')}.csv", "text/csv")
+        st.download_button(
+            "📥 Descargar CSV",
+            csv,
+            f"datos_{seleccion}_{datetime.now().strftime('%Y%m%d_%H%M')}.csv",
+            "text/csv"
+        )
     else:
-        st.info("No hay datos históricos disponibles")
+        st.info("ℹ️ No hay datos históricos disponibles")
 
 with tab3:
     st.subheader("🤖 Asistente IA")
+    st.info("🚧 Esta funcionalidad está en desarrollo")
     st.text_input("Haz tu pregunta sobre los datos:")
-    st.button("Enviar")
+    st.button("Enviar", disabled=True)
