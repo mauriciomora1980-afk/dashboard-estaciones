@@ -522,15 +522,106 @@ with tab1:
         st.warning("⚠️ Sin datos.")
 
 # ============================================================
-# TAB 2: HISTÓRICOS CON OPCIONES DE DESCARGA PERSONALIZADAS
+# TAB 2: HISTÓRICOS CON GRÁFICOS Y DESCARGA PERSONALIZADA
 # ============================================================
 with tab2:
-    st.subheader("📈 Datos Históricos - Descarga Personalizada")
+    # ============================================================
+    # GRÁFICOS HISTÓRICOS (RESTAURADOS)
+    # ============================================================
+    st.subheader("📈 Series de Tiempo")
     
-    # SECCIÓN: OPCIONES DE PERÍODO PARA DESCARGA
+    if not df_hist.empty:
+        # Gráfico de Temperatura
+        st.markdown("### 🌡️ Temperatura")
+        fig_temp = px.line(
+            df_hist.sort_values('timestamp'), 
+            x='timestamp', 
+            y='temperatura',
+            title=f'Temperatura - {seleccion}',
+            labels={'temperatura': '°C', 'timestamp': 'Fecha/Hora'}
+        )
+        fig_temp.update_layout(
+            height=300, 
+            template='plotly_white',
+            hovermode='x unified'
+        )
+        if len(df_hist) > 1:
+            fig_temp.add_hline(
+                y=df_hist['temperatura'].mean(), 
+                line_dash="dash", 
+                line_color="red",
+                annotation_text=f"Promedio: {df_hist['temperatura'].mean():.1f}°C"
+            )
+        st.plotly_chart(fig_temp, use_container_width=True)
+        
+        # Gráfico de Precipitación
+        st.markdown("### 🌧️ Precipitación")
+        fig_precip = px.bar(
+            df_hist.sort_values('timestamp'), 
+            x='timestamp', 
+            y='precipitacion',
+            title=f'Precipitación - {seleccion}',
+            labels={'precipitacion': 'mm', 'timestamp': 'Fecha/Hora'},
+            color='precipitacion',
+            color_continuous_scale='Blues'
+        )
+        fig_precip.update_layout(height=300, template='plotly_white')
+        st.plotly_chart(fig_precip, use_container_width=True)
+        
+        # Gráfico de Humedad
+        if 'humedad' in df_hist.columns:
+            st.markdown("### 💧 Humedad")
+            fig_humedad = px.line(
+                df_hist.sort_values('timestamp'), 
+                x='timestamp', 
+                y='humedad',
+                title=f'Humedad - {seleccion}',
+                labels={'humedad': '%', 'timestamp': 'Fecha/Hora'}
+            )
+            fig_humedad.update_layout(
+                height=300, 
+                template='plotly_white',
+                hovermode='x unified'
+            )
+            if len(df_hist) > 1:
+                fig_humedad.add_hline(
+                    y=df_hist['humedad'].mean(), 
+                    line_dash="dash", 
+                    line_color="red",
+                    annotation_text=f"Promedio: {df_hist['humedad'].mean():.1f}%"
+                )
+            st.plotly_chart(fig_humedad, use_container_width=True)
+        
+        # Rosa de los Vientos (si hay datos)
+        if 'direccion_del_viento' in df_hist.columns and 'velocidad_viento' in df_hist.columns:
+            st.markdown("### 🧭 Rosa de los Vientos")
+            df_viento = df_hist.dropna(subset=['direccion_del_viento', 'velocidad_viento'])
+            if not df_viento.empty:
+                fig_viento = px.bar_polar(
+                    df_viento,
+                    r="velocidad_viento",
+                    theta="direccion_del_viento",
+                    color="velocidad_viento",
+                    color_continuous_scale='Viridis',
+                    title=f'Rosa de Vientos - {seleccion}',
+                    template='plotly_white'
+                )
+                fig_viento.update_layout(height=400)
+                st.plotly_chart(fig_viento, use_container_width=True)
+            else:
+                st.info("ℹ️ No hay datos de viento disponibles para esta estación")
+    else:
+        st.info("ℹ️ No hay datos históricos disponibles para este período")
+    
+    # ============================================================
+    # SECCIÓN DE DESCARGA PERSONALIZADA
+    # ============================================================
+    st.markdown("---")
+    st.subheader("📥 Descarga Personalizada de Datos")
+    
+    # OPCIONES DE PERÍODO PARA DESCARGA
     st.markdown("### 📅 Selecciona el período para descargar")
     
-    # Opciones en una sola fila con radio buttons
     col_periodo1, col_periodo2 = st.columns(2)
     
     with col_periodo1:
@@ -547,7 +638,6 @@ with tab2:
     hoy = datetime.now(colombia_tz)
     
     if opcion_personalizado:
-        # Selector de fechas personalizado
         st.markdown("### 📅 Selecciona las fechas personalizadas")
         col_fecha1, col_fecha2 = st.columns(2)
         with col_fecha1:
@@ -563,14 +653,12 @@ with tab2:
                 max_value=hoy
             )
         
-        # Validar fechas
         if fecha_inicio_descarga > fecha_fin_descarga:
             st.error("❌ La fecha de inicio no puede ser mayor que la fecha de fin")
             st.stop()
         
         periodo_descripcion = f"Personalizado ({fecha_inicio_descarga.strftime('%d/%m/%Y')} - {fecha_fin_descarga.strftime('%d/%m/%Y')})"
     else:
-        # Períodos predefinidos
         if opcion_periodo == "Diario":
             fecha_inicio_descarga = hoy - timedelta(days=1)
             fecha_fin_descarga = hoy
@@ -587,15 +675,13 @@ with tab2:
             fecha_inicio_descarga = hoy - timedelta(days=180)
             fecha_fin_descarga = hoy
             periodo_descripcion = f"Semestral ({fecha_inicio_descarga.strftime('%d/%m/%Y')} - {fecha_fin_descarga.strftime('%d/%m/%Y')})"
-        else:  # Anual
+        else:
             fecha_inicio_descarga = hoy - timedelta(days=365)
             fecha_fin_descarga = hoy
             periodo_descripcion = f"Anual ({fecha_inicio_descarga.strftime('%d/%m/%Y')} - {fecha_fin_descarga.strftime('%d/%m/%Y')})"
     
-    # Mostrar resumen del período
     st.info(f"📊 **Período seleccionado:** {periodo_descripcion}")
     
-    # Botón para cargar datos
     if st.button("📥 Cargar datos para este período", use_container_width=True):
         with st.spinner("🔄 Cargando datos históricos..."):
             df_descarga = get_historical_data_range(
@@ -611,33 +697,25 @@ with tab2:
             else:
                 st.warning("⚠️ No hay datos para el período seleccionado")
     
-    # Mostrar datos si existen en sesión
     if 'df_descarga' in st.session_state:
         df_descarga = st.session_state['df_descarga']
         periodo_descarga = st.session_state['periodo_descarga']
         
-        # Mostrar resumen estadístico
         with st.expander("📊 Ver resumen estadístico"):
             st.text(generar_resumen_estadistico(df_descarga))
         
-        # Mostrar datos
         with st.expander("📋 Ver datos cargados"):
             st.dataframe(df_descarga, use_container_width=True)
         
-        # ============================================================
-        # SECCIÓN DE EXPORTACIÓN - HOJAS DE DATOS
-        # ============================================================
         st.markdown("### 📥 Descargar hoja de datos")
         st.caption("Selecciona el formato para descargar los datos históricos")
         
         col_export1, col_export2 = st.columns(2)
         
-        # Preparar datos para exportar (sin timezone)
         df_export = preparar_df_para_exportar(df_descarga)
         csv_data = df_export.to_csv(index=False).encode('utf-8-sig')
         
         with col_export1:
-            # Excel con formato (PRINCIPAL)
             try:
                 excel_data = generar_excel_con_formato(df_descarga, seleccion, periodo_descarga)
                 st.download_button(
@@ -650,7 +728,6 @@ with tab2:
                 st.caption("✅ Formato Excel con metadatos y formato profesional")
             except Exception as e:
                 st.error(f"Error al generar Excel: {e}")
-                # Fallback: ofrecer descarga alternativa
                 st.download_button(
                     "📊 Hoja de datos (alternativo)",
                     csv_data,
@@ -660,7 +737,6 @@ with tab2:
                 )
         
         with col_export2:
-            # Google Sheets
             st.download_button(
                 "📝 Google Sheets",
                 csv_data,
@@ -671,7 +747,6 @@ with tab2:
             )
             st.caption("📤 Abre en Google Sheets")
         
-        # Mostrar información del sistema
         st.caption(f"📋 Datos exportados desde el {SISTEMA}")
 
 # ============================================================
@@ -681,30 +756,24 @@ with tab3:
     st.subheader("🤖 Asistente IA - Centro de Monitoreo")
     st.markdown("Pregunta sobre niveles, caudales, lluvias y estado de las estaciones.")
     
-    # Verificar conexión con el agente
     with st.spinner("🔌 Verificando conexión..."):
         if verificar_agente_ia():
             st.success("✅ Agente IA conectado")
         else:
             st.warning("⚠️ No se pudo conectar al agente IA. Verifica la configuración.")
     
-    # Inicializar historial del chat
     if "messages" not in st.session_state:
         st.session_state.messages = []
     
-    # Mostrar mensajes anteriores
     for message in st.session_state.messages:
         with st.chat_message(message["role"]):
             st.markdown(message["content"])
     
-    # Input del usuario
     if prompt := st.chat_input("Escribe tu pregunta sobre las estaciones..."):
-        # Agregar mensaje del usuario
         st.session_state.messages.append({"role": "user", "content": prompt})
         with st.chat_message("user"):
             st.markdown(prompt)
         
-        # Procesar consulta con el agente IA
         with st.chat_message("assistant"):
             with st.spinner("🤔 Analizando tu pregunta..."):
                 resultado = consultar_agente_ia(prompt)
@@ -722,7 +791,6 @@ with tab3:
                     st.error(error_msg)
                     st.session_state.messages.append({"role": "assistant", "content": error_msg})
     
-    # Botones
     col1, col2 = st.columns(2)
     with col1:
         if st.button("🗑️ Limpiar conversación", use_container_width=True):
@@ -752,7 +820,6 @@ st.sidebar.markdown("---")
 st.sidebar.markdown("**Desarrollado por Mauricio Mora**")
 st.sidebar.caption("📊 Datos actualizados cada 5 minutos")
 
-# Información del embalse
 with st.sidebar.expander("🌊 Información del Embalse"):
     st.write(f"**Nivel de Rebase:** {NIVEL_REBASE_EMBALSE} msnm")
     if not df.empty and seleccion == "Embalse":
@@ -764,7 +831,6 @@ with st.sidebar.expander("🌊 Información del Embalse"):
         else:
             st.success(f"**Déficit:** {excedente:.2f} msnm")
 
-# Estado del agente IA
 with st.sidebar.expander("🤖 Estado del Agente IA"):
     st.write(f"**URL:** {AGENTE_API_URL}")
     st.write("**Status:** ✅ Activo")
