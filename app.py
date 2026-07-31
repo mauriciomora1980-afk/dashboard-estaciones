@@ -28,9 +28,9 @@ colombia_tz = timezone('America/Bogota')
 st.caption(f"🕐 Última actualización: {datetime.now(colombia_tz).strftime('%Y-%m-%d %H:%M:%S')} (hora Colombia)")
 
 # ============================================================
-# 2. CONFIGURACIÓN DEL AGENTE IA (URL CORRECTA)
+# 2. CONFIGURACIÓN DEL AGENTE IA
 # ============================================================
-# ¡ESTA ES LA URL CORRECTA! 
+# URL del agente IA en Cloud Run
 AGENTE_API_URL = "https://querybigqueryamb-ia-661926446380.us-central1.run.app"
 
 # ============================================================
@@ -133,7 +133,7 @@ def get_historical_data(estacion, horas=24):
         return pd.DataFrame()
 
 # ============================================================
-# 6. FUNCIÓN PARA CONSULTAR AGENTE IA (COPIADA DEL DASHBOARD ANTIGUO)
+# 6. FUNCIÓN PARA CONSULTAR AGENTE IA (VERSIÓN MEJORADA)
 # ============================================================
 def consultar_agente_ia(pregunta):
     """
@@ -147,14 +147,24 @@ def consultar_agente_ia(pregunta):
         
         if response.status_code == 200:
             data = response.json()
+            
+            # Verificar si el agente devolvió datos estructurados
             if data.get("status") == "ok":
-                # Formatear la respuesta como en el dashboard antiguo
-                mensaje = data.get("mensaje", "✅ Consulta procesada exitosamente.")
-                return {
-                    "status": "ok",
-                    "mensaje": mensaje,
-                    "raw": data
-                }
+                # Si el agente ya devolvió un mensaje formateado
+                if "mensaje" in data and data["mensaje"]:
+                    return {
+                        "status": "ok",
+                        "mensaje": data["mensaje"],
+                        "datos": data.get("datos", []),
+                        "estacion": data.get("estacion", ""),
+                        "variable": data.get("variable", ""),
+                        "contexto": data.get("contexto", {}),
+                        "fuente": data.get("fuente", ""),
+                        "raw": data
+                    }
+                else:
+                    # Construir respuesta formateada desde los datos estructurados
+                    return formatear_respuesta_agente(data)
             else:
                 return {
                     "status": "error",
@@ -180,6 +190,85 @@ def consultar_agente_ia(pregunta):
             "status": "error",
             "mensaje": f"❌ Error al consultar el agente: {str(e)}"
         }
+
+def formatear_respuesta_agente(data):
+    """
+    Formatea la respuesta del agente en un mensaje legible
+    """
+    estacion = data.get("estacion", "Estación")
+    variable = data.get("variable", "variable")
+    datos = data.get("datos", [])
+    contexto = data.get("contexto", {})
+    fuente = data.get("fuente", "")
+    periodo = data.get("periodo", {})
+    
+    # Mapeo de variables a nombres amigables
+    nombres_variables = {
+        "precipitacion": "Precipitación",
+        "temperatura": "Temperatura",
+        "humedad": "Humedad",
+        "nivel": "Nivel",
+        "caudal": "Caudal"
+    }
+    nombre_variable = nombres_variables.get(variable, variable.capitalize())
+    
+    # Construir mensaje
+    mensaje = f"🌧️ **{estacion}** - {nombre_variable}\n\n"
+    
+    # Período
+    if periodo:
+        fecha_inicio = periodo.get("fecha_inicio", "")
+        fecha_fin = periodo.get("fecha_fin", "")
+        if fecha_inicio and fecha_fin:
+            if fecha_inicio == fecha_fin:
+                mensaje += f"📅 **Fecha:** {fecha_inicio}\n\n"
+            else:
+                mensaje += f"📅 **Período:** {fecha_inicio} al {fecha_fin}\n\n"
+    
+    # Datos
+    if datos:
+        # Calcular estadísticas
+        valores = [d.get("valor", 0) for d in datos]
+        promedio = sum(valores) / len(valores) if valores else 0
+        maximo = max(valores) if valores else 0
+        minimo = min(valores) if valores else 0
+        
+        mensaje += f"📊 **Estadísticas:**\n"
+        mensaje += f"• Promedio: {promedio:.2f}\n"
+        mensaje += f"• Máximo: {maximo:.2f}\n"
+        mensaje += f"• Mínimo: {minimo:.2f}\n"
+        mensaje += f"• Registros: {len(datos)}\n\n"
+        
+        # Mostrar datos por fecha (primeros 10)
+        mensaje += f"📈 **Datos por fecha:**\n"
+        for d in datos[:10]:
+            fecha = d.get("fecha", "")
+            valor = d.get("valor", 0)
+            mensaje += f"• {fecha}: {valor:.2f}\n"
+        if len(datos) > 10:
+            mensaje += f"\n*... y {len(datos) - 10} registros más*"
+    else:
+        mensaje += "📊 No se encontraron datos para el período consultado."
+    
+    # Contexto geográfico
+    if contexto:
+        mensaje += "\n\n📍 **Contexto geográfico:**\n"
+        if contexto.get("cuenca"):
+            mensaje += f"• Cuenca: {contexto['cuenca']}\n"
+        if contexto.get("afecta"):
+            mensaje += f"• Afecta: {contexto['afecta']}\n"
+    
+    # Fuente
+    if fuente:
+        mensaje += f"\n📡 **Fuente:** {fuente}"
+    
+    return {
+        "status": "ok",
+        "mensaje": mensaje,
+        "datos": datos,
+        "estacion": estacion,
+        "raw": data
+    }
 
 def verificar_agente_ia():
     """
@@ -388,7 +477,7 @@ with tab2:
         st.info("ℹ️ No hay datos históricos disponibles")
 
 # ============================================================
-# TAB 3: ASISTENTE IA (CON CHAT REAL - IGUAL AL ANTIGUO)
+# TAB 3: ASISTENTE IA - EXACTAMENTE COMO EN EL DASHBOARD ANTIGUO
 # ============================================================
 with tab3:
     st.subheader("🤖 Asistente IA - Centro de Monitoreo")
@@ -426,6 +515,11 @@ with tab3:
                     respuesta = resultado.get("mensaje", "✅ Consulta procesada exitosamente.")
                     st.markdown(respuesta)
                     st.session_state.messages.append({"role": "assistant", "content": respuesta})
+                    
+                    # Si hay datos crudos, mostrar opción para verlos (debug)
+                    if "raw" in resultado and st.checkbox("🔍 Ver datos completos", key="show_raw"):
+                        st.json(resultado["raw"])
+                        
                 elif resultado.get("status") == "sin_datos":
                     mensaje = f"ℹ️ {resultado.get('mensaje', 'No se encontraron datos.')}"
                     st.info(mensaje)
