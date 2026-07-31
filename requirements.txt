@@ -8,3 +8,4 @@ reportlab
 matplotlib
 db-dtypes
 pyarrow
+plotly
