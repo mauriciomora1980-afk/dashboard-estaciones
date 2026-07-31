@@ -28,7 +28,7 @@ colombia_tz = timezone('America/Bogota')
 st.caption(f"🕐 Última actualización: {datetime.now(colombia_tz).strftime('%Y-%m-%d %H:%M:%S')} (hora Colombia)")
 
 # ============================================================
-# 2. CONFIGURACIÓN DEL AGENTE IA
+# 2. CONFIGURACIÓN DEL AGENTE IA (URL CORREGIDA)
 # ============================================================
 # URL de tu Cloud Run con el endpoint webhook
 AGENTE_API_URL = "https://ingesta-amb-oficial-661926446380.us-central1.run.app/webhook"
@@ -685,7 +685,7 @@ with st.sidebar.expander("📊 Umbrales de Alerta"):
 
 # Estado del agente IA en sidebar
 with st.sidebar.expander("🤖 Estado del Agente IA"):
-    st.write(f"**URL:** {AGENTE_API_URL.replace('https://', '').split('/')[0]}")
+    st.write(f"**URL:** {AGENTE_API_URL}")
     st.write("**Status:** ✅ Activo")
     st.write("**Capacidades:**")
     st.write("- 📊 Consultas SCADA (2026+)")
