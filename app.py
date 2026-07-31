@@ -31,13 +31,11 @@ colombia_tz = timezone('America/Bogota')
 st.caption(f"🕐 Última actualización: {datetime.now(colombia_tz).strftime('%Y-%m-%d %H:%M:%S')} (hora Colombia)")
 
 # ============================================================
-# 2. CRÉDITOS Y PROPIEDAD INTELECTUAL
+# 2. CONFIGURACIÓN
 # ============================================================
 AUTOR = "Mauricio Mora"
-DESARROLLADO_POR = "Mauricio Mora"
-COPYRIGHT = f"© {datetime.now().year} {AUTOR}. Todos los derechos reservados."
-LICENCIA = "Propiedad intelectual de Mauricio Mora"
 VERSION = "2.0"
+SISTEMA = "Sistema Automatizado de Monitoreo"
 
 # ============================================================
 # 3. CONFIGURACIÓN DEL AGENTE IA
@@ -211,14 +209,12 @@ def generar_excel_con_formato(df, nombre_estacion, periodo_descripcion):
         
         # Agregar hoja de metadatos
         metadata = pd.DataFrame({
-            'Propiedad': ['Desarrollado por', 'Autor', 'Estación', 'Período', 'Fecha de exportación', 'Licencia', 'Total de registros', 'Versión'],
+            'Propiedad': ['Sistema', 'Estación', 'Período', 'Fecha de exportación', 'Total de registros', 'Versión'],
             'Valor': [
-                DESARROLLADO_POR,
-                AUTOR,
+                SISTEMA,
                 nombre_estacion,
                 periodo_descripcion,
                 datetime.now(colombia_tz).strftime('%Y-%m-%d %H:%M:%S'),
-                LICENCIA,
                 len(df_export),
                 VERSION
             ]
@@ -245,7 +241,7 @@ def generar_resumen_estadistico(df):
     resumen.append("📊 RESUMEN ESTADÍSTICO")
     resumen.append("=" * 40)
     resumen.append("")
-    resumen.append(f"📋 Datos generados por: {DESARROLLADO_POR}")
+    resumen.append("📋 Datos generados automáticamente por el sistema")
     resumen.append("")
     
     # Columnas numéricas
@@ -260,10 +256,6 @@ def generar_resumen_estadistico(df):
                 resumen.append(f"   • Mínimo:  {datos.min():.2f}")
                 resumen.append(f"   • Registros: {len(datos)}")
                 resumen.append("")
-    
-    resumen.append("")
-    resumen.append(f"© {datetime.now().year} {AUTOR}")
-    resumen.append(LICENCIA)
     
     return "\n".join(resumen)
 
@@ -379,9 +371,6 @@ def formatear_respuesta_agente(data):
     
     if fuente:
         mensaje += f"\n📡 **Fuente:** {fuente}"
-    
-    # Agregar créditos
-    mensaje += f"\n\n---\n*Desarrollado por {DESARROLLADO_POR}*"
     
     return {
         "status": "ok",
@@ -682,8 +671,8 @@ with tab2:
             )
             st.caption("📤 Abre en Google Sheets")
         
-        # Mostrar información de copyright
-        st.caption(f"📋 Datos exportados desde el sistema desarrollado por Mauricio Mora")
+        # Mostrar información del sistema
+        st.caption(f"📋 Datos exportados desde el {SISTEMA}")
 
 # ============================================================
 # TAB 3: ASISTENTE IA
@@ -691,7 +680,6 @@ with tab2:
 with tab3:
     st.subheader("🤖 Asistente IA - Centro de Monitoreo")
     st.markdown("Pregunta sobre niveles, caudales, lluvias y estado de las estaciones.")
-    st.caption(f"💡 Desarrollado por {DESARROLLADO_POR}")
     
     # Verificar conexión con el agente
     with st.spinner("🔌 Verificando conexión..."):
@@ -758,13 +746,11 @@ with tab3:
             """)
 
 # ============================================================
-# 11. FOOTER Y SIDEBAR CON PROPIEDAD INTELECTUAL
+# 11. FOOTER Y SIDEBAR
 # ============================================================
 st.sidebar.markdown("---")
-st.sidebar.markdown("### 👨‍💻 Desarrollado por")
-st.sidebar.markdown("**Mauricio Mora**")
+st.sidebar.markdown("**Desarrollado por Mauricio Mora**")
 st.sidebar.caption("📊 Datos actualizados cada 5 minutos")
-st.sidebar.caption("🔒 Todos los derechos reservados")
 
 # Información del embalse
 with st.sidebar.expander("🌊 Información del Embalse"):
