@@ -11,6 +11,9 @@ from pytz import timezone
 import plotly.express as px
 import plotly.graph_objects as go
 from io import BytesIO
+import openpyxl
+from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+from openpyxl.utils.dataframe import dataframe_to_rows
 
 # ============================================================
 # 1. CONFIGURACIÓN Y LOGO
@@ -28,13 +31,21 @@ colombia_tz = timezone('America/Bogota')
 st.caption(f"🕐 Última actualización: {datetime.now(colombia_tz).strftime('%Y-%m-%d %H:%M:%S')} (hora Colombia)")
 
 # ============================================================
-# 2. CONFIGURACIÓN DEL AGENTE IA
+# 2. CRÉDITOS Y PROPIEDAD INTELECTUAL
 # ============================================================
-# URL del agente IA en Cloud Run
+AUTOR = "Mauricio Mora"
+DESARROLLADO_POR = "Mauricio Mora"
+COPYRIGHT = f"© {datetime.now().year} {AUTOR}. Todos los derechos reservados."
+LICENCIA = "Propiedad intelectual de Mauricio Mora"
+VERSION = "2.0"
+
+# ============================================================
+# 3. CONFIGURACIÓN DEL AGENTE IA
+# ============================================================
 AGENTE_API_URL = "https://querybigqueryamb-ia-661926446380.us-central1.run.app"
 
 # ============================================================
-# 3. UMBRALES Y ALERTAS (SEMÁFORO)
+# 4. UMBRALES Y ALERTAS (SEMÁFORO)
 # ============================================================
 umbrales = {
     "El_Pajal": {"amarilla": 12.3, "naranja": 15.1, "roja": 20.4},
@@ -73,7 +84,7 @@ def evaluar_nivel_embalse(nivel_actual):
         return "🟢 NORMAL", "#00CC96", f"{abs(excedente):.2f} msnm por debajo del nivel de rebase", excedente
 
 # ============================================================
-# 4. CLIENTE BIGQUERY
+# 5. CLIENTE BIGQUERY
 # ============================================================
 @st.cache_resource
 def init_bigquery_client():
@@ -89,7 +100,7 @@ def init_bigquery_client():
 client = init_bigquery_client()
 
 # ============================================================
-# 5. FUNCIONES DE DATOS
+# 6. FUNCIONES DE DATOS
 # ============================================================
 @st.cache_data(ttl=300)
 def get_last_reading(estacion):
@@ -109,19 +120,28 @@ def get_last_reading(estacion):
         return pd.DataFrame()
 
 @st.cache_data(ttl=600)
-def get_historical_data(estacion, horas=24):
+def get_historical_data_range(estacion, fecha_inicio, fecha_fin):
+    """
+    Obtiene datos históricos entre dos fechas específicas
+    """
     try:
-        if horas < 1:
-            horas = 1
-        if horas > 720:
-            horas = 720
+        if isinstance(fecha_inicio, datetime):
+            fecha_inicio_str = fecha_inicio.strftime('%Y-%m-%d')
+        else:
+            fecha_inicio_str = fecha_inicio
+        
+        if isinstance(fecha_fin, datetime):
+            fecha_fin_str = fecha_fin.strftime('%Y-%m-%d')
+        else:
+            fecha_fin_str = fecha_fin
         
         query = f"""
         SELECT * FROM `gen-lang-client-0342049346.amb_hidrologia.telemetria_estaciones` 
         WHERE id_estacion = '{estacion}' 
-        AND SAFE_CAST(timestamp AS TIMESTAMP) >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL {horas} HOUR)
+        AND SAFE_CAST(timestamp AS TIMESTAMP) >= TIMESTAMP('{fecha_inicio_str} 00:00:00')
+        AND SAFE_CAST(timestamp AS TIMESTAMP) <= TIMESTAMP('{fecha_fin_str} 23:59:59')
         ORDER BY SAFE_CAST(timestamp AS TIMESTAMP) DESC 
-        LIMIT 5000
+        LIMIT 50000
         """
         
         df = client.query(query).to_dataframe()
@@ -133,12 +153,109 @@ def get_historical_data(estacion, horas=24):
         return pd.DataFrame()
 
 # ============================================================
-# 6. FUNCIÓN PARA CONSULTAR AGENTE IA (VERSIÓN MEJORADA)
+# 7. FUNCIONES DE EXPORTACIÓN
+# ============================================================
+def generar_excel_con_formato(df, nombre_estacion, periodo_descripcion):
+    """
+    Genera un archivo Excel con formato profesional
+    """
+    output = BytesIO()
+    
+    with pd.ExcelWriter(output, engine='openpyxl') as writer:
+        # Hoja principal con datos
+        df.to_excel(writer, sheet_name='Datos', index=False)
+        
+        # Obtener el libro y la hoja
+        workbook = writer.book
+        worksheet = writer.sheets['Datos']
+        
+        # Estilos para encabezados
+        header_font = Font(bold=True, color="FFFFFF")
+        header_fill = PatternFill(start_color="2E75B6", end_color="2E75B6", fill_type="solid")
+        header_alignment = Alignment(horizontal="center", vertical="center")
+        
+        # Aplicar estilos a los encabezados
+        for col in range(1, len(df.columns) + 1):
+            cell = worksheet.cell(row=1, column=col)
+            cell.font = header_font
+            cell.fill = header_fill
+            cell.alignment = header_alignment
+        
+        # Ajustar ancho de columnas
+        for col in worksheet.columns:
+            max_length = 0
+            column = col[0].column_letter
+            for cell in col:
+                try:
+                    if len(str(cell.value)) > max_length:
+                        max_length = len(str(cell.value))
+                except:
+                    pass
+            adjusted_width = min(max_length + 2, 50)
+            worksheet.column_dimensions[column].width = adjusted_width
+        
+        # Agregar hoja de metadatos
+        metadata = pd.DataFrame({
+            'Propiedad': ['Desarrollado por', 'Autor', 'Estación', 'Período', 'Fecha de exportación', 'Licencia', 'Total de registros', 'Versión'],
+            'Valor': [
+                DESARROLLADO_POR,
+                AUTOR,
+                nombre_estacion,
+                periodo_descripcion,
+                datetime.now(colombia_tz).strftime('%Y-%m-%d %H:%M:%S'),
+                LICENCIA,
+                len(df),
+                VERSION
+            ]
+        })
+        metadata.to_excel(writer, sheet_name='Metadatos', index=False)
+        
+        # Estilos para metadatos
+        metadata_sheet = writer.sheets['Metadatos']
+        for col in range(1, 3):
+            cell = metadata_sheet.cell(row=1, column=col)
+            cell.font = Font(bold=True)
+            cell.fill = PatternFill(start_color="D9E1F2", end_color="D9E1F2", fill_type="solid")
+    
+    return output.getvalue()
+
+def generar_resumen_estadistico(df):
+    """
+    Genera un resumen estadístico de los datos
+    """
+    if df.empty:
+        return "No hay datos disponibles"
+    
+    resumen = []
+    resumen.append("📊 RESUMEN ESTADÍSTICO")
+    resumen.append("=" * 40)
+    resumen.append("")
+    resumen.append(f"📋 Datos generados por: {DESARROLLADO_POR}")
+    resumen.append("")
+    
+    # Columnas numéricas
+    columnas_numericas = ['temperatura', 'precipitacion', 'humedad', 'presion', 'velocidad_viento', 'voltaje_bateria']
+    for col in columnas_numericas:
+        if col in df.columns:
+            datos = df[col].dropna()
+            if not datos.empty:
+                resumen.append(f"📈 {col.upper()}:")
+                resumen.append(f"   • Promedio: {datos.mean():.2f}")
+                resumen.append(f"   • Máximo:  {datos.max():.2f}")
+                resumen.append(f"   • Mínimo:  {datos.min():.2f}")
+                resumen.append(f"   • Registros: {len(datos)}")
+                resumen.append("")
+    
+    resumen.append("")
+    resumen.append(f"© {datetime.now().year} {AUTOR}")
+    resumen.append(LICENCIA)
+    
+    return "\n".join(resumen)
+
+# ============================================================
+# 8. FUNCIÓN PARA CONSULTAR AGENTE IA
 # ============================================================
 def consultar_agente_ia(pregunta):
-    """
-    Consulta el agente IA en Cloud Run querybigqueryamb-ia
-    """
     try:
         headers = {"Content-Type": "application/json"}
         payload = {"prompt": pregunta}
@@ -148,9 +265,7 @@ def consultar_agente_ia(pregunta):
         if response.status_code == 200:
             data = response.json()
             
-            # Verificar si el agente devolvió datos estructurados
             if data.get("status") == "ok":
-                # Si el agente ya devolvió un mensaje formateado
                 if "mensaje" in data and data["mensaje"]:
                     return {
                         "status": "ok",
@@ -163,7 +278,6 @@ def consultar_agente_ia(pregunta):
                         "raw": data
                     }
                 else:
-                    # Construir respuesta formateada desde los datos estructurados
                     return formatear_respuesta_agente(data)
             else:
                 return {
@@ -178,23 +292,20 @@ def consultar_agente_ia(pregunta):
     except requests.exceptions.Timeout:
         return {
             "status": "error",
-            "mensaje": "⏱️ Tiempo de espera agotado. La consulta está tomando demasiado tiempo."
+            "mensaje": "⏱️ Tiempo de espera agotado."
         }
     except requests.exceptions.ConnectionError:
         return {
             "status": "error",
-            "mensaje": "❌ No se pudo conectar al agente IA. Verifica que el servicio esté corriendo."
+            "mensaje": "❌ No se pudo conectar al agente IA."
         }
     except Exception as e:
         return {
             "status": "error",
-            "mensaje": f"❌ Error al consultar el agente: {str(e)}"
+            "mensaje": f"❌ Error: {str(e)}"
         }
 
 def formatear_respuesta_agente(data):
-    """
-    Formatea la respuesta del agente en un mensaje legible
-    """
     estacion = data.get("estacion", "Estación")
     variable = data.get("variable", "variable")
     datos = data.get("datos", [])
@@ -202,7 +313,6 @@ def formatear_respuesta_agente(data):
     fuente = data.get("fuente", "")
     periodo = data.get("periodo", {})
     
-    # Mapeo de variables a nombres amigables
     nombres_variables = {
         "precipitacion": "Precipitación",
         "temperatura": "Temperatura",
@@ -212,10 +322,8 @@ def formatear_respuesta_agente(data):
     }
     nombre_variable = nombres_variables.get(variable, variable.capitalize())
     
-    # Construir mensaje
     mensaje = f"🌧️ **{estacion}** - {nombre_variable}\n\n"
     
-    # Período
     if periodo:
         fecha_inicio = periodo.get("fecha_inicio", "")
         fecha_fin = periodo.get("fecha_fin", "")
@@ -225,9 +333,7 @@ def formatear_respuesta_agente(data):
             else:
                 mensaje += f"📅 **Período:** {fecha_inicio} al {fecha_fin}\n\n"
     
-    # Datos
     if datos:
-        # Calcular estadísticas
         valores = [d.get("valor", 0) for d in datos]
         promedio = sum(valores) / len(valores) if valores else 0
         maximo = max(valores) if valores else 0
@@ -239,7 +345,6 @@ def formatear_respuesta_agente(data):
         mensaje += f"• Mínimo: {minimo:.2f}\n"
         mensaje += f"• Registros: {len(datos)}\n\n"
         
-        # Mostrar datos por fecha (primeros 10)
         mensaje += f"📈 **Datos por fecha:**\n"
         for d in datos[:10]:
             fecha = d.get("fecha", "")
@@ -250,7 +355,6 @@ def formatear_respuesta_agente(data):
     else:
         mensaje += "📊 No se encontraron datos para el período consultado."
     
-    # Contexto geográfico
     if contexto:
         mensaje += "\n\n📍 **Contexto geográfico:**\n"
         if contexto.get("cuenca"):
@@ -258,9 +362,11 @@ def formatear_respuesta_agente(data):
         if contexto.get("afecta"):
             mensaje += f"• Afecta: {contexto['afecta']}\n"
     
-    # Fuente
     if fuente:
         mensaje += f"\n📡 **Fuente:** {fuente}"
+    
+    # Agregar créditos
+    mensaje += f"\n\n---\n*Desarrollado por {DESARROLLADO_POR}*"
     
     return {
         "status": "ok",
@@ -271,9 +377,6 @@ def formatear_respuesta_agente(data):
     }
 
 def verificar_agente_ia():
-    """
-    Verifica si el agente IA está disponible
-    """
     try:
         response = requests.post(
             AGENTE_API_URL,
@@ -285,7 +388,7 @@ def verificar_agente_ia():
         return False
 
 # ============================================================
-# 7. FUNCIONES DE VISUALIZACIÓN
+# 9. FUNCIONES DE VISUALIZACIÓN
 # ============================================================
 def create_embalse_chart(df_hist):
     try:
@@ -328,13 +431,13 @@ def create_embalse_chart(df_hist):
         return None
 
 # ============================================================
-# 8. INTERFAZ PRINCIPAL
+# 10. INTERFAZ PRINCIPAL
 # ============================================================
 estaciones = ["La_Mariana", "Yerbabuena", "Vegas_del_Quemado", "El_Pajal", "Monsalve", "Embalse"]
 seleccion = st.sidebar.selectbox("Seleccione Estación:", estaciones)
 
-# Opciones de período histórico
-periodos = {
+# Opciones de período histórico para el gráfico
+periodos_grafico = {
     "Últimas 24 horas": 24,
     "Últimos 3 días": 72,
     "Últimos 7 días": 168,
@@ -346,16 +449,19 @@ if seleccion == "Embalse":
     st.sidebar.markdown("### 📊 Opciones de Histórico")
     periodo_seleccionado = st.sidebar.selectbox(
         "Seleccione período:",
-        list(periodos.keys())
+        list(periodos_grafico.keys())
     )
-    horas = periodos[periodo_seleccionado]
+    horas = periodos_grafico[periodo_seleccionado]
 else:
     horas = st.sidebar.slider("⏱️ Horas históricas:", 1, 168, 24, step=1)
 
-# Cargar datos
+# Cargar datos para el gráfico
 with st.spinner("🔄 Cargando datos..."):
     df = get_last_reading(seleccion)
-    df_hist = get_historical_data(seleccion, horas)
+    # Para el gráfico usamos las últimas horas
+    fecha_fin = datetime.now(colombia_tz)
+    fecha_inicio = fecha_fin - timedelta(hours=horas)
+    df_hist = get_historical_data_range(seleccion, fecha_inicio, fecha_fin)
 
 # Tabs
 tab1, tab2, tab3 = st.tabs(["📊 Situación Actual", "📈 Históricos", "🤖 Asistente IA"])
@@ -412,76 +518,184 @@ with tab1:
         st.warning("⚠️ Sin datos.")
 
 # ============================================================
-# TAB 2: HISTÓRICOS
+# TAB 2: HISTÓRICOS CON OPCIONES DE DESCARGA PERSONALIZADAS
 # ============================================================
 with tab2:
-    if not df_hist.empty:
-        st.subheader("📈 Series de Tiempo")
+    st.subheader("📈 Datos Históricos - Descarga Personalizada")
+    
+    # SECCIÓN: OPCIONES DE PERÍODO PARA DESCARGA
+    st.markdown("### 📅 Selecciona el período para descargar")
+    
+    col_periodo1, col_periodo2, col_periodo3 = st.columns(3)
+    
+    with col_periodo1:
+        opcion_periodo = st.radio(
+            "Tipo de período:",
+            ["Diario", "Semanal", "Mensual"],
+            index=0,
+            horizontal=False
+        )
+    
+    with col_periodo2:
+        opcion_periodo_extra = st.radio(
+            " ",
+            ["Semestral", "Anual", "Personalizado"],
+            index=0,
+            horizontal=False
+        )
+    
+    # Determinar el período seleccionado
+    if opcion_periodo == "Diario":
+        periodo_seleccionado_descarga = "Diario"
+    elif opcion_periodo == "Semanal":
+        periodo_seleccionado_descarga = "Semanal"
+    elif opcion_periodo == "Mensual":
+        periodo_seleccionado_descarga = "Mensual"
+    elif opcion_periodo_extra == "Semestral":
+        periodo_seleccionado_descarga = "Semestral"
+    elif opcion_periodo_extra == "Anual":
+        periodo_seleccionado_descarga = "Anual"
+    else:
+        periodo_seleccionado_descarga = "Personalizado"
+    
+    # Calcular fechas según el período seleccionado
+    hoy = datetime.now(colombia_tz)
+    
+    if periodo_seleccionado_descarga == "Diario":
+        fecha_inicio_descarga = hoy - timedelta(days=1)
+        fecha_fin_descarga = hoy
+        periodo_descripcion = f"Diario ({fecha_inicio_descarga.strftime('%d/%m/%Y')})"
         
-        if seleccion == "Embalse":
-            fig_embalse = create_embalse_chart(df_hist)
-            if fig_embalse:
-                st.plotly_chart(fig_embalse, use_container_width=True)
-        else:
-            st.markdown("### 🌡️ Temperatura")
-            fig_temp = px.line(
-                df_hist.sort_values('timestamp'), 
-                x='timestamp', 
-                y='temperatura',
-                title=f'Temperatura - {seleccion}',
-                labels={'temperatura': '°C', 'timestamp': 'Fecha/Hora'}
+    elif periodo_seleccionado_descarga == "Semanal":
+        fecha_inicio_descarga = hoy - timedelta(days=7)
+        fecha_fin_descarga = hoy
+        periodo_descripcion = f"Semanal ({fecha_inicio_descarga.strftime('%d/%m/%Y')} - {fecha_fin_descarga.strftime('%d/%m/%Y')})"
+        
+    elif periodo_seleccionado_descarga == "Mensual":
+        fecha_inicio_descarga = hoy - timedelta(days=30)
+        fecha_fin_descarga = hoy
+        periodo_descripcion = f"Mensual ({fecha_inicio_descarga.strftime('%d/%m/%Y')} - {fecha_fin_descarga.strftime('%d/%m/%Y')})"
+        
+    elif periodo_seleccionado_descarga == "Semestral":
+        fecha_inicio_descarga = hoy - timedelta(days=180)
+        fecha_fin_descarga = hoy
+        periodo_descripcion = f"Semestral ({fecha_inicio_descarga.strftime('%d/%m/%Y')} - {fecha_fin_descarga.strftime('%d/%m/%Y')})"
+        
+    elif periodo_seleccionado_descarga == "Anual":
+        fecha_inicio_descarga = hoy - timedelta(days=365)
+        fecha_fin_descarga = hoy
+        periodo_descripcion = f"Anual ({fecha_inicio_descarga.strftime('%d/%m/%Y')} - {fecha_fin_descarga.strftime('%d/%m/%Y')})"
+        
+    else:  # Personalizado
+        st.markdown("### 📅 Selecciona las fechas personalizadas")
+        col_fecha1, col_fecha2 = st.columns(2)
+        with col_fecha1:
+            fecha_inicio_descarga = st.date_input(
+                "Fecha de inicio:",
+                value=hoy - timedelta(days=30),
+                max_value=hoy
             )
-            fig_temp.update_layout(height=300, template='plotly_white')
-            st.plotly_chart(fig_temp, use_container_width=True)
+        with col_fecha2:
+            fecha_fin_descarga = st.date_input(
+                "Fecha de fin:",
+                value=hoy,
+                max_value=hoy
+            )
+        
+        # Validar fechas
+        if fecha_inicio_descarga > fecha_fin_descarga:
+            st.error("❌ La fecha de inicio no puede ser mayor que la fecha de fin")
+            st.stop()
+        
+        periodo_descripcion = f"Personalizado ({fecha_inicio_descarga.strftime('%d/%m/%Y')} - {fecha_fin_descarga.strftime('%d/%m/%Y')})"
+    
+    # Mostrar resumen del período
+    st.info(f"📊 **Período seleccionado:** {periodo_descripcion}")
+    
+    # Botón para cargar datos
+    if st.button("📥 Cargar datos para este período", use_container_width=True):
+        with st.spinner("🔄 Cargando datos históricos..."):
+            df_descarga = get_historical_data_range(
+                seleccion, 
+                fecha_inicio_descarga, 
+                fecha_fin_descarga
+            )
             
-            st.markdown("### 🌧️ Precipitación")
-            fig_precip = px.bar(
-                df_hist.sort_values('timestamp'), 
-                x='timestamp', 
-                y='precipitacion',
-                title=f'Precipitación - {seleccion}',
-                labels={'precipitacion': 'mm', 'timestamp': 'Fecha/Hora'},
-                color='precipitacion',
-                color_continuous_scale='Blues'
-            )
-            fig_precip.update_layout(height=300, template='plotly_white')
-            st.plotly_chart(fig_precip, use_container_width=True)
+            if not df_descarga.empty:
+                st.session_state['df_descarga'] = df_descarga
+                st.session_state['periodo_descarga'] = periodo_descripcion
+                st.success(f"✅ Datos cargados: {len(df_descarga)} registros")
+            else:
+                st.warning("⚠️ No hay datos para el período seleccionado")
+    
+    # Mostrar datos si existen en sesión
+    if 'df_descarga' in st.session_state:
+        df_descarga = st.session_state['df_descarga']
+        periodo_descarga = st.session_state['periodo_descarga']
         
-        # Exportar datos
-        st.markdown("### 📥 Exportar Datos")
-        csv = df_hist.to_csv(index=False).encode('utf-8')
-        col1, col2 = st.columns(2)
-        with col1:
-            st.download_button(
-                "📥 Descargar CSV",
-                csv,
-                f"datos_{seleccion}_{datetime.now().strftime('%Y%m%d_%H%M')}.csv",
-                "text/csv",
-                use_container_width=True
-            )
-        with col2:
+        # Mostrar resumen estadístico
+        with st.expander("📊 Ver resumen estadístico"):
+            st.text(generar_resumen_estadistico(df_descarga))
+        
+        # Mostrar datos
+        with st.expander("📋 Ver datos cargados"):
+            st.dataframe(df_descarga, use_container_width=True)
+        
+        # ============================================================
+        # SECCIÓN DE EXPORTACIÓN - SOLO HOJAS DE DATOS
+        # ============================================================
+        st.markdown("### 📥 Descargar hoja de datos")
+        st.caption("Selecciona el formato para descargar los datos históricos")
+        
+        col_export1, col_export2 = st.columns(2)
+        
+        with col_export1:
+            # Excel con formato (PRINCIPAL)
             try:
-                output = BytesIO()
-                with pd.ExcelWriter(output, engine='openpyxl') as writer:
-                    df_hist.to_excel(writer, sheet_name='Datos', index=False)
+                excel_data = generar_excel_con_formato(df_descarga, seleccion, periodo_descarga)
                 st.download_button(
-                    "📊 Descargar Excel",
-                    output.getvalue(),
-                    f"datos_{seleccion}_{datetime.now().strftime('%Y%m%d_%H%M')}.xlsx",
+                    "📊 Hoja de cálculo (.xlsx)",
+                    excel_data,
+                    f"{seleccion}_{datetime.now(colombia_tz).strftime('%Y%m%d_%H%M')}.xlsx",
                     "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                     use_container_width=True
                 )
-            except:
-                st.warning("⚠️ No se pudo generar el archivo Excel")
-    else:
-        st.info("ℹ️ No hay datos históricos disponibles")
+                st.caption("✅ Formato Excel con metadatos y formato profesional")
+            except Exception as e:
+                st.error(f"Error al generar Excel: {e}")
+                # Fallback: ofrecer descarga alternativa
+                csv = df_descarga.to_csv(index=False).encode('utf-8-sig')
+                st.download_button(
+                    "📊 Hoja de datos (alternativo)",
+                    csv,
+                    f"{seleccion}_{datetime.now(colombia_tz).strftime('%Y%m%d_%H%M')}.csv",
+                    "text/csv",
+                    use_container_width=True
+                )
+        
+        with col_export2:
+            # Google Sheets
+            csv = df_descarga.to_csv(index=False).encode('utf-8-sig')
+            st.download_button(
+                "📝 Google Sheets",
+                csv,
+                f"{seleccion}_{datetime.now(colombia_tz).strftime('%Y%m%d_%H%M')}.csv",
+                "text/csv",
+                use_container_width=True,
+                help="Formato CSV compatible con Google Sheets"
+            )
+            st.caption("📤 Abre en Google Sheets")
+        
+        # Mostrar información de copyright
+        st.caption(f"📋 Datos exportados desde el sistema desarrollado por Mauricio Mora")
 
 # ============================================================
-# TAB 3: ASISTENTE IA - EXACTAMENTE COMO EN EL DASHBOARD ANTIGUO
+# TAB 3: ASISTENTE IA
 # ============================================================
 with tab3:
     st.subheader("🤖 Asistente IA - Centro de Monitoreo")
     st.markdown("Pregunta sobre niveles, caudales, lluvias y estado de las estaciones.")
+    st.caption(f"💡 Desarrollado por {DESARROLLADO_POR}")
     
     # Verificar conexión con el agente
     with st.spinner("🔌 Verificando conexión..."):
@@ -515,11 +729,6 @@ with tab3:
                     respuesta = resultado.get("mensaje", "✅ Consulta procesada exitosamente.")
                     st.markdown(respuesta)
                     st.session_state.messages.append({"role": "assistant", "content": respuesta})
-                    
-                    # Si hay datos crudos, mostrar opción para verlos (debug)
-                    if "raw" in resultado and st.checkbox("🔍 Ver datos completos", key="show_raw"):
-                        st.json(resultado["raw"])
-                        
                 elif resultado.get("status") == "sin_datos":
                     mensaje = f"ℹ️ {resultado.get('mensaje', 'No se encontraron datos.')}"
                     st.info(mensaje)
@@ -553,29 +762,16 @@ with tab3:
             """)
 
 # ============================================================
-# 9. FOOTER Y SIDEBAR
+# 11. FOOTER Y SIDEBAR CON PROPIEDAD INTELECTUAL
 # ============================================================
 st.sidebar.markdown("---")
-st.sidebar.caption("🚀 Dashboard desarrollado por amb")
-st.sidebar.caption(f"📊 Datos actualizados cada 5 minutos")
+st.sidebar.markdown("### 👨‍💻 Desarrollado por")
+st.sidebar.markdown("**Mauricio Mora**")
+st.sidebar.caption("📊 Datos actualizados cada 5 minutos")
+st.sidebar.caption("🔒 Todos los derechos reservados")
 
 # Información del embalse
 with st.sidebar.expander("🌊 Información del Embalse"):
     st.write(f"**Nivel de Rebase:** {NIVEL_REBASE_EMBALSE} msnm")
     if not df.empty and seleccion == "Embalse":
-        nivel_actual = float(df.iloc[0].get('temperatura', 0))
-        excedente = nivel_actual - NIVEL_REBASE_EMBALSE
-        st.write(f"**Nivel Actual:** {nivel_actual:.2f} msnm")
-        if excedente >= 0:
-            st.error(f"**Excédente:** +{excedente:.2f} msnm")
-        else:
-            st.success(f"**Déficit:** {excedente:.2f} msnm")
-
-# Estado del agente IA
-with st.sidebar.expander("🤖 Estado del Agente IA"):
-    st.write(f"**URL:** {AGENTE_API_URL}")
-    st.write("**Status:** ✅ Activo")
-    st.write("**Capacidades:**")
-    st.write("- 📊 Consultas SCADA (2026+)")
-    st.write("- 📜 Históricos (2004-2025)")
-    st.write("- 🌊 Análisis de embalse")
+        nivel_actual = float(df.iloc[0].get('temper
