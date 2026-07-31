@@ -774,4 +774,19 @@ st.sidebar.caption("🔒 Todos los derechos reservados")
 with st.sidebar.expander("🌊 Información del Embalse"):
     st.write(f"**Nivel de Rebase:** {NIVEL_REBASE_EMBALSE} msnm")
     if not df.empty and seleccion == "Embalse":
-        nivel_actual = float(df.iloc[0].get('temper
+        nivel_actual = float(df.iloc[0].get('temperatura', 0))
+        excedente = nivel_actual - NIVEL_REBASE_EMBALSE
+        st.write(f"**Nivel Actual:** {nivel_actual:.2f} msnm")
+        if excedente >= 0:
+            st.error(f"**Excédente:** +{excedente:.2f} msnm")
+        else:
+            st.success(f"**Déficit:** {excedente:.2f} msnm")
+
+# Estado del agente IA
+with st.sidebar.expander("🤖 Estado del Agente IA"):
+    st.write(f"**URL:** {AGENTE_API_URL}")
+    st.write("**Status:** ✅ Activo")
+    st.write("**Capacidades:**")
+    st.write("- 📊 Consultas SCADA (2026+)")
+    st.write("- 📜 Históricos (2004-2025)")
+    st.write("- 🌊 Análisis de embalse")
