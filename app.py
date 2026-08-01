@@ -16,7 +16,7 @@ from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils.dataframe import dataframe_to_rows
 
 # ============================================================
-# 0. CONFIGURACIÓN DE SEGURIDAD - OCULTAR ICONOS
+# 0. CONFIGURACIÓN DE SEGURIDAD - OCULTAR ICONOS (MEJORADO)
 # ============================================================
 st.set_page_config(
     page_title="Centro de Monitoreo - amb", 
@@ -25,9 +25,10 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# CSS para ocultar TODOS los iconos en PC y MÓVIL
+# CSS MEJORADO para ocultar TODOS los iconos en PC y MÓVIL
 hide_icons_css = """
 <style>
+    /* === OCULTAR TODO EN PC === */
     #MainMenu {visibility: hidden !important;}
     footer {visibility: hidden !important;}
     header {visibility: hidden !important;}
@@ -56,47 +57,112 @@ hide_icons_css = """
     .st-emotion-cache-1v0mbdj {display: none !important;}
     .st-emotion-cache-1xr8yuc {display: none !important;}
     .st-emotion-cache-1sno8qh {display: none !important;}
+    
+    /* === OCULTAR "Created with Streamlit" === */
+    .st-emotion-cache-1gulkj5 {display: none !important;}
+    .st-emotion-cache-1gulkj5 a {display: none !important;}
+    .st-emotion-cache-1gulkj5 span {display: none !important;}
+    
+    /* === DESHABILITAR CLICK DERECHO === */
     body {
         -webkit-user-select: none !important;
         -moz-user-select: none !important;
         -ms-user-select: none !important;
         user-select: none !important;
     }
+    
+    /* === MÓVIL: OCULTAR TODO === */
     @media (max-width: 768px) {
+        footer {display: none !important;}
         .st-emotion-cache-1r6slb0 {display: none !important;}
         .st-emotion-cache-1cypcdb {display: none !important;}
         .st-emotion-cache-12w0qpk {display: none !important;}
+        .st-emotion-cache-16idsys {display: none !important;}
+        .st-emotion-cache-1xr5uoi {display: none !important;}
+        .st-emotion-cache-1gulkj5 {display: none !important;}
+        .st-emotion-cache-1gulkj5 a {display: none !important;}
+        .st-emotion-cache-1gulkj5 span {display: none !important;}
+        .st-emotion-cache-1v0mbdj {display: none !important;}
+        .st-emotion-cache-1dp5vir {display: none !important;}
+        .st-emotion-cache-1v3fvcr {display: none !important;}
         .st-emotion-cache-1u7k7i4 {display: none !important;}
         .st-emotion-cache-1l3n35v {display: none !important;}
         .st-emotion-cache-10o6l6i {display: none !important;}
         .st-emotion-cache-1en7cgn {display: none !important;}
         .st-emotion-cache-1n4a2cg {display: none !important;}
         .st-emotion-cache-1f3wz7s {display: none !important;}
-        .st-emotion-cache-16idsys {display: none !important;}
-        .st-emotion-cache-1xr5uoi {display: none !important;}
+        #MainMenu {display: none !important;}
+        .st-emotion-cache-1pcyk6h {display: none !important;}
+        .st-emotion-cache-1s6ru7r {display: none !important;}
+        .st-emotion-cache-1l1ao2d {display: none !important;}
+        header {display: none !important;}
+        .stAppHeader {display: none !important;}
+        .stApp > header {display: none !important;}
+        .stDeployButton {display: none !important;}
+        .stStatusWidget {display: none !important;}
+    }
+    
+    /* === MÓVIL PEQUEÑO (menos de 480px) === */
+    @media (max-width: 480px) {
+        footer {display: none !important;}
+        .st-emotion-cache-1r6slb0 {display: none !important;}
+        .st-emotion-cache-1cypcdb {display: none !important;}
+        .st-emotion-cache-12w0qpk {display: none !important;}
+        .st-emotion-cache-1gulkj5 {display: none !important;}
         .st-emotion-cache-1v0mbdj {display: none !important;}
+        #MainMenu {display: none !important;}
+        header {display: none !important;}
+        .stAppHeader {display: none !important;}
     }
 </style>
 """
 st.markdown(hide_icons_css, unsafe_allow_html=True)
 
-# JavaScript para ocultar elementos en móvil
+# JavaScript para eliminar elementos del DOM en móvil
 hide_js = """
 <script>
+    function eliminarElementos() {
+        const selectores = [
+            'footer',
+            '.st-emotion-cache-1r6slb0',
+            '.st-emotion-cache-1cypcdb',
+            '.st-emotion-cache-12w0qpk',
+            '.st-emotion-cache-16idsys',
+            '.st-emotion-cache-1xr5uoi',
+            '.st-emotion-cache-1gulkj5',
+            '.st-emotion-cache-1v0mbdj',
+            '.st-emotion-cache-1dp5vir',
+            '.st-emotion-cache-1v3fvcr',
+            '.st-emotion-cache-1u7k7i4',
+            '.st-emotion-cache-1l3n35v',
+            '.st-emotion-cache-10o6l6i',
+            '.st-emotion-cache-1en7cgn',
+            '.st-emotion-cache-1n4a2cg',
+            '.st-emotion-cache-1f3wz7s',
+            '#MainMenu',
+            '.st-emotion-cache-1pcyk6h',
+            '.st-emotion-cache-1s6ru7r',
+            '.st-emotion-cache-1l1ao2d',
+            'header',
+            '.stAppHeader',
+            '.stDeployButton',
+            '.stStatusWidget'
+        ];
+        
+        selectores.forEach(selector => {
+            const elementos = document.querySelectorAll(selector);
+            elementos.forEach(el => {
+                if (el) el.style.display = 'none';
+            });
+        });
+    }
+    
     document.addEventListener('DOMContentLoaded', function() {
-        const footerElements = document.querySelectorAll('footer, .st-emotion-cache-1r6slb0, .st-emotion-cache-1cypcdb, .st-emotion-cache-12w0qpk');
-        footerElements.forEach(el => {
-            if (el) el.style.display = 'none';
-        });
-        const manageAppButtons = document.querySelectorAll('.st-emotion-cache-1u7k7i4, .st-emotion-cache-1l3n35v');
-        manageAppButtons.forEach(el => {
-            if (el) el.style.display = 'none';
-        });
-        const githubIcons = document.querySelectorAll('.css-1dp5vir, .css-1v3fvcr, .st-emotion-cache-1v0mbdj');
-        githubIcons.forEach(el => {
-            if (el) el.style.display = 'none';
-        });
+        eliminarElementos();
     });
+    setTimeout(eliminarElementos, 1000);
+    setTimeout(eliminarElementos, 2000);
+    setTimeout(eliminarElementos, 3000);
 </script>
 """
 st.markdown(hide_js, unsafe_allow_html=True)
@@ -136,7 +202,7 @@ umbrales = {
     "Vegas_del_Quemado": {"amarilla": 27.2, "naranja": 36.8, "roja": 55.8}
 }
 
-# Nivel de rebose del embalse (CORREGIDO: antes era "rebase")
+# Nivel de rebose del embalse
 NIVEL_REBOSE_EMBALSE = 885.80
 
 def obtener_alerta(precipitacion, estacion):
@@ -159,11 +225,11 @@ def obtener_alerta(precipitacion, estacion):
     return "GRIS", "☁️ Sin lluvia", "#CCCCCC", "0s"
 
 def evaluar_nivel_embalse(nivel_actual):
-    excedente = nivel_actual - NIVEL_REBOSE_EMBALSE  # CORREGIDO
+    excedente = nivel_actual - NIVEL_REBOSE_EMBALSE
     if excedente >= 0:
-        return "🔴 EXCEDENTE", "#FF4B4B", f"{excedente:.2f} msnm por encima del nivel de rebose", excedente  # CORREGIDO
+        return "🔴 EXCEDENTE", "#FF4B4B", f"{excedente:.2f} msnm por encima del nivel de rebose", excedente
     else:
-        return "🟢 NORMAL", "#00CC96", f"{abs(excedente):.2f} msnm por debajo del nivel de rebose", excedente  # CORREGIDO
+        return "🟢 NORMAL", "#00CC96", f"{abs(excedente):.2f} msnm por debajo del nivel de rebose", excedente
 
 # ============================================================
 # 5. CLIENTE BIGQUERY
@@ -496,7 +562,6 @@ def create_embalse_chart(df_hist):
             fillcolor='rgba(0, 191, 255, 0.2)'
         ))
         
-        # Línea de rebose (CORREGIDO: antes era "rebase")
         fig.add_hline(
             y=NIVEL_REBOSE_EMBALSE,
             line_dash="dash",
@@ -569,22 +634,11 @@ with tab1:
             
             col1, col2, col3 = st.columns(3)
             with col1:
-                st.metric(
-                    "🌊 Nivel actual",
-                    f"{nivel_actual:.2f} msnm",
-                    delta=f"{excedente:.2f} msnm"
-                )
+                st.metric("🌊 Nivel actual", f"{nivel_actual:.2f} msnm", delta=f"{excedente:.2f} msnm")
             with col2:
-                # CORREGIDO: "rebase" → "rebose"
-                st.metric(
-                    "📏 Nivel de Rebose",
-                    f"{NIVEL_REBOSE_EMBALSE:.2f} msnm"
-                )
+                st.metric("📏 Nivel de Rebose", f"{NIVEL_REBOSE_EMBALSE:.2f} msnm")
             with col3:
-                st.metric(
-                    "📊 Excédente",
-                    f"{excedente:+.2f} msnm"
-                )
+                st.metric("📊 Excédente", f"{excedente:+.2f} msnm")
             
             if excedente >= 0:
                 st.error(f"🔴 {estado} - {mensaje}")
@@ -636,11 +690,7 @@ with tab2:
             title=f'Temperatura - {seleccion}',
             labels={'temperatura': '°C', 'timestamp': 'Fecha/Hora'}
         )
-        fig_temp.update_layout(
-            height=300, 
-            template='plotly_white',
-            hovermode='x unified'
-        )
+        fig_temp.update_layout(height=300, template='plotly_white', hovermode='x unified')
         if len(df_hist) > 1:
             fig_temp.add_hline(
                 y=df_hist['temperatura'].mean(), 
@@ -674,11 +724,7 @@ with tab2:
                 title=f'Humedad - {seleccion}',
                 labels={'humedad': '%', 'timestamp': 'Fecha/Hora'}
             )
-            fig_humedad.update_layout(
-                height=300, 
-                template='plotly_white',
-                hovermode='x unified'
-            )
+            fig_humedad.update_layout(height=300, template='plotly_white', hovermode='x unified')
             if len(df_hist) > 1:
                 fig_humedad.add_hline(
                     y=df_hist['humedad'].mean(), 
@@ -709,59 +755,4 @@ with tab2:
     else:
         st.info("ℹ️ No hay datos históricos disponibles para este período")
     
-    # ============================================================
-    # SECCIÓN DE DESCARGA PERSONALIZADA
-    # ============================================================
-    st.markdown("---")
-    st.subheader("📥 Descarga Personalizada de Datos")
-    
-    st.markdown("### 📅 Selecciona el período para descargar")
-    
-    col_periodo1, col_periodo2 = st.columns(2)
-    
-    with col_periodo1:
-        opcion_periodo = st.radio(
-            "Período:",
-            ["Diario", "Semanal", "Mensual", "Semestral", "Anual"],
-            index=0
-        )
-    
-    with col_periodo2:
-        opcion_personalizado = st.checkbox("📅 Personalizar fechas")
-    
-    hoy = datetime.now(colombia_tz)
-    
-    if opcion_personalizado:
-        st.markdown("### 📅 Selecciona las fechas personalizadas")
-        col_fecha1, col_fecha2 = st.columns(2)
-        with col_fecha1:
-            fecha_inicio_descarga = st.date_input(
-                "Fecha de inicio:",
-                value=hoy - timedelta(days=30),
-                max_value=hoy
-            )
-        with col_fecha2:
-            fecha_fin_descarga = st.date_input(
-                "Fecha de fin:",
-                value=hoy,
-                max_value=hoy
-            )
-        
-        if fecha_inicio_descarga > fecha_fin_descarga:
-            st.error("❌ La fecha de inicio no puede ser mayor que la fecha de fin")
-            st.stop()
-        
-        periodo_descripcion = f"Personalizado ({fecha_inicio_descarga.strftime('%d/%m/%Y')} - {fecha_fin_descarga.strftime('%d/%m/%Y')})"
-    else:
-        if opcion_periodo == "Diario":
-            fecha_inicio_descarga = hoy - timedelta(days=1)
-            fecha_fin_descarga = hoy
-            periodo_descripcion = f"Diario ({fecha_inicio_descarga.strftime('%d/%m/%Y')})"
-        elif opcion_periodo == "Semanal":
-            fecha_inicio_descarga = hoy - timedelta(days=7)
-            fecha_fin_descarga = hoy
-            periodo_descripcion = f"Semanal ({fecha_inicio_descarga.strftime('%d/%m/%Y')} - {fecha_fin_descarga.strftime('%d/%m/%Y')})"
-        elif opcion_periodo == "Mensual":
-            fecha_inicio_descarga = hoy - timedelta(days=30)
-            fecha_fin_descarga = hoy
-            periodo_descripcion
+    # =========================================================
