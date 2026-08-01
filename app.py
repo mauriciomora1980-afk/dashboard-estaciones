@@ -242,7 +242,7 @@ def generar_resumen_estadistico(df):
     return "\n".join(resumen)
 
 # ============================================================
-# 8. FUNCIÓN PARA CONSULTAR AGENTE IA (CORREGIDA)
+# 8. FUNCIÓN PARA CONSULTAR AGENTE IA (ACTUALIZADA)
 # ============================================================
 def consultar_agente_ia(pregunta):
     try:
@@ -254,8 +254,10 @@ def consultar_agente_ia(pregunta):
         if response.status_code == 200:
             data = response.json()
             
-            if data.get("status") == "ok":
-                if "mensaje" in data and data["mensaje"]:
+            # Verificar si la respuesta tiene el formato esperado
+            if isinstance(data, dict):
+                # Si el agente devolvió un mensaje directamente
+                if "mensaje" in data:
                     return {
                         "status": "ok",
                         "mensaje": data["mensaje"],
@@ -266,12 +268,30 @@ def consultar_agente_ia(pregunta):
                         "fuente": data.get("fuente", ""),
                         "raw": data
                     }
+                # Si el agente devolvió datos estructurados
+                elif data.get("status") == "ok":
+                    if "mensaje" in data and data["mensaje"]:
+                        return {
+                            "status": "ok",
+                            "mensaje": data["mensaje"],
+                            "datos": data.get("datos", []),
+                            "estacion": data.get("estacion", ""),
+                            "variable": data.get("variable", "precipitacion"),
+                            "contexto": data.get("contexto", {}),
+                            "fuente": data.get("fuente", ""),
+                            "raw": data
+                        }
+                    else:
+                        return formatear_respuesta_agente(data)
                 else:
-                    return formatear_respuesta_agente(data)
+                    return {
+                        "status": "error",
+                        "mensaje": data.get("mensaje", "Error al procesar la consulta.")
+                    }
             else:
                 return {
                     "status": "error",
-                    "mensaje": data.get("mensaje", "Error al procesar la consulta.")
+                    "mensaje": "Respuesta del agente en formato inesperado"
                 }
         else:
             return {
@@ -301,7 +321,7 @@ def formatear_respuesta_agente(data):
     estacion = data.get("estacion", "Estación")
     variable = data.get("variable")
     
-    # 🔧 CORRECCIÓN 1: Si variable es None, asignar "precipitacion"
+    # Si variable es None, asignar "precipitacion"
     if variable is None:
         variable = "precipitacion"
     
@@ -309,46 +329,27 @@ def formatear_respuesta_agente(data):
     contexto = data.get("contexto", {})
     fuente = data.get("fuente", "")
     periodo = data.get("periodo", {})
+    mensaje = data.get("mensaje", "")
     
-    # 🔧 CORRECCIÓN 2: DETECTAR EMBALSE POR LA VARIABLE "nivel"
-    # Si la variable es "nivel", es el embalse (es la única estación que mide nivel)
-    if variable == "nivel" or estacion == "Embalse":
-        # El agente IA ya formatea el mensaje del embalse
-        mensaje_embalse = data.get("mensaje")
-        if mensaje_embalse:
-            return {
-                "status": "ok",
-                "mensaje": mensaje_embalse,
-                "datos": datos,
-                "estacion": "Embalse",
-                "raw": data
-            }
-        # Si no hay mensaje, construir uno básico
-        nivel_actual = datos[0].get("valor", 0) if datos else 0
-        mensaje = f"""🌊 **Nivel del Embalse**
-
-📊 Nivel actual: {nivel_actual:.2f} msnm
-
-📍 Contexto:
-- Embalse ubicado en Puente Tona (Río Suratá)
-- Nivel de rebose: 885.80 msnm
-
-💡 El nivel se mide en metros sobre el nivel del mar (msnm)"""
-        
+    # Si el agente ya devolvió un mensaje formateado, usarlo directamente
+    if mensaje:
         return {
             "status": "ok",
             "mensaje": mensaje,
             "datos": datos,
-            "estacion": "Embalse",
+            "estacion": estacion,
             "raw": data
         }
     
-    # Para otras estaciones (precipitacion, temperatura, humedad)
+    # Para otras estaciones, formatear normalmente
     nombres_variables = {
         "precipitacion": "Precipitación",
         "temperatura": "Temperatura",
         "humedad": "Humedad",
-        "caudal": "Caudal"
+        "caudal": "Caudal",
+        "nivel": "Nivel",
+        "presion": "Presión",
+        "velocidad_viento": "Velocidad del Viento"
     }
     nombre_variable = nombres_variables.get(variable, variable.capitalize())
     
@@ -828,11 +829,14 @@ with tab3:
             **🌊 Sobre el embalse:**
             - ¿Cómo está el nivel del embalse?
             - ¿Por qué subió el nivel del embalse?
+            - Nivel a las 3 de la mañana
+            - Promedio nivel últimas 24 horas
             
             **🌧️ Sobre estaciones:**
             - ¿Cuánto llovió en El_Pajal ayer?
             - Temperatura máxima en La_Mariana este mes
             - ¿Cuál fue la humedad en Vegas del Quemado?
+            - Temperatura a las 15:00 en El_Pajal
             
             **📊 Consultas avanzadas:**
             - Comparar lluvias entre El_Pajal y Yerbabuena
@@ -866,3 +870,4 @@ with st.sidebar.expander("🤖 Estado del Agente IA"):
     st.write("- 📊 Consultas SCADA (2026+)")
     st.write("- 📜 Históricos (2004-2025)")
     st.write("- 🌊 Análisis de embalse")
+    st.write("- ⏰ Consultas por hora específica")
