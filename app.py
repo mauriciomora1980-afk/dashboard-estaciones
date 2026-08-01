@@ -16,7 +16,7 @@ from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils.dataframe import dataframe_to_rows
 
 # ============================================================
-# 0. CONFIGURACIÓN DE SEGURIDAD - OCULTAR ICONOS
+# 0. CONFIGURACIÓN DE SEGURIDAD - OCULTAR ICONOS (VERSIÓN DEFINITIVA)
 # ============================================================
 st.set_page_config(
     page_title="Centro de Monitoreo - amb", 
@@ -25,46 +25,71 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# CSS para ocultar TODOS los iconos en PC y MÓVIL
-hide_icons_css = """
+# CSS DEFINITIVO para ocultar ABSOLUTAMENTE TODO
+hide_all_css = """
 <style>
-    #MainMenu {visibility: hidden !important;}
-    footer {visibility: hidden !important;}
-    header {visibility: hidden !important;}
+    /* === OCULTAR MENÚ DE HAMBURGUESA === */
+    #MainMenu {display: none !important;}
+    
+    /* === OCULTAR FOOTER COMPLETO === */
+    footer {display: none !important;}
+    .st-emotion-cache-1r6slb0 {display: none !important;}
+    .st-emotion-cache-1cypcdb {display: none !important;}
+    .st-emotion-cache-12w0qpk {display: none !important;}
+    .st-emotion-cache-16idsys {display: none !important;}
+    .st-emotion-cache-1xr5uoi {display: none !important;}
+    
+    /* === OCULTAR HEADER === */
+    header {display: none !important;}
+    .stAppHeader {display: none !important;}
+    .stApp > header {display: none !important;}
+    
+    /* === OCULTAR BOTONES DE DEPLOY Y MANAGE === */
     .stDeployButton {display: none !important;}
     .stStatusWidget {display: none !important;}
     .st-emotion-cache-1pcyk6h {display: none !important;}
     .st-emotion-cache-1s6ru7r {display: none !important;}
     .st-emotion-cache-1l1ao2d {display: none !important;}
-    .css-1dp5vir {display: none !important;}
-    .css-1v3fvcr {display: none !important;}
-    .st-emotion-cache-1v0mbdj {display: none !important;}
-    .st-emotion-cache-1r6slb0 {display: none !important;}
-    .st-emotion-cache-1cypcdb {display: none !important;}
-    .st-emotion-cache-12w0qpk {display: none !important;}
     .st-emotion-cache-1u7k7i4 {display: none !important;}
     .st-emotion-cache-1l3n35v {display: none !important;}
     .st-emotion-cache-10o6l6i {display: none !important;}
     .st-emotion-cache-1en7cgn {display: none !important;}
     .st-emotion-cache-1n4a2cg {display: none !important;}
     .st-emotion-cache-1f3wz7s {display: none !important;}
-    .st-emotion-cache-16idsys {display: none !important;}
-    .st-emotion-cache-1xr5uoi {display: none !important;}
-    .stApp > header {display: none !important;}
-    .stApp > div:first-child {padding-top: 0 !important;}
-    .stAppHeader {display: none !important;}
-    .st-emotion-cache-1v0mbdj {display: none !important;}
-    .st-emotion-cache-1xr8yuc {display: none !important;}
-    .st-emotion-cache-1sno8qh {display: none !important;}
+    
+    /* === OCULTAR "Created with Streamlit" === */
     .st-emotion-cache-1gulkj5 {display: none !important;}
     .st-emotion-cache-1gulkj5 a {display: none !important;}
     .st-emotion-cache-1gulkj5 span {display: none !important;}
+    
+    /* === OCULTAR ICONOS DE GITHUB === */
+    .css-1dp5vir {display: none !important;}
+    .css-1v3fvcr {display: none !important;}
+    .st-emotion-cache-1v0mbdj {display: none !important;}
+    .st-emotion-cache-1dp5vir {display: none !important;}
+    
+    /* === OCULTAR EL BOTÓN "View source" === */
+    .st-emotion-cache-1v0mbdj {display: none !important;}
+    .st-emotion-cache-1xr8yuc {display: none !important;}
+    .st-emotion-cache-1sno8qh {display: none !important;}
+    
+    /* === OCULTAR EL BOTÓN DE "Copy" === */
+    .st-emotion-cache-1xr8yuc {display: none !important;}
+    .st-emotion-cache-1sno8qh {display: none !important;}
+    
+    /* === ELIMINAR ESPACIO EN BLANCO DEL HEADER === */
+    .stApp > div:first-child {padding-top: 0 !important;}
+    .stApp {margin-top: 0 !important;}
+    
+    /* === DESHABILITAR CLICK DERECHO === */
     body {
         -webkit-user-select: none !important;
         -moz-user-select: none !important;
         -ms-user-select: none !important;
         user-select: none !important;
     }
+    
+    /* === MÓVIL: OCULTAR TODO === */
     @media (max-width: 768px) {
         footer {display: none !important;}
         .st-emotion-cache-1r6slb0 {display: none !important;}
@@ -73,6 +98,8 @@ hide_icons_css = """
         .st-emotion-cache-16idsys {display: none !important;}
         .st-emotion-cache-1xr5uoi {display: none !important;}
         .st-emotion-cache-1gulkj5 {display: none !important;}
+        .st-emotion-cache-1gulkj5 a {display: none !important;}
+        .st-emotion-cache-1gulkj5 span {display: none !important;}
         .st-emotion-cache-1v0mbdj {display: none !important;}
         .st-emotion-cache-1dp5vir {display: none !important;}
         .st-emotion-cache-1v3fvcr {display: none !important;}
@@ -88,50 +115,111 @@ hide_icons_css = """
         .st-emotion-cache-1l1ao2d {display: none !important;}
         header {display: none !important;}
         .stAppHeader {display: none !important;}
+        .stApp > header {display: none !important;}
         .stDeployButton {display: none !important;}
         .stStatusWidget {display: none !important;}
+        .st-emotion-cache-1r6slb0 {display: none !important;}
+        .st-emotion-cache-1cypcdb {display: none !important;}
+        .st-emotion-cache-12w0qpk {display: none !important;}
+        .st-emotion-cache-16idsys {display: none !important;}
+        .st-emotion-cache-1xr5uoi {display: none !important;}
     }
+    
+    /* === MÓVIL PEQUEÑO (menos de 480px) === */
     @media (max-width: 480px) {
         footer {display: none !important;}
         .st-emotion-cache-1r6slb0 {display: none !important;}
         .st-emotion-cache-1cypcdb {display: none !important;}
         .st-emotion-cache-12w0qpk {display: none !important;}
+        .st-emotion-cache-16idsys {display: none !important;}
+        .st-emotion-cache-1xr5uoi {display: none !important;}
         .st-emotion-cache-1gulkj5 {display: none !important;}
         .st-emotion-cache-1v0mbdj {display: none !important;}
         #MainMenu {display: none !important;}
         header {display: none !important;}
         .stAppHeader {display: none !important;}
+        .stApp > header {display: none !important;}
     }
+    
+    /* === ELIMINAR CUALQUIER BOTÓN FLOTANTE === */
+    .st-emotion-cache-1r6slb0 {display: none !important;}
+    .st-emotion-cache-1cypcdb {display: none !important;}
+    .st-emotion-cache-12w0qpk {display: none !important;}
+    .st-emotion-cache-16idsys {display: none !important;}
+    .st-emotion-cache-1xr5uoi {display: none !important;}
+    
+    /* === OCULTAR EL BOTÓN "Made with Streamlit" === */
+    .st-emotion-cache-1gulkj5 {display: none !important;}
+    .st-emotion-cache-1gulkj5 a {display: none !important;}
+    .st-emotion-cache-1gulkj5 span {display: none !important;}
 </style>
 """
-st.markdown(hide_icons_css, unsafe_allow_html=True)
+st.markdown(hide_all_css, unsafe_allow_html=True)
 
-# JavaScript para eliminar elementos del DOM
-hide_js = """
+# JavaScript para ELIMINAR elementos del DOM (no solo ocultarlos)
+hide_js_complete = """
 <script>
+    // Función para eliminar elementos del DOM completamente
     function eliminarElementos() {
+        // Lista de selectores a eliminar
         const selectores = [
-            'footer', '.st-emotion-cache-1r6slb0', '.st-emotion-cache-1cypcdb',
-            '.st-emotion-cache-12w0qpk', '.st-emotion-cache-16idsys', '.st-emotion-cache-1xr5uoi',
-            '.st-emotion-cache-1gulkj5', '.st-emotion-cache-1v0mbdj', '.st-emotion-cache-1dp5vir',
-            '.st-emotion-cache-1v3fvcr', '.st-emotion-cache-1u7k7i4', '.st-emotion-cache-1l3n35v',
-            '.st-emotion-cache-10o6l6i', '.st-emotion-cache-1en7cgn', '.st-emotion-cache-1n4a2cg',
-            '.st-emotion-cache-1f3wz7s', '#MainMenu', '.st-emotion-cache-1pcyk6h',
-            '.st-emotion-cache-1s6ru7r', '.st-emotion-cache-1l1ao2d', 'header',
-            '.stAppHeader', '.stDeployButton', '.stStatusWidget'
+            'footer',
+            '.st-emotion-cache-1r6slb0',
+            '.st-emotion-cache-1cypcdb',
+            '.st-emotion-cache-12w0qpk',
+            '.st-emotion-cache-16idsys',
+            '.st-emotion-cache-1xr5uoi',
+            '.st-emotion-cache-1gulkj5',
+            '.st-emotion-cache-1v0mbdj',
+            '.st-emotion-cache-1dp5vir',
+            '.st-emotion-cache-1v3fvcr',
+            '.st-emotion-cache-1u7k7i4',
+            '.st-emotion-cache-1l3n35v',
+            '.st-emotion-cache-10o6l6i',
+            '.st-emotion-cache-1en7cgn',
+            '.st-emotion-cache-1n4a2cg',
+            '.st-emotion-cache-1f3wz7s',
+            '#MainMenu',
+            '.st-emotion-cache-1pcyk6h',
+            '.st-emotion-cache-1s6ru7r',
+            '.st-emotion-cache-1l1ao2d',
+            'header',
+            '.stAppHeader',
+            '.stDeployButton',
+            '.stStatusWidget'
         ];
+        
+        // Eliminar cada elemento encontrado
         selectores.forEach(selector => {
             const elementos = document.querySelectorAll(selector);
-            elementos.forEach(el => { if (el) el.style.display = 'none'; });
+            elementos.forEach(el => {
+                if (el && el.parentNode) {
+                    el.parentNode.removeChild(el);
+                }
+            });
         });
     }
-    document.addEventListener('DOMContentLoaded', function() { eliminarElementos(); });
-    setTimeout(eliminarElementos, 1000);
-    setTimeout(eliminarElementos, 2000);
-    setTimeout(eliminarElementos, 3000);
+    
+    // Ejecutar múltiples veces para asegurar que se eliminen
+    document.addEventListener('DOMContentLoaded', function() {
+        setTimeout(eliminarElementos, 100);
+        setTimeout(eliminarElementos, 500);
+        setTimeout(eliminarElementos, 1000);
+        setTimeout(eliminarElementos, 2000);
+        setTimeout(eliminarElementos, 3000);
+    });
+    
+    // Observer para eliminar elementos que aparezcan después
+    const observer = new MutationObserver(function() {
+        eliminarElementos();
+    });
+    observer.observe(document.body, {
+        childList: true,
+        subtree: true
+    });
 </script>
 """
-st.markdown(hide_js, unsafe_allow_html=True)
+st.markdown(hide_js_complete, unsafe_allow_html=True)
 
 # ============================================================
 # 1. CONFIGURACIÓN Y LOGO
