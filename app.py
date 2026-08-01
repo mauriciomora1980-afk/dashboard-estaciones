@@ -16,7 +16,7 @@ from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils.dataframe import dataframe_to_rows
 
 # ============================================================
-# 0. CONFIGURACIÓN Y SEGURIDAD - OCULTAR ICONOS
+# 0. CONFIGURACIÓN
 # ============================================================
 st.set_page_config(
     page_title="Centro de Monitoreo - amb", 
@@ -24,36 +24,6 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="expanded"
 )
-
-# --- OCULTAR SOLO ICONOS DE GITHUB Y STREAMLIT ---
-hide_icons = """
-<style>
-    /* Ocultar el footer completo (GitHub, Streamlit, etc.) */
-    footer {visibility: hidden !important;}
-    .st-emotion-cache-1r6slb0 {display: none !important;}
-    .st-emotion-cache-1cypcdb {display: none !important;}
-    .st-emotion-cache-12w0qpk {display: none !important;}
-    
-    /* Ocultar "Created with Streamlit" y "Hosted with Streamlit" */
-    .st-emotion-cache-1gulkj5 {display: none !important;}
-    .st-emotion-cache-1u7k7i4 {display: none !important;}
-    .st-emotion-cache-1l3n35v {display: none !important;}
-    
-    /* Ocultar el botón de GitHub */
-    .st-emotion-cache-1v0mbdj {display: none !important;}
-    .st-emotion-cache-1dp5vir {display: none !important;}
-    .st-emotion-cache-1v3fvcr {display: none !important;}
-    
-    /* Ocultar toolbar de desarrollo */
-    .stAppToolbar {display: none !important;}
-    [data-testid="stToolbar"] {display: none !important;}
-    
-    /* Ocultar botón Deploy */
-    .stDeployButton {display: none !important;}
-    .stStatusWidget {display: none !important;}
-</style>
-"""
-st.markdown(hide_icons, unsafe_allow_html=True)
 
 # ============================================================
 # 1. CONFIGURACIÓN Y LOGO
@@ -329,9 +299,9 @@ def formatear_respuesta_agente(data):
     Formatea la respuesta del agente IA en un mensaje legible
     """
     estacion = data.get("estacion", "Estación")
-    variable = data.get("variable")  # Puede venir None
+    variable = data.get("variable")
     
-    # 🔧 CORRECCIÓN: Si variable es None, asignar "precipitacion"
+    # 🔧 CORRECCIÓN 1: Si variable es None, asignar "precipitacion"
     if variable is None:
         variable = "precipitacion"
     
@@ -340,11 +310,44 @@ def formatear_respuesta_agente(data):
     fuente = data.get("fuente", "")
     periodo = data.get("periodo", {})
     
+    # 🔧 CORRECCIÓN 2: DETECTAR EMBALSE POR LA VARIABLE "nivel"
+    # Si la variable es "nivel", es el embalse (es la única estación que mide nivel)
+    if variable == "nivel" or estacion == "Embalse":
+        # El agente IA ya formatea el mensaje del embalse
+        mensaje_embalse = data.get("mensaje")
+        if mensaje_embalse:
+            return {
+                "status": "ok",
+                "mensaje": mensaje_embalse,
+                "datos": datos,
+                "estacion": "Embalse",
+                "raw": data
+            }
+        # Si no hay mensaje, construir uno básico
+        nivel_actual = datos[0].get("valor", 0) if datos else 0
+        mensaje = f"""🌊 **Nivel del Embalse**
+
+📊 Nivel actual: {nivel_actual:.2f} msnm
+
+📍 Contexto:
+- Embalse ubicado en Puente Tona (Río Suratá)
+- Nivel de rebose: 885.80 msnm
+
+💡 El nivel se mide en metros sobre el nivel del mar (msnm)"""
+        
+        return {
+            "status": "ok",
+            "mensaje": mensaje,
+            "datos": datos,
+            "estacion": "Embalse",
+            "raw": data
+        }
+    
+    # Para otras estaciones (precipitacion, temperatura, humedad)
     nombres_variables = {
         "precipitacion": "Precipitación",
         "temperatura": "Temperatura",
         "humedad": "Humedad",
-        "nivel": "Nivel",
         "caudal": "Caudal"
     }
     nombre_variable = nombres_variables.get(variable, variable.capitalize())
