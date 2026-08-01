@@ -16,7 +16,7 @@ from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils.dataframe import dataframe_to_rows
 
 # ============================================================
-# 0. CONFIGURACIÓN Y SEGURIDAD - OCULTAR FOOTER Y TOOLBAR
+# 0. CONFIGURACIÓN Y SEGURIDAD - OCULTAR ICONOS
 # ============================================================
 st.set_page_config(
     page_title="Centro de Monitoreo - amb", 
@@ -25,32 +25,35 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# --- OCULTAR SOLO FOOTER Y TOOLBAR ---
-hide_footer_toolbar = """
+# --- OCULTAR SOLO ICONOS DE GITHUB Y STREAMLIT ---
+hide_icons = """
 <style>
-    /* Ocultar footer completo */
+    /* Ocultar el footer completo (GitHub, Streamlit, etc.) */
     footer {visibility: hidden !important;}
     .st-emotion-cache-1r6slb0 {display: none !important;}
     .st-emotion-cache-1cypcdb {display: none !important;}
     .st-emotion-cache-12w0qpk {display: none !important;}
     
+    /* Ocultar "Created with Streamlit" y "Hosted with Streamlit" */
+    .st-emotion-cache-1gulkj5 {display: none !important;}
+    .st-emotion-cache-1u7k7i4 {display: none !important;}
+    .st-emotion-cache-1l3n35v {display: none !important;}
+    
+    /* Ocultar el botón de GitHub */
+    .st-emotion-cache-1v0mbdj {display: none !important;}
+    .st-emotion-cache-1dp5vir {display: none !important;}
+    .st-emotion-cache-1v3fvcr {display: none !important;}
+    
     /* Ocultar toolbar de desarrollo */
     .stAppToolbar {display: none !important;}
     [data-testid="stToolbar"] {display: none !important;}
     
-    /* Ocultar "Created with Streamlit" */
-    .st-emotion-cache-1gulkj5 {display: none !important;}
-    
-    /* Ocultar "Hosted with Streamlit" */
-    .st-emotion-cache-1u7k7i4 {display: none !important;}
-    .st-emotion-cache-1l3n35v {display: none !important;}
-    
-    /* Ocultar el botón de "Deploy" */
+    /* Ocultar botón Deploy */
     .stDeployButton {display: none !important;}
     .stStatusWidget {display: none !important;}
 </style>
 """
-st.markdown(hide_footer_toolbar, unsafe_allow_html=True)
+st.markdown(hide_icons, unsafe_allow_html=True)
 
 # ============================================================
 # 1. CONFIGURACIÓN Y LOGO
@@ -269,7 +272,7 @@ def generar_resumen_estadistico(df):
     return "\n".join(resumen)
 
 # ============================================================
-# 8. FUNCIÓN PARA CONSULTAR AGENTE IA
+# 8. FUNCIÓN PARA CONSULTAR AGENTE IA (CORREGIDA)
 # ============================================================
 def consultar_agente_ia(pregunta):
     try:
@@ -288,7 +291,7 @@ def consultar_agente_ia(pregunta):
                         "mensaje": data["mensaje"],
                         "datos": data.get("datos", []),
                         "estacion": data.get("estacion", ""),
-                        "variable": data.get("variable", ""),
+                        "variable": data.get("variable", "precipitacion"),
                         "contexto": data.get("contexto", {}),
                         "fuente": data.get("fuente", ""),
                         "raw": data
@@ -322,8 +325,16 @@ def consultar_agente_ia(pregunta):
         }
 
 def formatear_respuesta_agente(data):
+    """
+    Formatea la respuesta del agente IA en un mensaje legible
+    """
     estacion = data.get("estacion", "Estación")
-    variable = data.get("variable", "variable")
+    variable = data.get("variable")  # Puede venir None
+    
+    # 🔧 CORRECCIÓN: Si variable es None, asignar "precipitacion"
+    if variable is None:
+        variable = "precipitacion"
+    
     datos = data.get("datos", [])
     contexto = data.get("contexto", {})
     fuente = data.get("fuente", "")
