@@ -16,10 +16,94 @@ from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils.dataframe import dataframe_to_rows
 
 # ============================================================
+# 0. CONFIGURACIÓN DE SEGURIDAD - OCULTAR ICONOS
+# ============================================================
+st.set_page_config(
+    page_title="Centro de Monitoreo - amb", 
+    page_icon="🌧️", 
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
+
+# CSS para ocultar TODOS los iconos en PC y MÓVIL
+hide_icons_css = """
+<style>
+    #MainMenu {visibility: hidden !important;}
+    footer {visibility: hidden !important;}
+    header {visibility: hidden !important;}
+    .stDeployButton {display: none !important;}
+    .stStatusWidget {display: none !important;}
+    .st-emotion-cache-1pcyk6h {display: none !important;}
+    .st-emotion-cache-1s6ru7r {display: none !important;}
+    .st-emotion-cache-1l1ao2d {display: none !important;}
+    .css-1dp5vir {display: none !important;}
+    .css-1v3fvcr {display: none !important;}
+    .st-emotion-cache-1v0mbdj {display: none !important;}
+    .st-emotion-cache-1r6slb0 {display: none !important;}
+    .st-emotion-cache-1cypcdb {display: none !important;}
+    .st-emotion-cache-12w0qpk {display: none !important;}
+    .st-emotion-cache-1u7k7i4 {display: none !important;}
+    .st-emotion-cache-1l3n35v {display: none !important;}
+    .st-emotion-cache-10o6l6i {display: none !important;}
+    .st-emotion-cache-1en7cgn {display: none !important;}
+    .st-emotion-cache-1n4a2cg {display: none !important;}
+    .st-emotion-cache-1f3wz7s {display: none !important;}
+    .st-emotion-cache-16idsys {display: none !important;}
+    .st-emotion-cache-1xr5uoi {display: none !important;}
+    .stApp > header {display: none !important;}
+    .stApp > div:first-child {padding-top: 0 !important;}
+    .stAppHeader {display: none !important;}
+    .st-emotion-cache-1v0mbdj {display: none !important;}
+    .st-emotion-cache-1xr8yuc {display: none !important;}
+    .st-emotion-cache-1sno8qh {display: none !important;}
+    body {
+        -webkit-user-select: none !important;
+        -moz-user-select: none !important;
+        -ms-user-select: none !important;
+        user-select: none !important;
+    }
+    @media (max-width: 768px) {
+        .st-emotion-cache-1r6slb0 {display: none !important;}
+        .st-emotion-cache-1cypcdb {display: none !important;}
+        .st-emotion-cache-12w0qpk {display: none !important;}
+        .st-emotion-cache-1u7k7i4 {display: none !important;}
+        .st-emotion-cache-1l3n35v {display: none !important;}
+        .st-emotion-cache-10o6l6i {display: none !important;}
+        .st-emotion-cache-1en7cgn {display: none !important;}
+        .st-emotion-cache-1n4a2cg {display: none !important;}
+        .st-emotion-cache-1f3wz7s {display: none !important;}
+        .st-emotion-cache-16idsys {display: none !important;}
+        .st-emotion-cache-1xr5uoi {display: none !important;}
+        .st-emotion-cache-1v0mbdj {display: none !important;}
+    }
+</style>
+"""
+st.markdown(hide_icons_css, unsafe_allow_html=True)
+
+# JavaScript para ocultar elementos en móvil
+hide_js = """
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        const footerElements = document.querySelectorAll('footer, .st-emotion-cache-1r6slb0, .st-emotion-cache-1cypcdb, .st-emotion-cache-12w0qpk');
+        footerElements.forEach(el => {
+            if (el) el.style.display = 'none';
+        });
+        const manageAppButtons = document.querySelectorAll('.st-emotion-cache-1u7k7i4, .st-emotion-cache-1l3n35v');
+        manageAppButtons.forEach(el => {
+            if (el) el.style.display = 'none';
+        });
+        const githubIcons = document.querySelectorAll('.css-1dp5vir, .css-1v3fvcr, .st-emotion-cache-1v0mbdj');
+        githubIcons.forEach(el => {
+            if (el) el.style.display = 'none';
+        });
+    });
+</script>
+"""
+st.markdown(hide_js, unsafe_allow_html=True)
+
+# ============================================================
 # 1. CONFIGURACIÓN Y LOGO
 # ============================================================
-st.set_page_config(page_title="Centro de Monitoreo - amb", page_icon="🌧️", layout="wide")
-
 logo_path = os.path.join(os.path.dirname(__file__), "amb_4_punto_cero.jpg")
 try:
     st.sidebar.image(logo_path, use_column_width=True)
@@ -52,8 +136,8 @@ umbrales = {
     "Vegas_del_Quemado": {"amarilla": 27.2, "naranja": 36.8, "roja": 55.8}
 }
 
-# Nivel de rebase del embalse
-NIVEL_REBASE_EMBALSE = 885.80
+# Nivel de rebose del embalse (CORREGIDO: antes era "rebase")
+NIVEL_REBOSE_EMBALSE = 885.80
 
 def obtener_alerta(precipitacion, estacion):
     if estacion == "Monsalve": 
@@ -75,11 +159,11 @@ def obtener_alerta(precipitacion, estacion):
     return "GRIS", "☁️ Sin lluvia", "#CCCCCC", "0s"
 
 def evaluar_nivel_embalse(nivel_actual):
-    excedente = nivel_actual - NIVEL_REBASE_EMBALSE
+    excedente = nivel_actual - NIVEL_REBOSE_EMBALSE  # CORREGIDO
     if excedente >= 0:
-        return "🔴 EXCEDENTE", "#FF4B4B", f"{excedente:.2f} msnm por encima del nivel de rebase", excedente
+        return "🔴 EXCEDENTE", "#FF4B4B", f"{excedente:.2f} msnm por encima del nivel de rebose", excedente  # CORREGIDO
     else:
-        return "🟢 NORMAL", "#00CC96", f"{abs(excedente):.2f} msnm por debajo del nivel de rebase", excedente
+        return "🟢 NORMAL", "#00CC96", f"{abs(excedente):.2f} msnm por debajo del nivel de rebose", excedente  # CORREGIDO
 
 # ============================================================
 # 5. CLIENTE BIGQUERY
@@ -412,12 +496,13 @@ def create_embalse_chart(df_hist):
             fillcolor='rgba(0, 191, 255, 0.2)'
         ))
         
+        # Línea de rebose (CORREGIDO: antes era "rebase")
         fig.add_hline(
-            y=NIVEL_REBASE_EMBALSE,
+            y=NIVEL_REBOSE_EMBALSE,
             line_dash="dash",
             line_color="red",
             line_width=2,
-            annotation_text=f"Línea de rebase: {NIVEL_REBASE_EMBALSE} msnm",
+            annotation_text=f"Nivel de rebose: {NIVEL_REBOSE_EMBALSE} msnm",
             annotation_position="top right"
         )
         
@@ -484,11 +569,22 @@ with tab1:
             
             col1, col2, col3 = st.columns(3)
             with col1:
-                st.metric("🌊 Nivel actual", f"{nivel_actual:.2f} msnm", delta=f"{excedente:.2f} msnm")
+                st.metric(
+                    "🌊 Nivel actual",
+                    f"{nivel_actual:.2f} msnm",
+                    delta=f"{excedente:.2f} msnm"
+                )
             with col2:
-                st.metric("📏 Nivel de Rebase", f"{NIVEL_REBASE_EMBALSE:.2f} msnm")
+                # CORREGIDO: "rebase" → "rebose"
+                st.metric(
+                    "📏 Nivel de Rebose",
+                    f"{NIVEL_REBOSE_EMBALSE:.2f} msnm"
+                )
             with col3:
-                st.metric("📊 Excédente", f"{excedente:+.2f} msnm")
+                st.metric(
+                    "📊 Excédente",
+                    f"{excedente:+.2f} msnm"
+                )
             
             if excedente >= 0:
                 st.error(f"🔴 {estado} - {mensaje}")
@@ -526,7 +622,7 @@ with tab1:
 # ============================================================
 with tab2:
     # ============================================================
-    # GRÁFICOS HISTÓRICOS (RESTAURADOS)
+    # GRÁFICOS HISTÓRICOS
     # ============================================================
     st.subheader("📈 Series de Tiempo")
     
@@ -592,7 +688,7 @@ with tab2:
                 )
             st.plotly_chart(fig_humedad, use_container_width=True)
         
-        # Rosa de los Vientos (si hay datos)
+        # Rosa de los Vientos
         if 'direccion_del_viento' in df_hist.columns and 'velocidad_viento' in df_hist.columns:
             st.markdown("### 🧭 Rosa de los Vientos")
             df_viento = df_hist.dropna(subset=['direccion_del_viento', 'velocidad_viento'])
@@ -619,7 +715,6 @@ with tab2:
     st.markdown("---")
     st.subheader("📥 Descarga Personalizada de Datos")
     
-    # OPCIONES DE PERÍODO PARA DESCARGA
     st.markdown("### 📅 Selecciona el período para descargar")
     
     col_periodo1, col_periodo2 = st.columns(2)
@@ -634,7 +729,6 @@ with tab2:
     with col_periodo2:
         opcion_personalizado = st.checkbox("📅 Personalizar fechas")
     
-    # Calcular fechas según el período seleccionado
     hoy = datetime.now(colombia_tz)
     
     if opcion_personalizado:
@@ -670,171 +764,4 @@ with tab2:
         elif opcion_periodo == "Mensual":
             fecha_inicio_descarga = hoy - timedelta(days=30)
             fecha_fin_descarga = hoy
-            periodo_descripcion = f"Mensual ({fecha_inicio_descarga.strftime('%d/%m/%Y')} - {fecha_fin_descarga.strftime('%d/%m/%Y')})"
-        elif opcion_periodo == "Semestral":
-            fecha_inicio_descarga = hoy - timedelta(days=180)
-            fecha_fin_descarga = hoy
-            periodo_descripcion = f"Semestral ({fecha_inicio_descarga.strftime('%d/%m/%Y')} - {fecha_fin_descarga.strftime('%d/%m/%Y')})"
-        else:
-            fecha_inicio_descarga = hoy - timedelta(days=365)
-            fecha_fin_descarga = hoy
-            periodo_descripcion = f"Anual ({fecha_inicio_descarga.strftime('%d/%m/%Y')} - {fecha_fin_descarga.strftime('%d/%m/%Y')})"
-    
-    st.info(f"📊 **Período seleccionado:** {periodo_descripcion}")
-    
-    if st.button("📥 Cargar datos para este período", use_container_width=True):
-        with st.spinner("🔄 Cargando datos históricos..."):
-            df_descarga = get_historical_data_range(
-                seleccion, 
-                fecha_inicio_descarga, 
-                fecha_fin_descarga
-            )
-            
-            if not df_descarga.empty:
-                st.session_state['df_descarga'] = df_descarga
-                st.session_state['periodo_descarga'] = periodo_descripcion
-                st.success(f"✅ Datos cargados: {len(df_descarga)} registros")
-            else:
-                st.warning("⚠️ No hay datos para el período seleccionado")
-    
-    if 'df_descarga' in st.session_state:
-        df_descarga = st.session_state['df_descarga']
-        periodo_descarga = st.session_state['periodo_descarga']
-        
-        with st.expander("📊 Ver resumen estadístico"):
-            st.text(generar_resumen_estadistico(df_descarga))
-        
-        with st.expander("📋 Ver datos cargados"):
-            st.dataframe(df_descarga, use_container_width=True)
-        
-        st.markdown("### 📥 Descargar hoja de datos")
-        st.caption("Selecciona el formato para descargar los datos históricos")
-        
-        col_export1, col_export2 = st.columns(2)
-        
-        df_export = preparar_df_para_exportar(df_descarga)
-        csv_data = df_export.to_csv(index=False).encode('utf-8-sig')
-        
-        with col_export1:
-            try:
-                excel_data = generar_excel_con_formato(df_descarga, seleccion, periodo_descarga)
-                st.download_button(
-                    "📊 Hoja de cálculo (.xlsx)",
-                    excel_data,
-                    f"{seleccion}_{datetime.now(colombia_tz).strftime('%Y%m%d_%H%M')}.xlsx",
-                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                    use_container_width=True
-                )
-                st.caption("✅ Formato Excel con metadatos y formato profesional")
-            except Exception as e:
-                st.error(f"Error al generar Excel: {e}")
-                st.download_button(
-                    "📊 Hoja de datos (alternativo)",
-                    csv_data,
-                    f"{seleccion}_{datetime.now(colombia_tz).strftime('%Y%m%d_%H%M')}.csv",
-                    "text/csv",
-                    use_container_width=True
-                )
-        
-        with col_export2:
-            st.download_button(
-                "📝 Google Sheets",
-                csv_data,
-                f"{seleccion}_{datetime.now(colombia_tz).strftime('%Y%m%d_%H%M')}.csv",
-                "text/csv",
-                use_container_width=True,
-                help="Formato CSV compatible con Google Sheets"
-            )
-            st.caption("📤 Abre en Google Sheets")
-        
-        st.caption(f"📋 Datos exportados desde el {SISTEMA}")
-
-# ============================================================
-# TAB 3: ASISTENTE IA
-# ============================================================
-with tab3:
-    st.subheader("🤖 Asistente IA - Centro de Monitoreo")
-    st.markdown("Pregunta sobre niveles, caudales, lluvias y estado de las estaciones.")
-    
-    with st.spinner("🔌 Verificando conexión..."):
-        if verificar_agente_ia():
-            st.success("✅ Agente IA conectado")
-        else:
-            st.warning("⚠️ No se pudo conectar al agente IA. Verifica la configuración.")
-    
-    if "messages" not in st.session_state:
-        st.session_state.messages = []
-    
-    for message in st.session_state.messages:
-        with st.chat_message(message["role"]):
-            st.markdown(message["content"])
-    
-    if prompt := st.chat_input("Escribe tu pregunta sobre las estaciones..."):
-        st.session_state.messages.append({"role": "user", "content": prompt})
-        with st.chat_message("user"):
-            st.markdown(prompt)
-        
-        with st.chat_message("assistant"):
-            with st.spinner("🤔 Analizando tu pregunta..."):
-                resultado = consultar_agente_ia(prompt)
-                
-                if resultado.get("status") == "ok":
-                    respuesta = resultado.get("mensaje", "✅ Consulta procesada exitosamente.")
-                    st.markdown(respuesta)
-                    st.session_state.messages.append({"role": "assistant", "content": respuesta})
-                elif resultado.get("status") == "sin_datos":
-                    mensaje = f"ℹ️ {resultado.get('mensaje', 'No se encontraron datos.')}"
-                    st.info(mensaje)
-                    st.session_state.messages.append({"role": "assistant", "content": mensaje})
-                else:
-                    error_msg = resultado.get("mensaje", "❌ Error al procesar la consulta.")
-                    st.error(error_msg)
-                    st.session_state.messages.append({"role": "assistant", "content": error_msg})
-    
-    col1, col2 = st.columns(2)
-    with col1:
-        if st.button("🗑️ Limpiar conversación", use_container_width=True):
-            st.session_state.messages = []
-            st.rerun()
-    with col2:
-        with st.expander("💡 Ejemplos de preguntas"):
-            st.markdown("""
-            **🌊 Sobre el embalse:**
-            - ¿Cómo está el nivel del embalse?
-            - ¿Por qué subió el nivel del embalse?
-            
-            **🌧️ Sobre estaciones:**
-            - ¿Cuánto llovió en El_Pajal ayer?
-            - Temperatura máxima en La_Mariana este mes
-            - ¿Cuál fue la humedad en Vegas del Quemado?
-            
-            **📊 Consultas avanzadas:**
-            - Comparar lluvias entre El_Pajal y Yerbabuena
-            - ¿Qué relación hay entre la lluvia y el nivel del embalse?
-            """)
-
-# ============================================================
-# 11. FOOTER Y SIDEBAR
-# ============================================================
-st.sidebar.markdown("---")
-st.sidebar.markdown("**Desarrollado por Mauricio Mora**")
-st.sidebar.caption("📊 Datos actualizados cada 5 minutos")
-
-with st.sidebar.expander("🌊 Información del Embalse"):
-    st.write(f"**Nivel de Rebase:** {NIVEL_REBASE_EMBALSE} msnm")
-    if not df.empty and seleccion == "Embalse":
-        nivel_actual = float(df.iloc[0].get('temperatura', 0))
-        excedente = nivel_actual - NIVEL_REBASE_EMBALSE
-        st.write(f"**Nivel Actual:** {nivel_actual:.2f} msnm")
-        if excedente >= 0:
-            st.error(f"**Excédente:** +{excedente:.2f} msnm")
-        else:
-            st.success(f"**Déficit:** {excedente:.2f} msnm")
-
-with st.sidebar.expander("🤖 Estado del Agente IA"):
-    st.write(f"**URL:** {AGENTE_API_URL}")
-    st.write("**Status:** ✅ Activo")
-    st.write("**Capacidades:**")
-    st.write("- 📊 Consultas SCADA (2026+)")
-    st.write("- 📜 Históricos (2004-2025)")
-    st.write("- 🌊 Análisis de embalse")
+            periodo_descripcion
