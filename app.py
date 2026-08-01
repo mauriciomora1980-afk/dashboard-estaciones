@@ -16,7 +16,7 @@ from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils.dataframe import dataframe_to_rows
 
 # ============================================================
-# 0. CONFIGURACIÓN DE SEGURIDAD - OCULTAR ICONOS (MEJORADO)
+# 0. CONFIGURACIÓN DE SEGURIDAD - OCULTAR ICONOS
 # ============================================================
 st.set_page_config(
     page_title="Centro de Monitoreo - amb", 
@@ -25,10 +25,9 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# CSS MEJORADO para ocultar TODOS los iconos en PC y MÓVIL
+# CSS para ocultar TODOS los iconos en PC y MÓVIL
 hide_icons_css = """
 <style>
-    /* === OCULTAR TODO EN PC === */
     #MainMenu {visibility: hidden !important;}
     footer {visibility: hidden !important;}
     header {visibility: hidden !important;}
@@ -57,21 +56,15 @@ hide_icons_css = """
     .st-emotion-cache-1v0mbdj {display: none !important;}
     .st-emotion-cache-1xr8yuc {display: none !important;}
     .st-emotion-cache-1sno8qh {display: none !important;}
-    
-    /* === OCULTAR "Created with Streamlit" === */
     .st-emotion-cache-1gulkj5 {display: none !important;}
     .st-emotion-cache-1gulkj5 a {display: none !important;}
     .st-emotion-cache-1gulkj5 span {display: none !important;}
-    
-    /* === DESHABILITAR CLICK DERECHO === */
     body {
         -webkit-user-select: none !important;
         -moz-user-select: none !important;
         -ms-user-select: none !important;
         user-select: none !important;
     }
-    
-    /* === MÓVIL: OCULTAR TODO === */
     @media (max-width: 768px) {
         footer {display: none !important;}
         .st-emotion-cache-1r6slb0 {display: none !important;}
@@ -80,8 +73,6 @@ hide_icons_css = """
         .st-emotion-cache-16idsys {display: none !important;}
         .st-emotion-cache-1xr5uoi {display: none !important;}
         .st-emotion-cache-1gulkj5 {display: none !important;}
-        .st-emotion-cache-1gulkj5 a {display: none !important;}
-        .st-emotion-cache-1gulkj5 span {display: none !important;}
         .st-emotion-cache-1v0mbdj {display: none !important;}
         .st-emotion-cache-1dp5vir {display: none !important;}
         .st-emotion-cache-1v3fvcr {display: none !important;}
@@ -97,12 +88,9 @@ hide_icons_css = """
         .st-emotion-cache-1l1ao2d {display: none !important;}
         header {display: none !important;}
         .stAppHeader {display: none !important;}
-        .stApp > header {display: none !important;}
         .stDeployButton {display: none !important;}
         .stStatusWidget {display: none !important;}
     }
-    
-    /* === MÓVIL PEQUEÑO (menos de 480px) === */
     @media (max-width: 480px) {
         footer {display: none !important;}
         .st-emotion-cache-1r6slb0 {display: none !important;}
@@ -118,48 +106,26 @@ hide_icons_css = """
 """
 st.markdown(hide_icons_css, unsafe_allow_html=True)
 
-# JavaScript para eliminar elementos del DOM en móvil
+# JavaScript para eliminar elementos del DOM
 hide_js = """
 <script>
     function eliminarElementos() {
         const selectores = [
-            'footer',
-            '.st-emotion-cache-1r6slb0',
-            '.st-emotion-cache-1cypcdb',
-            '.st-emotion-cache-12w0qpk',
-            '.st-emotion-cache-16idsys',
-            '.st-emotion-cache-1xr5uoi',
-            '.st-emotion-cache-1gulkj5',
-            '.st-emotion-cache-1v0mbdj',
-            '.st-emotion-cache-1dp5vir',
-            '.st-emotion-cache-1v3fvcr',
-            '.st-emotion-cache-1u7k7i4',
-            '.st-emotion-cache-1l3n35v',
-            '.st-emotion-cache-10o6l6i',
-            '.st-emotion-cache-1en7cgn',
-            '.st-emotion-cache-1n4a2cg',
-            '.st-emotion-cache-1f3wz7s',
-            '#MainMenu',
-            '.st-emotion-cache-1pcyk6h',
-            '.st-emotion-cache-1s6ru7r',
-            '.st-emotion-cache-1l1ao2d',
-            'header',
-            '.stAppHeader',
-            '.stDeployButton',
-            '.stStatusWidget'
+            'footer', '.st-emotion-cache-1r6slb0', '.st-emotion-cache-1cypcdb',
+            '.st-emotion-cache-12w0qpk', '.st-emotion-cache-16idsys', '.st-emotion-cache-1xr5uoi',
+            '.st-emotion-cache-1gulkj5', '.st-emotion-cache-1v0mbdj', '.st-emotion-cache-1dp5vir',
+            '.st-emotion-cache-1v3fvcr', '.st-emotion-cache-1u7k7i4', '.st-emotion-cache-1l3n35v',
+            '.st-emotion-cache-10o6l6i', '.st-emotion-cache-1en7cgn', '.st-emotion-cache-1n4a2cg',
+            '.st-emotion-cache-1f3wz7s', '#MainMenu', '.st-emotion-cache-1pcyk6h',
+            '.st-emotion-cache-1s6ru7r', '.st-emotion-cache-1l1ao2d', 'header',
+            '.stAppHeader', '.stDeployButton', '.stStatusWidget'
         ];
-        
         selectores.forEach(selector => {
             const elementos = document.querySelectorAll(selector);
-            elementos.forEach(el => {
-                if (el) el.style.display = 'none';
-            });
+            elementos.forEach(el => { if (el) el.style.display = 'none'; });
         });
     }
-    
-    document.addEventListener('DOMContentLoaded', function() {
-        eliminarElementos();
-    });
+    document.addEventListener('DOMContentLoaded', function() { eliminarElementos(); });
     setTimeout(eliminarElementos, 1000);
     setTimeout(eliminarElementos, 2000);
     setTimeout(eliminarElementos, 3000);
@@ -202,7 +168,6 @@ umbrales = {
     "Vegas_del_Quemado": {"amarilla": 27.2, "naranja": 36.8, "roja": 55.8}
 }
 
-# Nivel de rebose del embalse
 NIVEL_REBOSE_EMBALSE = 885.80
 
 def obtener_alerta(precipitacion, estacion):
@@ -269,9 +234,6 @@ def get_last_reading(estacion):
 
 @st.cache_data(ttl=600)
 def get_historical_data_range(estacion, fecha_inicio, fecha_fin):
-    """
-    Obtiene datos históricos entre dos fechas específicas
-    """
     try:
         if isinstance(fecha_inicio, datetime):
             fecha_inicio_str = fecha_inicio.strftime('%Y-%m-%d')
@@ -304,47 +266,31 @@ def get_historical_data_range(estacion, fecha_inicio, fecha_fin):
 # 7. FUNCIONES DE EXPORTACIÓN
 # ============================================================
 def preparar_df_para_exportar(df):
-    """
-    Prepara el DataFrame para exportación eliminando timezone
-    """
     df_export = df.copy()
-    
-    # Convertir timestamp a naive (sin timezone) para Excel
     if 'timestamp' in df_export.columns:
         df_export['timestamp'] = df_export['timestamp'].dt.tz_localize(None)
-    
     return df_export
 
 def generar_excel_con_formato(df, nombre_estacion, periodo_descripcion):
-    """
-    Genera un archivo Excel con formato profesional
-    """
-    # Preparar datos para Excel (eliminar timezone)
     df_export = preparar_df_para_exportar(df)
-    
     output = BytesIO()
     
     with pd.ExcelWriter(output, engine='openpyxl') as writer:
-        # Hoja principal con datos
         df_export.to_excel(writer, sheet_name='Datos', index=False)
         
-        # Obtener el libro y la hoja
         workbook = writer.book
         worksheet = writer.sheets['Datos']
         
-        # Estilos para encabezados
         header_font = Font(bold=True, color="FFFFFF")
         header_fill = PatternFill(start_color="2E75B6", end_color="2E75B6", fill_type="solid")
         header_alignment = Alignment(horizontal="center", vertical="center")
         
-        # Aplicar estilos a los encabezados
         for col in range(1, len(df_export.columns) + 1):
             cell = worksheet.cell(row=1, column=col)
             cell.font = header_font
             cell.fill = header_fill
             cell.alignment = header_alignment
         
-        # Ajustar ancho de columnas
         for col in worksheet.columns:
             max_length = 0
             column = col[0].column_letter
@@ -357,7 +303,6 @@ def generar_excel_con_formato(df, nombre_estacion, periodo_descripcion):
             adjusted_width = min(max_length + 2, 50)
             worksheet.column_dimensions[column].width = adjusted_width
         
-        # Agregar hoja de metadatos
         metadata = pd.DataFrame({
             'Propiedad': ['Sistema', 'Estación', 'Período', 'Fecha de exportación', 'Total de registros', 'Versión'],
             'Valor': [
@@ -371,7 +316,6 @@ def generar_excel_con_formato(df, nombre_estacion, periodo_descripcion):
         })
         metadata.to_excel(writer, sheet_name='Metadatos', index=False)
         
-        # Estilos para metadatos
         metadata_sheet = writer.sheets['Metadatos']
         for col in range(1, 3):
             cell = metadata_sheet.cell(row=1, column=col)
@@ -381,9 +325,6 @@ def generar_excel_con_formato(df, nombre_estacion, periodo_descripcion):
     return output.getvalue()
 
 def generar_resumen_estadistico(df):
-    """
-    Genera un resumen estadístico de los datos
-    """
     if df.empty:
         return "No hay datos disponibles"
     
@@ -394,7 +335,6 @@ def generar_resumen_estadistico(df):
     resumen.append("📋 Datos generados automáticamente por el sistema")
     resumen.append("")
     
-    # Columnas numéricas
     columnas_numericas = ['temperatura', 'precipitacion', 'humedad', 'presion', 'velocidad_viento', 'voltaje_bateria']
     for col in columnas_numericas:
         if col in df.columns:
@@ -590,7 +530,6 @@ def create_embalse_chart(df_hist):
 estaciones = ["La_Mariana", "Yerbabuena", "Vegas_del_Quemado", "El_Pajal", "Monsalve", "Embalse"]
 seleccion = st.sidebar.selectbox("Seleccione Estación:", estaciones)
 
-# Opciones de período histórico para el gráfico
 periodos_grafico = {
     "Últimas 24 horas": 24,
     "Últimos 3 días": 72,
@@ -609,15 +548,15 @@ if seleccion == "Embalse":
 else:
     horas = st.sidebar.slider("⏱️ Horas históricas:", 1, 168, 24, step=1)
 
-# Cargar datos para el gráfico
 with st.spinner("🔄 Cargando datos..."):
     df = get_last_reading(seleccion)
-    # Para el gráfico usamos las últimas horas
     fecha_fin = datetime.now(colombia_tz)
     fecha_inicio = fecha_fin - timedelta(hours=horas)
     df_hist = get_historical_data_range(seleccion, fecha_inicio, fecha_fin)
 
-# Tabs
+# ============================================================
+# TABS
+# ============================================================
 tab1, tab2, tab3 = st.tabs(["📊 Situación Actual", "📈 Históricos", "🤖 Asistente IA"])
 
 # ============================================================
@@ -672,16 +611,13 @@ with tab1:
         st.warning("⚠️ Sin datos.")
 
 # ============================================================
-# TAB 2: HISTÓRICOS CON GRÁFICOS Y DESCARGA PERSONALIZADA
+# TAB 2: HISTÓRICOS
 # ============================================================
 with tab2:
-    # ============================================================
-    # GRÁFICOS HISTÓRICOS
-    # ============================================================
     st.subheader("📈 Series de Tiempo")
     
     if not df_hist.empty:
-        # Gráfico de Temperatura
+        # Temperatura
         st.markdown("### 🌡️ Temperatura")
         fig_temp = px.line(
             df_hist.sort_values('timestamp'), 
@@ -700,7 +636,7 @@ with tab2:
             )
         st.plotly_chart(fig_temp, use_container_width=True)
         
-        # Gráfico de Precipitación
+        # Precipitación
         st.markdown("### 🌧️ Precipitación")
         fig_precip = px.bar(
             df_hist.sort_values('timestamp'), 
@@ -714,7 +650,7 @@ with tab2:
         fig_precip.update_layout(height=300, template='plotly_white')
         st.plotly_chart(fig_precip, use_container_width=True)
         
-        # Gráfico de Humedad
+        # Humedad
         if 'humedad' in df_hist.columns:
             st.markdown("### 💧 Humedad")
             fig_humedad = px.line(
@@ -755,4 +691,48 @@ with tab2:
     else:
         st.info("ℹ️ No hay datos históricos disponibles para este período")
     
-    # =========================================================
+    # ============================================================
+    # DESCARGA PERSONALIZADA
+    # ============================================================
+    st.markdown("---")
+    st.subheader("📥 Descarga Personalizada de Datos")
+    
+    st.markdown("### 📅 Selecciona el período para descargar")
+    
+    col_periodo1, col_periodo2 = st.columns(2)
+    
+    with col_periodo1:
+        opcion_periodo = st.radio(
+            "Período:",
+            ["Diario", "Semanal", "Mensual", "Semestral", "Anual"],
+            index=0
+        )
+    
+    with col_periodo2:
+        opcion_personalizado = st.checkbox("📅 Personalizar fechas")
+    
+    hoy = datetime.now(colombia_tz)
+    
+    if opcion_personalizado:
+        st.markdown("### 📅 Selecciona las fechas personalizadas")
+        col_fecha1, col_fecha2 = st.columns(2)
+        with col_fecha1:
+            fecha_inicio_descarga = st.date_input(
+                "Fecha de inicio:",
+                value=hoy - timedelta(days=30),
+                max_value=hoy
+            )
+        with col_fecha2:
+            fecha_fin_descarga = st.date_input(
+                "Fecha de fin:",
+                value=hoy,
+                max_value=hoy
+            )
+        
+        if fecha_inicio_descarga > fecha_fin_descarga:
+            st.error("❌ La fecha de inicio no puede ser mayor que la fecha de fin")
+            st.stop()
+        
+        periodo_descripcion = f"Personalizado ({fecha_inicio_descarga.strftime('%d/%m/%Y')} - {fecha_fin_descarga.strftime('%d/%m/%Y')})"
+    else:
+        if op
