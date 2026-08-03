@@ -60,7 +60,8 @@ umbrales = {
     "Vegas_del_Quemado": {"amarilla": 27.2, "naranja": 36.8, "roja": 55.8}
 }
 
-NIVEL_REBOSE_EMBALSE = 885.80
+# Nivel de rebose del embalse - ACTUALIZADO a 885.75
+NIVEL_REBOSE_EMBALSE = 885.75
 
 def obtener_alerta(precipitacion, estacion):
     if estacion == "Monsalve": 
@@ -242,7 +243,7 @@ def generar_resumen_estadistico(df):
     return "\n".join(resumen)
 
 # ============================================================
-# 8. FUNCIÓN PARA CONSULTAR AGENTE IA (ACTUALIZADA)
+# 8. FUNCIÓN PARA CONSULTAR AGENTE IA
 # ============================================================
 def consultar_agente_ia(pregunta):
     try:
@@ -254,9 +255,7 @@ def consultar_agente_ia(pregunta):
         if response.status_code == 200:
             data = response.json()
             
-            # Verificar si la respuesta tiene el formato esperado
             if isinstance(data, dict):
-                # Si el agente devolvió un mensaje directamente
                 if "mensaje" in data:
                     return {
                         "status": "ok",
@@ -268,7 +267,6 @@ def consultar_agente_ia(pregunta):
                         "fuente": data.get("fuente", ""),
                         "raw": data
                     }
-                # Si el agente devolvió datos estructurados
                 elif data.get("status") == "ok":
                     if "mensaje" in data and data["mensaje"]:
                         return {
@@ -321,7 +319,6 @@ def formatear_respuesta_agente(data):
     estacion = data.get("estacion", "Estación")
     variable = data.get("variable")
     
-    # Si variable es None, asignar "precipitacion"
     if variable is None:
         variable = "precipitacion"
     
@@ -331,7 +328,6 @@ def formatear_respuesta_agente(data):
     periodo = data.get("periodo", {})
     mensaje = data.get("mensaje", "")
     
-    # Si el agente ya devolvió un mensaje formateado, usarlo directamente
     if mensaje:
         return {
             "status": "ok",
@@ -341,7 +337,6 @@ def formatear_respuesta_agente(data):
             "raw": data
         }
     
-    # Para otras estaciones, formatear normalmente
     nombres_variables = {
         "precipitacion": "Precipitación",
         "temperatura": "Temperatura",
@@ -502,9 +497,13 @@ with tab1:
         st.subheader(f"📡 Real-time: {seleccion}")
         
         if seleccion == "Embalse":
+            # ============================================
+            # EMBALSE - SOLO NIVEL
+            # ============================================
             nivel_actual = float(row.get('temperatura', 0))
             estado, color, mensaje, excedente = evaluar_nivel_embalse(nivel_actual)
             
+            # Solo mostrar métricas del embalse
             col1, col2, col3 = st.columns(3)
             with col1:
                 st.metric("🌊 Nivel actual", f"{nivel_actual:.2f} msnm", delta=f"{excedente:.2f} msnm")
@@ -515,9 +514,20 @@ with tab1:
             
             if excedente >= 0:
                 st.error(f"🔴 {estado} - {mensaje}")
+                st.warning("⚠️ El embalse está por encima del nivel de rebose. ¡Monitorear constantemente!")
             else:
                 st.success(f"🟢 {estado} - {mensaje}")
+            
+            # Mostrar voltaje de batería si existe
+            if 'voltaje_bateria' in row:
+                st.metric("🔋 Voltaje", f"{float(row['voltaje_bateria']):.1f} V")
+            
+            st.info(f"📅 Última lectura: {row['timestamp'].strftime('%Y-%m-%d %H:%M:%S')}")
+            
         else:
+            # ============================================
+            # OTRAS ESTACIONES - TODAS LAS MÉTRICAS
+            # ============================================
             nombre, msg, color, vel = obtener_alerta(float(row.get('precipitacion', 0)), seleccion)
             st.markdown(f'''
             <div style="background-color:{color}; padding:20px; border-radius:15px; text-align:center; color:black; animation: blink {vel} infinite; border: 2px solid #333;">
@@ -539,8 +549,19 @@ with tab1:
             c2.metric("🌧️ Precip", f"{float(row['precipitacion']):.1f} mm")
             c3.metric("💧 Humedad", f"{float(row['humedad']):.1f} %")
             c4.metric("🔋 Voltaje", f"{float(row['voltaje_bateria']):.1f} V")
-        
-        st.info(f"📅 Última lectura: {row['timestamp'].strftime('%Y-%m-%d %H:%M:%S')}")
+            
+            st.info(f"📅 Última lectura: {row['timestamp'].strftime('%Y-%m-%d %H:%M:%S')}")
+            
+            # Estadísticas del período para otras estaciones
+            if not df_hist.empty:
+                st.markdown("### 📊 Estadísticas del Período")
+                col1, col2, col3 = st.columns(3)
+                with col1:
+                    st.metric("🔽 Temp Mínima", f"{df_hist['temperatura'].min():.1f}°C")
+                with col2:
+                    st.metric("🔼 Temp Máxima", f"{df_hist['temperatura'].max():.1f}°C")
+                with col3:
+                    st.metric("📊 Temp Promedio", f"{df_hist['temperatura'].mean():.1f}°C")
     else:
         st.warning("⚠️ Sin datos.")
 
@@ -551,77 +572,104 @@ with tab2:
     st.subheader("📈 Series de Tiempo")
     
     if not df_hist.empty:
-        # Gráfico de Temperatura
-        st.markdown("### 🌡️ Temperatura")
-        fig_temp = px.line(
-            df_hist.sort_values('timestamp'), 
-            x='timestamp', 
-            y='temperatura',
-            title=f'Temperatura - {seleccion}',
-            labels={'temperatura': '°C', 'timestamp': 'Fecha/Hora'}
-        )
-        fig_temp.update_layout(height=300, template='plotly_white', hovermode='x unified')
-        if len(df_hist) > 1:
-            fig_temp.add_hline(
-                y=df_hist['temperatura'].mean(), 
-                line_dash="dash", 
-                line_color="red",
-                annotation_text=f"Promedio: {df_hist['temperatura'].mean():.1f}°C"
-            )
-        st.plotly_chart(fig_temp, use_container_width=True)
-        
-        # Gráfico de Precipitación
-        st.markdown("### 🌧️ Precipitación")
-        fig_precip = px.bar(
-            df_hist.sort_values('timestamp'), 
-            x='timestamp', 
-            y='precipitacion',
-            title=f'Precipitación - {seleccion}',
-            labels={'precipitacion': 'mm', 'timestamp': 'Fecha/Hora'},
-            color='precipitacion',
-            color_continuous_scale='Blues'
-        )
-        fig_precip.update_layout(height=300, template='plotly_white')
-        st.plotly_chart(fig_precip, use_container_width=True)
-        
-        # Gráfico de Humedad
-        if 'humedad' in df_hist.columns:
-            st.markdown("### 💧 Humedad")
-            fig_humedad = px.line(
+        if seleccion == "Embalse":
+            # ============================================
+            # EMBALSE - SOLO GRÁFICO DE NIVEL
+            # ============================================
+            st.markdown("### 🌊 Nivel del Embalse")
+            
+            # Gráfico del embalse
+            fig_embalse = create_embalse_chart(df_hist)
+            if fig_embalse:
+                st.plotly_chart(fig_embalse, use_container_width=True)
+            
+            # Mostrar última lectura
+            ultima_lectura = df_hist.iloc[0]
+            st.info(f"📊 Último nivel registrado: {ultima_lectura['temperatura']:.2f} msnm")
+            
+            # Tabla de datos recientes - SOLO COLUMNAS RELEVANTES
+            with st.expander("📋 Ver datos detallados"):
+                # Mostrar solo columnas del embalse
+                columnas_embalse = ['timestamp', 'temperatura', 'voltaje_bateria']
+                df_embalse_mostrar = df_hist[columnas_embalse].copy()
+                df_embalse_mostrar.columns = ['Fecha/Hora', 'Nivel (msnm)', 'Voltaje (V)']
+                st.dataframe(df_embalse_mostrar.head(20), use_container_width=True)
+            
+        else:
+            # ============================================
+            # OTRAS ESTACIONES - TODOS LOS GRÁFICOS
+            # ============================================
+            # Gráfico de Temperatura
+            st.markdown("### 🌡️ Temperatura")
+            fig_temp = px.line(
                 df_hist.sort_values('timestamp'), 
                 x='timestamp', 
-                y='humedad',
-                title=f'Humedad - {seleccion}',
-                labels={'humedad': '%', 'timestamp': 'Fecha/Hora'}
+                y='temperatura',
+                title=f'Temperatura - {seleccion}',
+                labels={'temperatura': '°C', 'timestamp': 'Fecha/Hora'}
             )
-            fig_humedad.update_layout(height=300, template='plotly_white', hovermode='x unified')
+            fig_temp.update_layout(height=300, template='plotly_white', hovermode='x unified')
             if len(df_hist) > 1:
-                fig_humedad.add_hline(
-                    y=df_hist['humedad'].mean(), 
+                fig_temp.add_hline(
+                    y=df_hist['temperatura'].mean(), 
                     line_dash="dash", 
                     line_color="red",
-                    annotation_text=f"Promedio: {df_hist['humedad'].mean():.1f}%"
+                    annotation_text=f"Promedio: {df_hist['temperatura'].mean():.1f}°C"
                 )
-            st.plotly_chart(fig_humedad, use_container_width=True)
-        
-        # Rosa de los Vientos
-        if 'direccion_del_viento' in df_hist.columns and 'velocidad_viento' in df_hist.columns:
-            st.markdown("### 🧭 Rosa de los Vientos")
-            df_viento = df_hist.dropna(subset=['direccion_del_viento', 'velocidad_viento'])
-            if not df_viento.empty:
-                fig_viento = px.bar_polar(
-                    df_viento,
-                    r="velocidad_viento",
-                    theta="direccion_del_viento",
-                    color="velocidad_viento",
-                    color_continuous_scale='Viridis',
-                    title=f'Rosa de Vientos - {seleccion}',
-                    template='plotly_white'
+            st.plotly_chart(fig_temp, use_container_width=True)
+            
+            # Gráfico de Precipitación
+            st.markdown("### 🌧️ Precipitación")
+            fig_precip = px.bar(
+                df_hist.sort_values('timestamp'), 
+                x='timestamp', 
+                y='precipitacion',
+                title=f'Precipitación - {seleccion}',
+                labels={'precipitacion': 'mm', 'timestamp': 'Fecha/Hora'},
+                color='precipitacion',
+                color_continuous_scale='Blues'
+            )
+            fig_precip.update_layout(height=300, template='plotly_white')
+            st.plotly_chart(fig_precip, use_container_width=True)
+            
+            # Gráfico de Humedad
+            if 'humedad' in df_hist.columns:
+                st.markdown("### 💧 Humedad")
+                fig_humedad = px.line(
+                    df_hist.sort_values('timestamp'), 
+                    x='timestamp', 
+                    y='humedad',
+                    title=f'Humedad - {seleccion}',
+                    labels={'humedad': '%', 'timestamp': 'Fecha/Hora'}
                 )
-                fig_viento.update_layout(height=400)
-                st.plotly_chart(fig_viento, use_container_width=True)
-            else:
-                st.info("ℹ️ No hay datos de viento disponibles para esta estación")
+                fig_humedad.update_layout(height=300, template='plotly_white', hovermode='x unified')
+                if len(df_hist) > 1:
+                    fig_humedad.add_hline(
+                        y=df_hist['humedad'].mean(), 
+                        line_dash="dash", 
+                        line_color="red",
+                        annotation_text=f"Promedio: {df_hist['humedad'].mean():.1f}%"
+                    )
+                st.plotly_chart(fig_humedad, use_container_width=True)
+            
+            # Rosa de los Vientos
+            if 'direccion_del_viento' in df_hist.columns and 'velocidad_viento' in df_hist.columns:
+                st.markdown("### 🧭 Rosa de los Vientos")
+                df_viento = df_hist.dropna(subset=['direccion_del_viento', 'velocidad_viento'])
+                if not df_viento.empty:
+                    fig_viento = px.bar_polar(
+                        df_viento,
+                        r="velocidad_viento",
+                        theta="direccion_del_viento",
+                        color="velocidad_viento",
+                        color_continuous_scale='Viridis',
+                        title=f'Rosa de Vientos - {seleccion}',
+                        template='plotly_white'
+                    )
+                    fig_viento.update_layout(height=400)
+                    st.plotly_chart(fig_viento, use_container_width=True)
+                else:
+                    st.info("ℹ️ No hay datos de viento disponibles para esta estación")
     else:
         st.info("ℹ️ No hay datos históricos disponibles para este período")
     
@@ -760,44 +808,36 @@ with tab2:
         st.caption(f"📋 Datos exportados desde el {SISTEMA}")
 
 # ============================================================
-# TAB 3: ASISTENTE IA - CON CHAT FUNCIONAL
+# TAB 3: ASISTENTE IA
 # ============================================================
 with tab3:
     st.subheader("🤖 Asistente IA - Centro de Monitoreo")
     st.markdown("Pregunta sobre niveles, caudales, lluvias y estado de las estaciones.")
     
-    # Verificar conexión con el agente
     with st.spinner("🔌 Verificando conexión..."):
         if verificar_agente_ia():
             st.success("✅ Agente IA conectado")
         else:
             st.warning("⚠️ No se pudo conectar al agente IA. Verifica la configuración.")
     
-    # Inicializar historial del chat
     if "messages" not in st.session_state:
         st.session_state.messages = []
     
-    # Contenedor para mensajes del chat
     chat_container = st.container()
     
-    # Mostrar mensajes anteriores
     with chat_container:
         for message in st.session_state.messages:
             with st.chat_message(message["role"]):
                 st.markdown(message["content"])
     
-    # Input del usuario (SIEMPRE visible)
     prompt = st.chat_input("Escribe tu pregunta sobre las estaciones...")
     
     if prompt:
-        # Agregar mensaje del usuario
         st.session_state.messages.append({"role": "user", "content": prompt})
         
-        # Mostrar mensaje del usuario
         with st.chat_message("user"):
             st.markdown(prompt)
         
-        # Procesar consulta con el agente IA
         with st.chat_message("assistant"):
             with st.spinner("🤔 Analizando tu pregunta..."):
                 resultado = consultar_agente_ia(prompt)
@@ -817,7 +857,6 @@ with tab3:
         
         st.rerun()
     
-    # Botones de acción
     col1, col2 = st.columns(2)
     with col1:
         if st.button("🗑️ Limpiar conversación", use_container_width=True):
@@ -828,14 +867,12 @@ with tab3:
             st.markdown("""
             **🌊 Sobre el embalse:**
             - ¿Cómo está el nivel del embalse?
-            - ¿Por qué subió el nivel del embalse?
             - Nivel a las 3 de la mañana
             - Promedio nivel últimas 24 horas
             
             **🌧️ Sobre estaciones:**
             - ¿Cuánto llovió en El_Pajal ayer?
             - Temperatura máxima en La_Mariana este mes
-            - ¿Cuál fue la humedad en Vegas del Quemado?
             - Temperatura a las 15:00 en El_Pajal
             
             **📊 Consultas avanzadas:**
@@ -850,7 +887,6 @@ st.sidebar.markdown("---")
 st.sidebar.markdown("**Desarrollado por Mauricio Mora**")
 st.sidebar.caption("📊 Datos actualizados cada 5 minutos")
 
-# Información del embalse
 with st.sidebar.expander("🌊 Información del Embalse"):
     st.write(f"**Nivel de Rebose:** {NIVEL_REBOSE_EMBALSE} msnm")
     if not df.empty and seleccion == "Embalse":
@@ -862,7 +898,6 @@ with st.sidebar.expander("🌊 Información del Embalse"):
         else:
             st.success(f"**Déficit:** {excedente:.2f} msnm")
 
-# Estado del agente IA
 with st.sidebar.expander("🤖 Estado del Agente IA"):
     st.write(f"**URL:** {AGENTE_API_URL}")
     st.write("**Status:** ✅ Activo")
