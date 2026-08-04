@@ -313,9 +313,6 @@ def consultar_agente_ia(pregunta):
         }
 
 def formatear_respuesta_agente(data):
-    """
-    Formatea la respuesta del agente IA en un mensaje legible
-    """
     estacion = data.get("estacion", "Estación")
     variable = data.get("variable")
     
@@ -473,7 +470,10 @@ def get_edv_data(extensometro='izquierdo'):
             cota,
             asiento,
             dist_datum,
-            tag
+            tag,
+            notas,
+            usuario,
+            es_correccion
         FROM `gen-lang-client-0342049346.amb_hidrologia.{table}`
         ORDER BY fecha DESC, CAST(anillo AS INT64) DESC
         """
@@ -512,6 +512,16 @@ def create_edv_profile(df, fecha_seleccionada=None, titulo="Perfil de Deformacio
         marker=dict(size=12, color='#FF4B4B')
     ))
     
+    # Línea de referencia en 0 (sin deformación)
+    fig.add_vline(
+        x=0,
+        line_dash="dash",
+        line_color="gray",
+        line_width=1,
+        annotation_text="Sin deformación",
+        annotation_position="top"
+    )
+    
     # Línea de referencia FONDO
     fig.add_hline(
         y=0,
@@ -532,7 +542,7 @@ def create_edv_profile(df, fecha_seleccionada=None, titulo="Perfil de Deformacio
     )
     return fig
 
-def create_edv_multiple_profiles(df, max_profiles=8):
+def create_edv_multiple_profiles(df, max_profiles=10):
     """
     Crea un perfil con múltiples fechas
     """
@@ -712,7 +722,7 @@ def mostrar_seccion_edv():
     # Datos detallados
     with st.expander("📋 Ver datos detallados"):
         st.dataframe(
-            df_edv[['fecha', 'anillo', 'lectura', 'cota', 'asiento']],
+            df_edv[['fecha', 'anillo', 'lectura', 'cota', 'asiento', 'dist_datum']],
             use_container_width=True,
             column_config={
                 "fecha": st.column_config.DateColumn("Fecha"),
@@ -720,6 +730,7 @@ def mostrar_seccion_edv():
                 "lectura": st.column_config.NumberColumn("Lectura (mm)", format="%.2f"),
                 "cota": st.column_config.NumberColumn("Cota (msnm)", format="%.2f"),
                 "asiento": st.column_config.NumberColumn("Asiento (cm)", format="%.2f"),
+                "dist_datum": st.column_config.NumberColumn("Dist. Datum (m)", format="%.2f"),
             }
         )
         
@@ -1187,3 +1198,21 @@ with st.sidebar.expander("📏 Extensómetros (EDV)"):
     st.write("- EDV Derecho: 4,323 registros")
     st.write("**Período:** 2013-2025")
     st.write("**Estado:** ✅ Activo")
+    
+    st.markdown("---")
+    st.markdown("### 📱 Registrar nueva medición")
+    st.markdown("""
+    **Instrucciones:**
+    1. Abre el formulario desde tu celular
+    2. Llena los datos de los extensómetros
+    3. Si es corrección, usa la contraseña
+    
+    [📝 Abrir formulario de registro](
+    https://forms.gle/TU_ENLACE_AQUI
+    )
+    
+    🔒 **Seguridad:**
+    - Solo usuarios autorizados
+    - Correcciones con contraseña
+    - Auditoría de cambios
+    """)
