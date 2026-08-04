@@ -451,7 +451,7 @@ def create_embalse_chart(df_hist):
         return None
 
 # ============================================================
-# 9.5 FUNCIONES PARA EDV (EXTENSÓMETROS) - CORREGIDO
+# 9.5 FUNCIONES PARA EDV (EXTENSÓMETROS)
 # ============================================================
 
 @st.cache_data(ttl=600)
@@ -1157,15 +1157,17 @@ with st.sidebar.expander("📏 Extensómetros (EDV)"):
     st.markdown("---")
     st.markdown("### 📱 Registrar nueva medición")
     st.markdown("""
-    **Instrucciones:**
-    1. Abre el formulario desde tu celular
-    2. Llena los datos de los extensómetros
-    3. Si es corrección, usa la contraseña
+    **📊 Usa la hoja de cálculo para registrar:**
     
-    [📝 Abrir formulario de registro](https://forms.gle/TU_ENLACE_AQUI)
+    [📝 Abrir hoja de EDV](https://docs.google.com/spreadsheets/d/TU_ID_AQUI)
+    
+    **Instrucciones:**
+    1. Carga lecturas anteriores (menú EDV)
+    2. Ingresa lecturas actuales
+    3. Genera formato impresión
+    4. Sube a BigQuery
     
     🔒 **Seguridad:**
-    - Solo usuarios autorizados
-    - Correcciones con contraseña
-    - Auditoría de cambios
+    - Solo administrador puede subir datos
+    - Operadores pueden llenar y firmar
     """)
