@@ -454,7 +454,7 @@ def create_embalse_chart(df_hist):
         return None
 
 # ============================================================
-# 9.5 FUNCIONES PARA EDV (EXTENSÓMETROS) - VERSIÓN MEJORADA
+# 9.5 FUNCIONES PARA EDV (EXTENSÓMETROS)
 # ============================================================
 
 @st.cache_data(ttl=600)
@@ -472,8 +472,8 @@ def get_edv_data(extensometro='izquierdo'):
             cota_referencia,
             cota,
             asiento,
-            notas,
-            extensometro
+            dist_datum,
+            tag
         FROM `gen-lang-client-0342049346.amb_hidrologia.{table}`
         ORDER BY fecha DESC, CAST(anillo AS INT64) DESC
         """
@@ -485,9 +485,9 @@ def get_edv_data(extensometro='izquierdo'):
         st.error(f"❌ Error al obtener datos EDV: {e}")
         return pd.DataFrame()
 
-def create_edv_profile_enhanced(df, fecha_seleccionada=None, titulo="Perfil de Deformaciones"):
+def create_edv_profile(df, fecha_seleccionada=None, titulo="Perfil de Deformaciones"):
     """
-    Crea un perfil de deformaciones mejorado (estilo profesional)
+    Crea el perfil de deformaciones para una fecha específica
     """
     if fecha_seleccionada is None:
         fecha_seleccionada = df['fecha'].max()
@@ -507,25 +507,10 @@ def create_edv_profile_enhanced(df, fecha_seleccionada=None, titulo="Perfil de D
         x=df_fecha['asiento'],
         y=df_fecha['anillo'],
         mode='lines+markers',
-        name=f'{fecha_seleccionada.strftime("%d/%m/%Y")}',
+        name=f'Perfil {fecha_seleccionada.strftime("%d/%m/%Y")}',
         line=dict(color='#FF4B4B', width=3),
-        marker=dict(
-            size=12, 
-            color='#FF4B4B',
-            symbol='circle'
-        ),
-        hovertemplate='<b>Anillo %{y}</b><br>Asiento: %{x:.2f} cm<extra></extra>'
+        marker=dict(size=12, color='#FF4B4B')
     ))
-    
-    # Línea de referencia en 0 (sin deformación)
-    fig.add_vline(
-        x=0,
-        line_dash="dash",
-        line_color="gray",
-        line_width=1,
-        annotation_text="Sin deformación",
-        annotation_position="top"
-    )
     
     # Línea de referencia FONDO
     fig.add_hline(
@@ -537,87 +522,30 @@ def create_edv_profile_enhanced(df, fecha_seleccionada=None, titulo="Perfil de D
         annotation_position="bottom right"
     )
     
-    # Área de colores para valores negativos (asentamientos)
-    fig.add_vrect(
-        x0=-100, 
-        x1=0,
-        fillcolor="rgba(255, 0, 0, 0.05)",
-        layer="below",
-        line_width=0,
-    )
-    
     fig.update_layout(
-        title=dict(
-            text=f'{titulo} - {fecha_seleccionada.strftime("%d/%m/%Y")}',
-            font=dict(size=20, family="Arial", color="#333")
-        ),
-        xaxis=dict(
-            title=dict(text="Desplazamiento (cm)", font=dict(size=14)),
-            gridcolor='lightgray',
-            gridwidth=0.5,
-            zerolinecolor='black',
-            zerolinewidth=1,
-            range=[-70, 70]
-        ),
-        yaxis=dict(
-            title=dict(text="Anillo", font=dict(size=14)),
-            gridcolor='lightgray',
-            gridwidth=0.5,
-            autorange='reversed'
-        ),
+        title=f'{titulo} - {fecha_seleccionada.strftime("%d/%m/%Y")}',
+        xaxis_title='Asiento (cm)',
+        yaxis_title='Anillo',
         template='plotly_white',
-        height=600,
-        hovermode='y unified',
-        legend=dict(
-            x=1.02,
-            y=1,
-            bgcolor='rgba(255, 255, 255, 0.8)',
-            bordercolor='lightgray',
-            borderwidth=1
-        ),
-        annotations=[
-            dict(
-                x=-65,
-                y=0.5,
-                text="⬅️ ASENTAMIENTOS",
-                showarrow=False,
-                font=dict(color="red", size=12, family="Arial Black"),
-                xref="x",
-                yref="paper"
-            ),
-            dict(
-                x=65,
-                y=0.5,
-                text="LEVANTAMIENTOS ➡️",
-                showarrow=False,
-                font=dict(color="green", size=12, family="Arial Black"),
-                xref="x",
-                yref="paper"
-            )
-        ]
+        height=500,
+        hovermode='y unified'
     )
     return fig
 
-def create_edv_multiple_profiles(df, fechas_seleccionadas=None, max_profiles=10):
+def create_edv_multiple_profiles(df, max_profiles=8):
     """
-    Crea un perfil con múltiples fechas (estilo de la imagen)
+    Crea un perfil con múltiples fechas
     """
-    if fechas_seleccionadas is None:
-        # Seleccionar las últimas N fechas con datos
-        fechas_unicas = sorted(df['fecha'].unique(), reverse=True)
-        if len(fechas_unicas) > max_profiles:
-            # Tomar fechas distribuidas uniformemente
-            step = len(fechas_unicas) // max_profiles
-            fechas_seleccionadas = fechas_unicas[::step][:max_profiles]
-            # Asegurar que la última fecha esté incluida
-            if fechas_unicas[0] not in fechas_seleccionadas:
-                fechas_seleccionadas[0] = fechas_unicas[0]
-        else:
-            fechas_seleccionadas = fechas_unicas
+    fechas_unicas = sorted(df['fecha'].unique(), reverse=True)
+    if len(fechas_unicas) > max_profiles:
+        step = len(fechas_unicas) // max_profiles
+        fechas_seleccionadas = fechas_unicas[::step][:max_profiles]
+        if fechas_unicas[0] not in fechas_seleccionadas:
+            fechas_seleccionadas[0] = fechas_unicas[0]
+    else:
+        fechas_seleccionadas = fechas_unicas
     
     fig = go.Figure()
-    
-    # Colores para diferentes fechas
     colores = px.colors.sequential.Reds[::-1] + px.colors.sequential.Blues[::-1]
     
     for i, fecha in enumerate(fechas_seleccionadas):
@@ -626,12 +554,8 @@ def create_edv_multiple_profiles(df, fechas_seleccionadas=None, max_profiles=10)
             continue
         
         df_fecha = df_fecha.sort_values('anillo', ascending=False)
-        
-        # Determinar color según antigüedad
         color_idx = i % len(colores)
         color = colores[color_idx]
-        
-        # Grosor de línea: más grueso para las más recientes
         width = 2 + (len(fechas_seleccionadas) - i) * 0.2
         width = min(width, 4)
         
@@ -641,87 +565,21 @@ def create_edv_multiple_profiles(df, fechas_seleccionadas=None, max_profiles=10)
             mode='lines+markers',
             name=fecha.strftime('%d/%m/%Y'),
             line=dict(color=color, width=width),
-            marker=dict(size=6, color=color),
-            hovertemplate='<b>Anillo %{y}</b><br>%{x:.2f} cm<extra>%{fullData.name}</extra>'
+            marker=dict(size=6, color=color)
         ))
     
-    # Línea de referencia en 0
-    fig.add_vline(
-        x=0,
-        line_dash="dash",
-        line_color="gray",
-        line_width=1,
-    )
-    
-    # Línea de referencia FONDO
-    fig.add_hline(
-        y=0,
-        line_dash="dash",
-        line_color="green",
-        line_width=2,
-        annotation_text="FONDO",
-        annotation_position="bottom right"
-    )
+    fig.add_vline(x=0, line_dash="dash", line_color="gray", line_width=1)
+    fig.add_hline(y=0, line_dash="dash", line_color="green", line_width=2, 
+                  annotation_text="FONDO", annotation_position="bottom right")
     
     fig.update_layout(
-        title=dict(
-            text="Evolución de Deformaciones - Extensómetro",
-            font=dict(size=20, family="Arial", color="#333")
-        ),
-        xaxis=dict(
-            title=dict(text="Desplazamiento (cm)", font=dict(size=14)),
-            gridcolor='lightgray',
-            gridwidth=0.5,
-            zerolinecolor='black',
-            zerolinewidth=1,
-            range=[-70, 70]
-        ),
-        yaxis=dict(
-            title=dict(text="Anillo", font=dict(size=14)),
-            gridcolor='lightgray',
-            gridwidth=0.5,
-            autorange='reversed'
-        ),
+        title='Evolución de Deformaciones - Extensómetro',
+        xaxis_title='Asiento (cm)',
+        yaxis_title='Anillo',
         template='plotly_white',
         height=600,
         hovermode='y unified',
-        legend=dict(
-            x=1.02,
-            y=1,
-            bgcolor='rgba(255, 255, 255, 0.9)',
-            bordercolor='lightgray',
-            borderwidth=1,
-            font=dict(size=10)
-        ),
-        annotations=[
-            dict(
-                x=-65,
-                y=0.5,
-                text="⬅️ ASENTAMIENTOS",
-                showarrow=False,
-                font=dict(color="red", size=12, family="Arial Black"),
-                xref="x",
-                yref="paper"
-            ),
-            dict(
-                x=65,
-                y=0.5,
-                text="LEVANTAMIENTOS ➡️",
-                showarrow=False,
-                font=dict(color="green", size=12, family="Arial Black"),
-                xref="x",
-                yref="paper"
-            ),
-            dict(
-                x=0,
-                y=1.05,
-                text="Valores negativos (-) indican asentamientos",
-                showarrow=False,
-                font=dict(color="#666", size=12),
-                xref="x",
-                yref="paper"
-            )
-        ]
+        legend=dict(x=1.02, y=1, bgcolor='rgba(255,255,255,0.9)')
     )
     return fig
 
@@ -741,7 +599,6 @@ def create_edv_timeline(df, anillos_seleccionados=None):
             anillos_seleccionados = anillos_disponibles
     
     fig = go.Figure()
-    
     colores = ['#FF4B4B', '#FF9933', '#00CC96', '#3399FF', '#FF69B4']
     
     for i, anillo in enumerate(anillos_seleccionados):
@@ -766,34 +623,6 @@ def create_edv_timeline(df, anillos_seleccionados=None):
     )
     return fig
 
-def create_edv_heatmap(df):
-    """
-    Crea un mapa de calor de deformaciones
-    """
-    df_heat = df.copy()
-    df_heat['fecha_str'] = df_heat['fecha'].dt.strftime('%Y-%m')
-    
-    pivot = df_heat.pivot_table(
-        index='anillo', 
-        columns='fecha_str', 
-        values='asiento',
-        aggfunc='mean'
-    )
-    
-    pivot = pivot.sort_index(ascending=False)
-    
-    fig = px.imshow(
-        pivot,
-        title='Mapa de Calor de Deformaciones (cm)',
-        labels={'x': 'Fecha', 'y': 'Anillo', 'color': 'Asiento (cm)'},
-        color_continuous_scale='RdYlGn_r',
-        aspect='auto',
-        height=500
-    )
-    
-    fig.update_layout(template='plotly_white')
-    return fig
-
 def mostrar_seccion_edv():
     """
     Muestra la sección completa de EDV en el dashboard
@@ -803,7 +632,7 @@ def mostrar_seccion_edv():
     st.caption("Mediciones de deformación vertical del terreno alrededor del embalse")
     
     # Selector de extensómetro y tipo de vista
-    col1, col2, col3 = st.columns([1, 1, 2])
+    col1, col2 = st.columns([1, 2])
     with col1:
         extensometro_seleccionado = st.selectbox(
             "Seleccione Extensómetro:",
@@ -813,7 +642,7 @@ def mostrar_seccion_edv():
     with col2:
         tipo_vista = st.selectbox(
             "Tipo de vista:",
-            ["Perfil Individual", "Evolución Histórica", "Evolución Temporal", "Mapa de Calor"],
+            ["Perfil Individual", "Evolución Histórica", "Evolución Temporal"],
             index=0
         )
     
@@ -839,47 +668,31 @@ def mostrar_seccion_edv():
     # Mostrar gráfico según tipo de vista
     if tipo_vista == "Perfil Individual":
         fechas_disponibles = sorted(df_edv['fecha'].unique(), reverse=True)
+        fecha_seleccionada = st.selectbox(
+            "Seleccione fecha para el perfil:",
+            fechas_disponibles,
+            index=0,
+            format_func=lambda x: x.strftime('%d/%m/%Y')
+        )
         
-        col1, col2 = st.columns([2, 1])
-        with col1:
-            fecha_seleccionada = st.selectbox(
-                "Seleccione fecha para el perfil:",
-                fechas_disponibles,
-                index=0,
-                format_func=lambda x: x.strftime('%d/%m/%Y')
-            )
-        with col2:
-            st.write("")
-            st.write("")
-            mostrar_todas = st.checkbox("Mostrar todos los perfiles", value=False)
-        
-        if mostrar_todas:
-            fig = create_edv_multiple_profiles(df_edv, max_profiles=10)
-        else:
-            fig = create_edv_profile_enhanced(
-                df_edv, 
-                fecha_seleccionada, 
-                f"EDV {extensometro_seleccionado.capitalize()}"
-            )
-        
+        fig = create_edv_profile(
+            df_edv, 
+            fecha_seleccionada, 
+            f"EDV {extensometro_seleccionado.capitalize()}"
+        )
         if fig:
             st.plotly_chart(fig, use_container_width=True)
         else:
             st.info("No hay datos para la fecha seleccionada")
     
     elif tipo_vista == "Evolución Histórica":
-        st.markdown("### 📈 Evolución Histórica de Deformaciones")
-        st.caption("Visualización de todos los perfiles históricos")
-        
-        fig = create_edv_multiple_profiles(df_edv, max_profiles=15)
+        fig = create_edv_multiple_profiles(df_edv, max_profiles=10)
         if fig:
             st.plotly_chart(fig, use_container_width=True)
         else:
             st.info("No hay suficientes datos para mostrar")
     
     elif tipo_vista == "Evolución Temporal":
-        st.markdown("### 📈 Evolución Temporal por Anillo")
-        
         anillos_disponibles = sorted(df_edv['anillo'].unique(), key=lambda x: int(x))
         anillos_seleccionados = st.multiselect(
             "Seleccione anillos para visualizar:",
@@ -896,37 +709,10 @@ def mostrar_seccion_edv():
         else:
             st.info("Seleccione al menos un anillo para visualizar")
     
-    elif tipo_vista == "Mapa de Calor":
-        st.markdown("### 🗺️ Mapa de Calor de Deformaciones")
-        st.caption("Visualización de la evolución de deformaciones por anillo a lo largo del tiempo")
-        
-        fig = create_edv_heatmap(df_edv)
-        if fig:
-            st.plotly_chart(fig, use_container_width=True)
-        else:
-            st.info("No hay suficientes datos para generar el mapa de calor")
-    
-    # Datos detallados al final
+    # Datos detallados
     with st.expander("📋 Ver datos detallados"):
-        col1, col2 = st.columns(2)
-        with col1:
-            fecha_inicio = st.date_input(
-                "Fecha inicio:",
-                value=df_edv['fecha'].min().date()
-            )
-        with col2:
-            fecha_fin = st.date_input(
-                "Fecha fin:",
-                value=df_edv['fecha'].max().date()
-            )
-        
-        df_filtrado = df_edv[
-            (df_edv['fecha'].dt.date >= fecha_inicio) &
-            (df_edv['fecha'].dt.date <= fecha_fin)
-        ]
-        
         st.dataframe(
-            df_filtrado[['fecha', 'anillo', 'lectura', 'cota', 'asiento', 'notas']],
+            df_edv[['fecha', 'anillo', 'lectura', 'cota', 'asiento']],
             use_container_width=True,
             column_config={
                 "fecha": st.column_config.DateColumn("Fecha"),
@@ -934,15 +720,14 @@ def mostrar_seccion_edv():
                 "lectura": st.column_config.NumberColumn("Lectura (mm)", format="%.2f"),
                 "cota": st.column_config.NumberColumn("Cota (msnm)", format="%.2f"),
                 "asiento": st.column_config.NumberColumn("Asiento (cm)", format="%.2f"),
-                "notas": st.column_config.TextColumn("Notas")
             }
         )
         
-        csv = df_filtrado.to_csv(index=False).encode('utf-8-sig')
+        csv = df_edv.to_csv(index=False).encode('utf-8-sig')
         st.download_button(
-            "📥 Descargar datos filtrados (CSV)",
+            "📥 Descargar datos (CSV)",
             csv,
-            f"edv_{extensometro_seleccionado}_{fecha_inicio}_{fecha_fin}.csv",
+            f"edv_{extensometro_seleccionado}.csv",
             "text/csv",
             use_container_width=True
         )
@@ -1392,3 +1177,13 @@ with st.sidebar.expander("🤖 Estado del Agente IA"):
     st.write("- 📜 Históricos (2004-2025)")
     st.write("- 🌊 Análisis de embalse")
     st.write("- ⏰ Consultas por hora específica")
+
+# ============================================================
+# 12. INFORMACIÓN DE EDV EN SIDEBAR
+# ============================================================
+with st.sidebar.expander("📏 Extensómetros (EDV)"):
+    st.write("**Datos cargados en BigQuery:**")
+    st.write("- EDV Izquierdo: 4,577 registros")
+    st.write("- EDV Derecho: 4,323 registros")
+    st.write("**Período:** 2013-2025")
+    st.write("**Estado:** ✅ Activo")
