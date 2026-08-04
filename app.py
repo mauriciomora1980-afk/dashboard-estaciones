@@ -451,7 +451,7 @@ def create_embalse_chart(df_hist):
         return None
 
 # ============================================================
-# 9.5 FUNCIONES PARA EDV (EXTENSÓMETROS)
+# 9.5 FUNCIONES PARA EDV (EXTENSÓMETROS) - CORREGIDO
 # ============================================================
 
 @st.cache_data(ttl=600)
@@ -470,9 +470,7 @@ def get_edv_data(extensometro='izquierdo'):
             cota,
             asiento,
             dist_datum,
-            notas,
-            usuario,
-            es_correccion
+            notas
         FROM `gen-lang-client-0342049346.amb_hidrologia.{table}`
         ORDER BY fecha DESC, CAST(anillo AS INT64) DESC
         """
