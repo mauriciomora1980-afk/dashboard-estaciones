@@ -42,7 +42,7 @@ st.caption(f"🕐 Última actualización: {datetime.now(colombia_tz).strftime('%
 # 2. CONFIGURACIÓN
 # ============================================================
 AUTOR = "Mauricio Mora"
-VERSION = "2.0"
+VERSION = "2.1"
 SISTEMA = "Sistema Automatizado de Monitoreo"
 
 # ============================================================
@@ -228,7 +228,7 @@ def generar_resumen_estadistico(df):
     resumen.append("📋 Datos generados automáticamente por el sistema")
     resumen.append("")
     
-    columnas_numericas = ['temperatura', 'precipitacion', 'humedad', 'presion', 'velocidad_viento', 'voltaje_bateria']
+    columnas_numericas = ['temperatura', 'precipitacion', 'humedad', 'presion', 'velocidad_viento', 'direccion_viento', 'voltaje_bateria']
     for col in columnas_numericas:
         if col in df.columns:
             datos = df[col].dropna()
@@ -341,7 +341,8 @@ def formatear_respuesta_agente(data):
         "caudal": "Caudal",
         "nivel": "Nivel",
         "presion": "Presión",
-        "velocidad_viento": "Velocidad del Viento"
+        "velocidad_viento": "Velocidad del Viento",
+        "direccion_viento": "Dirección del Viento"
     }
     nombre_variable = nombres_variables.get(variable, variable.capitalize())
     
@@ -790,11 +791,14 @@ with tab1:
             ''', unsafe_allow_html=True)
             st.write("")
             
-            c1, c2, c3, c4 = st.columns(4)
+            # 6 columnas integrando velocidad y dirección del viento
+            c1, c2, c3, c4, c5, c6 = st.columns(6)
             c1.metric("🌡️ Temp", f"{float(row['temperatura']):.1f} °C")
             c2.metric("🌧️ Precip", f"{float(row['precipitacion']):.1f} mm")
             c3.metric("💧 Humedad", f"{float(row['humedad']):.1f} %")
-            c4.metric("🔋 Voltaje", f"{float(row['voltaje_bateria']):.1f} V")
+            c4.metric("💨 Viento", f"{float(row.get('velocidad_viento', 0)):.1f} km/h")
+            c5.metric("🧭 Dir. Viento", f"{float(row.get('direccion_viento', 0)):.0f}°")
+            c6.metric("🔋 Voltaje", f"{float(row['voltaje_bateria']):.1f} V")
             
             st.info(f"📅 Última lectura: {row['timestamp'].strftime('%Y-%m-%d %H:%M:%S')}")
             
@@ -890,14 +894,16 @@ with tab2:
                     )
                 st.plotly_chart(fig_humedad, use_container_width=True)
             
-            if 'direccion_del_viento' in df_hist.columns and 'velocidad_viento' in df_hist.columns:
+            # ROSA DE LOS VIENTOS (Con el nombre exacto de columna: direccion_viento)
+            if 'direccion_viento' in df_hist.columns and 'velocidad_viento' in df_hist.columns:
                 st.markdown("### 🧭 Rosa de los Vientos")
-                df_viento = df_hist.dropna(subset=['direccion_del_viento', 'velocidad_viento'])
+                df_viento = df_hist.dropna(subset=['direccion_viento', 'velocidad_viento'])
+                df_viento = df_viento[(df_viento['direccion_viento'] > 0) | (df_viento['velocidad_viento'] > 0)]
                 if not df_viento.empty:
                     fig_viento = px.bar_polar(
                         df_viento,
                         r="velocidad_viento",
-                        theta="direccion_del_viento",
+                        theta="direccion_viento",
                         color="velocidad_viento",
                         color_continuous_scale='Viridis',
                         title=f'Rosa de Vientos - {seleccion}',
@@ -905,8 +911,19 @@ with tab2:
                     )
                     fig_viento.update_layout(height=400)
                     st.plotly_chart(fig_viento, use_container_width=True)
+                    
+                    # Estadísticas de viento adicionales
+                    col_v1, col_v2, col_v3 = st.columns(3)
+                    with col_v1:
+                        st.metric("💨 Vel. Promedio", f"{df_viento['velocidad_viento'].mean():.1f} km/h")
+                    with col_v2:
+                        st.metric("💨 Vel. Máxima", f"{df_viento['velocidad_viento'].max():.1f} km/h")
+                    with col_v3:
+                        moda_dir = df_viento['direccion_viento'].mode()
+                        dir_pred = f"{moda_dir.iloc[0]:.0f}°" if not moda_dir.empty else "N/A"
+                        st.metric("🧭 Dir. Predominante", dir_pred)
                 else:
-                    st.info("ℹ️ No hay datos de viento disponibles para esta estación")
+                    st.info("ℹ️ No hay datos de viento disponibles para esta estación en el período")
     else:
         st.info("ℹ️ No hay datos históricos disponibles para este período")
     
