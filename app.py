@@ -36,13 +36,14 @@ except:
 
 st.title("🌧️ Centro de Monitoreo: Red Meteorológica amb")
 colombia_tz = timezone('America/Bogota')
+utc_tz = timezone('UTC')
 st.caption(f"🕐 Última actualización: {datetime.now(colombia_tz).strftime('%Y-%m-%d %H:%M:%S')} (hora Colombia)")
 
 # ============================================================
 # 2. CONFIGURACIÓN
 # ============================================================
 AUTOR = "Mauricio Mora"
-VERSION = "2.1"
+VERSION = "2.2"
 SISTEMA = "Sistema Automatizado de Monitoreo"
 
 # ============================================================
@@ -108,7 +109,7 @@ client = init_bigquery_client()
 # ============================================================
 # 6. FUNCIONES DE DATOS
 # ============================================================
-@st.cache_data(ttl=300)
+@st.cache_data(ttl=60)
 def get_last_reading(estacion):
     try:
         query = f"""
@@ -125,24 +126,29 @@ def get_last_reading(estacion):
         st.error(f"❌ Error al obtener última lectura: {e}")
         return pd.DataFrame()
 
-@st.cache_data(ttl=600)
+@st.cache_data(ttl=60)
 def get_historical_data_range(estacion, fecha_inicio, fecha_fin):
     try:
+        # Conversión precisa de zona horaria UTC para BigQuery
         if isinstance(fecha_inicio, datetime):
-            fecha_inicio_str = fecha_inicio.strftime('%Y-%m-%d')
+            f_inicio_dt = fecha_inicio if fecha_inicio.tzinfo else colombia_tz.localize(fecha_inicio)
+            f_inicio_str = f_inicio_dt.astimezone(utc_tz).strftime('%Y-%m-%d %H:%M:%S')
         else:
-            fecha_inicio_str = fecha_inicio
+            f_inicio_dt = colombia_tz.localize(datetime.combine(fecha_inicio, datetime.min.time()))
+            f_inicio_str = f_inicio_dt.astimezone(utc_tz).strftime('%Y-%m-%d %H:%M:%S')
         
         if isinstance(fecha_fin, datetime):
-            fecha_fin_str = fecha_fin.strftime('%Y-%m-%d')
+            f_fin_dt = fecha_fin if fecha_fin.tzinfo else colombia_tz.localize(fecha_fin)
+            f_fin_str = f_fin_dt.astimezone(utc_tz).strftime('%Y-%m-%d %H:%M:%S')
         else:
-            fecha_fin_str = fecha_fin
+            f_fin_dt = colombia_tz.localize(datetime.combine(fecha_fin, datetime.max.time()))
+            f_fin_str = f_fin_dt.astimezone(utc_tz).strftime('%Y-%m-%d %H:%M:%S')
         
         query = f"""
         SELECT * FROM `gen-lang-client-0342049346.amb_hidrologia.telemetria_estaciones` 
         WHERE id_estacion = '{estacion}' 
-        AND SAFE_CAST(timestamp AS TIMESTAMP) >= TIMESTAMP('{fecha_inicio_str} 00:00:00')
-        AND SAFE_CAST(timestamp AS TIMESTAMP) <= TIMESTAMP('{fecha_fin_str} 23:59:59')
+        AND SAFE_CAST(timestamp AS TIMESTAMP) >= TIMESTAMP('{f_inicio_str}')
+        AND SAFE_CAST(timestamp AS TIMESTAMP) <= TIMESTAMP('{f_fin_str}')
         ORDER BY SAFE_CAST(timestamp AS TIMESTAMP) DESC 
         LIMIT 50000
         """
@@ -231,7 +237,7 @@ def generar_resumen_estadistico(df):
     columnas_numericas = ['temperatura', 'precipitacion', 'humedad', 'presion', 'velocidad_viento', 'direccion_viento', 'voltaje_bateria']
     for col in columnas_numericas:
         if col in df.columns:
-            datos = df[col].dropna()
+            datos = pd.to_numeric(df[col], errors='coerce').dropna()
             if not datos.empty:
                 resumen.append(f"📈 {col.upper()}:")
                 resumen.append(f"   • Promedio: {datos.mean():.2f}")
@@ -457,9 +463,6 @@ def create_embalse_chart(df_hist):
 
 @st.cache_data(ttl=600)
 def get_edv_data(extensometro='izquierdo'):
-    """
-    Obtiene los datos del EDV desde BigQuery
-    """
     try:
         table = f"edv_{extensometro}"
         query = f"""
@@ -484,9 +487,6 @@ def get_edv_data(extensometro='izquierdo'):
         return pd.DataFrame()
 
 def create_edv_profile(df, fecha_seleccionada=None, titulo="Perfil de Deformaciones"):
-    """
-    Crea el perfil de deformaciones para una fecha específica
-    """
     if fecha_seleccionada is None:
         fecha_seleccionada = df['fecha'].max()
     
@@ -749,7 +749,7 @@ with tab1:
         st.subheader(f"📡 Real-time: {seleccion}")
         
         if seleccion == "Embalse":
-            nivel_actual = float(row.get('temperatura', 0))
+            nivel_actual = float(row.get('temperatura', 0)) if pd.notna(row.get('temperatura')) else 0.0
             estado, color, mensaje, excedente = evaluar_nivel_embalse(nivel_actual)
             
             col1, col2, col3 = st.columns(3)
@@ -766,7 +766,7 @@ with tab1:
             else:
                 st.success(f"🟢 {estado} - {mensaje}")
             
-            if 'voltaje_bateria' in row:
+            if 'voltaje_bateria' in row and pd.notna(row['voltaje_bateria']):
                 st.metric("🔋 Voltaje", f"{float(row['voltaje_bateria']):.1f} V")
             
             st.info(f"📅 Última lectura: {row['timestamp'].strftime('%Y-%m-%d %H:%M:%S')}")
@@ -775,7 +775,8 @@ with tab1:
             mostrar_seccion_edv()
             
         else:
-            nombre, msg, color, vel = obtener_alerta(float(row.get('precipitacion', 0)), seleccion)
+            p_val = float(row.get('precipitacion', 0)) if pd.notna(row.get('precipitacion')) else 0.0
+            nombre, msg, color, vel = obtener_alerta(p_val, seleccion)
             st.markdown(f'''
             <div style="background-color:{color}; padding:20px; border-radius:15px; text-align:center; color:black; animation: blink {vel} infinite; border: 2px solid #333;">
                 <h2>🚦 {nombre}</h2>
@@ -791,26 +792,33 @@ with tab1:
             ''', unsafe_allow_html=True)
             st.write("")
             
-            # 6 columnas integrando velocidad y dirección del viento
+            t_val = float(row.get('temperatura', 0)) if pd.notna(row.get('temperatura')) else 0.0
+            h_val = float(row.get('humedad', 0)) if pd.notna(row.get('humedad')) else 0.0
+            v_val = float(row.get('velocidad_viento', 0)) if pd.notna(row.get('velocidad_viento')) else 0.0
+            d_val = float(row.get('direccion_viento', 0)) if pd.notna(row.get('direccion_viento')) else 0.0
+            b_val = float(row.get('voltaje_bateria', 0)) if pd.notna(row.get('voltaje_bateria')) else 0.0
+            
             c1, c2, c3, c4, c5, c6 = st.columns(6)
-            c1.metric("🌡️ Temp", f"{float(row['temperatura']):.1f} °C")
-            c2.metric("🌧️ Precip", f"{float(row['precipitacion']):.1f} mm")
-            c3.metric("💧 Humedad", f"{float(row['humedad']):.1f} %")
-            c4.metric("💨 Viento", f"{float(row.get('velocidad_viento', 0)):.1f} km/h")
-            c5.metric("🧭 Dir. Viento", f"{float(row.get('direccion_viento', 0)):.0f}°")
-            c6.metric("🔋 Voltaje", f"{float(row['voltaje_bateria']):.1f} V")
+            c1.metric("🌡️ Temp", f"{t_val:.1f} °C")
+            c2.metric("🌧️ Precip", f"{p_val:.1f} mm")
+            c3.metric("💧 Humedad", f"{h_val:.1f} %")
+            c4.metric("💨 Viento", f"{v_val:.1f} km/h")
+            c5.metric("🧭 Dir. Viento", f"{d_val:.0f}°")
+            c6.metric("🔋 Voltaje", f"{b_val:.1f} V")
             
             st.info(f"📅 Última lectura: {row['timestamp'].strftime('%Y-%m-%d %H:%M:%S')}")
             
-            if not df_hist.empty:
-                st.markdown("### 📊 Estadísticas del Período")
-                col1, col2, col3 = st.columns(3)
-                with col1:
-                    st.metric("🔽 Temp Mínima", f"{df_hist['temperatura'].min():.1f}°C")
-                with col2:
-                    st.metric("🔼 Temp Máxima", f"{df_hist['temperatura'].max():.1f}°C")
-                with col3:
-                    st.metric("📊 Temp Promedio", f"{df_hist['temperatura'].mean():.1f}°C")
+            if not df_hist.empty and 'temperatura' in df_hist.columns:
+                t_series = pd.to_numeric(df_hist['temperatura'], errors='coerce').dropna()
+                if not t_series.empty:
+                    st.markdown("### 📊 Estadísticas del Período")
+                    col1, col2, col3 = st.columns(3)
+                    with col1:
+                        st.metric("🔽 Temp Mínima", f"{t_series.min():.1f}°C")
+                    with col2:
+                        st.metric("🔼 Temp Máxima", f"{t_series.max():.1f}°C")
+                    with col3:
+                        st.metric("📊 Temp Promedio", f"{t_series.mean():.1f}°C")
     else:
         st.warning("⚠️ Sin datos.")
 
@@ -822,17 +830,13 @@ with tab2:
     
     if not df_hist.empty:
         if seleccion == "Embalse":
-            # ============================================
-            # EMBALSE - SOLO GRÁFICO DE NIVEL
-            # ============================================
             st.markdown("### 🌊 Nivel del Embalse")
-            
             fig_embalse = create_embalse_chart(df_hist)
             if fig_embalse:
                 st.plotly_chart(fig_embalse, use_container_width=True)
             
             ultima_lectura = df_hist.iloc[0]
-            st.info(f"📊 Último nivel registrado: {ultima_lectura['temperatura']:.2f} msnm")
+            st.info(f"📊 Último nivel registrado: {float(ultima_lectura['temperatura']):.2f} msnm")
             
             with st.expander("📋 Ver datos detallados"):
                 columnas_embalse = ['timestamp', 'temperatura', 'voltaje_bateria']
@@ -841,9 +845,6 @@ with tab2:
                 st.dataframe(df_embalse_mostrar.head(20), use_container_width=True)
             
         else:
-            # ============================================
-            # OTRAS ESTACIONES - TODOS LOS GRÁFICOS
-            # ============================================
             st.markdown("### 🌡️ Temperatura")
             fig_temp = px.line(
                 df_hist.sort_values('timestamp'), 
@@ -853,12 +854,13 @@ with tab2:
                 labels={'temperatura': '°C', 'timestamp': 'Fecha/Hora'}
             )
             fig_temp.update_layout(height=300, template='plotly_white', hovermode='x unified')
-            if len(df_hist) > 1:
+            t_numeric = pd.to_numeric(df_hist['temperatura'], errors='coerce').dropna()
+            if len(t_numeric) > 1:
                 fig_temp.add_hline(
-                    y=df_hist['temperatura'].mean(), 
+                    y=t_numeric.mean(), 
                     line_dash="dash", 
                     line_color="red",
-                    annotation_text=f"Promedio: {df_hist['temperatura'].mean():.1f}°C"
+                    annotation_text=f"Promedio: {t_numeric.mean():.1f}°C"
                 )
             st.plotly_chart(fig_temp, use_container_width=True)
             
@@ -885,20 +887,25 @@ with tab2:
                     labels={'humedad': '%', 'timestamp': 'Fecha/Hora'}
                 )
                 fig_humedad.update_layout(height=300, template='plotly_white', hovermode='x unified')
-                if len(df_hist) > 1:
+                h_numeric = pd.to_numeric(df_hist['humedad'], errors='coerce').dropna()
+                if len(h_numeric) > 1:
                     fig_humedad.add_hline(
-                        y=df_hist['humedad'].mean(), 
+                        y=h_numeric.mean(), 
                         line_dash="dash", 
                         line_color="red",
-                        annotation_text=f"Promedio: {df_hist['humedad'].mean():.1f}%"
+                        annotation_text=f"Promedio: {h_numeric.mean():.1f}%"
                     )
                 st.plotly_chart(fig_humedad, use_container_width=True)
             
-            # ROSA DE LOS VIENTOS (Con el nombre exacto de columna: direccion_viento)
+            # ROSA DE LOS VIENTOS
             if 'direccion_viento' in df_hist.columns and 'velocidad_viento' in df_hist.columns:
                 st.markdown("### 🧭 Rosa de los Vientos")
-                df_viento = df_hist.dropna(subset=['direccion_viento', 'velocidad_viento'])
+                df_viento = df_hist.copy()
+                df_viento['direccion_viento'] = pd.to_numeric(df_viento['direccion_viento'], errors='coerce')
+                df_viento['velocidad_viento'] = pd.to_numeric(df_viento['velocidad_viento'], errors='coerce')
+                df_viento = df_viento.dropna(subset=['direccion_viento', 'velocidad_viento'])
                 df_viento = df_viento[(df_viento['direccion_viento'] > 0) | (df_viento['velocidad_viento'] > 0)]
+                
                 if not df_viento.empty:
                     fig_viento = px.bar_polar(
                         df_viento,
@@ -912,7 +919,6 @@ with tab2:
                     fig_viento.update_layout(height=400)
                     st.plotly_chart(fig_viento, use_container_width=True)
                     
-                    # Estadísticas de viento adicionales
                     col_v1, col_v2, col_v3 = st.columns(3)
                     with col_v1:
                         st.metric("💨 Vel. Promedio", f"{df_viento['velocidad_viento'].mean():.1f} km/h")
@@ -932,7 +938,6 @@ with tab2:
     # ============================================================
     st.markdown("---")
     st.subheader("📥 Descarga Personalizada de Datos")
-    
     st.markdown("### 📅 Selecciona el período para descargar")
     
     col_periodo1, col_periodo2 = st.columns(2)
@@ -1144,7 +1149,7 @@ st.sidebar.caption("📊 Datos actualizados cada 5 minutos")
 with st.sidebar.expander("🌊 Información del Embalse"):
     st.write(f"**Nivel de Rebose:** {NIVEL_REBOSE_EMBALSE} msnm")
     if not df.empty and seleccion == "Embalse":
-        nivel_actual = float(df.iloc[0].get('temperatura', 0))
+        nivel_actual = float(df.iloc[0].get('temperatura', 0)) if pd.notna(df.iloc[0].get('temperatura')) else 0.0
         excedente = nivel_actual - NIVEL_REBOSE_EMBALSE
         st.write(f"**Nivel Actual:** {nivel_actual:.2f} msnm")
         if excedente >= 0:
