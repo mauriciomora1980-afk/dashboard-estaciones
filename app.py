@@ -16,7 +16,6 @@ import openpyxl
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils.dataframe import dataframe_to_rows
 from PIL import Image
-
 # ============================================================
 # 0. CONFIGURACIÓN DE PÁGINA Y ESTILOS MIMAT-C26 (amb)
 # ============================================================
@@ -26,7 +25,6 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="expanded"
 )
-
 # Estilos CSS Avanzados (amb minúscula + Flecha lateral destacada + UI Ejecutiva)
 st.markdown("""
 <style>
@@ -84,10 +82,15 @@ st.markdown("""
     }
 </style>
 """, unsafe_allow_html=True)
-
 colombia_tz = timezone('America/Bogota')
 utc_tz = timezone('UTC')
-
+def convertir_fecha_bogota(serie):
+    """Convierte cualquier serie de fechas a hora de Colombia de forma segura"""
+    ts = pd.to_datetime(serie, errors='coerce')
+    if ts.dt.tz is None:
+        return ts.dt.tz_localize('UTC').dt.tz_convert('America/Bogota')
+    else:
+        return ts.dt.tz_convert('America/Bogota')
 # ============================================================
 # 1. ENCABEZADO Y LOGO (amb minúscula)
 # ============================================================
@@ -105,7 +108,6 @@ st.markdown(f"""
     </div>
 </div>
 """, unsafe_allow_html=True)
-
 # Carga de Logo amb en barra lateral
 def render_logo_sidebar():
     posibles_rutas = [
@@ -128,9 +130,7 @@ def render_logo_sidebar():
         <div style="color: #E6F1FF; font-size: 11px; text-transform: lowercase; margin-top: 2px;">acueducto metropolitano de bucaramanga</div>
     </div>
     """, unsafe_allow_html=True)
-
 render_logo_sidebar()
-
 # ============================================================
 # 2. METADATOS Y CONSTANTES
 # ============================================================
@@ -138,32 +138,26 @@ AUTOR = "Ing. Mauricio Mora"
 VERSION = "MIMAT-C26 v2.6"
 SISTEMA = "Sistema Automatizado de Monitoreo MIMAT-C26 - amb"
 AGENTE_API_URL = "https://querybigqueryamb-ia-661926446380.us-central1.run.app"
-
 umbrales = {
     "El_Pajal": {"amarilla": 12.3, "naranja": 15.1, "roja": 20.4},
     "Yerbabuena": {"amarilla": 10.9, "naranja": 20.0, "roja": 40.8},
     "La_Mariana": {"amarilla": 11.7, "naranja": 18.0, "roja": 35.0},
     "Vegas_del_Quemado": {"amarilla": 27.2, "naranja": 36.8, "roja": 55.8}
 }
-
 # ============================================================
 # 3. MODELO MATEMÁTICO — BATIMETRÍA 2026 (NUMPY NATIVO)
 # ============================================================
 COTAS_REF = np.array([817.94, 830.00, 836.50, 841.00, 850.00, 860.00, 870.00, 883.00, 885.80])
 VOLUMENES_REF = np.array([0.000, 0.520, 1.400, 1.980, 3.850, 6.420, 9.650, 14.090, 15.380]) # hm³
 AREAS_REF = np.array([0.00, 8.50, 14.20, 18.60, 24.50, 30.80, 37.20, 44.60, 46.20]) # ha
-
 NIVEL_MINIMO_TECNICO = 841.00
 NIVEL_REBOSE_EMBALSE = 885.75
 VOLUMEN_UTIL_MAX_HM3 = 12.11
 VOLUMEN_MUERTO_HM3 = 1.40
-
 def interpolar_volumen(c):
     return float(np.interp(c, COTAS_REF, VOLUMENES_REF))
-
 def interpolar_area(c):
     return float(np.interp(c, COTAS_REF, AREAS_REF))
-
 def calcular_hidraulica_embalse(cota: float, q_ptap_ls: float = 0.0):
     cota_val = max(818.0, min(float(cota), 886.00))
     vol_total_hm3 = interpolar_volumen(cota_val)
@@ -178,7 +172,6 @@ def calcular_hidraulica_embalse(cota: float, q_ptap_ls: float = 0.0):
     vol_util_hm3 = vol_util_m3 / 1_000_000.0
     porcentaje_util = min(100.0, (vol_util_hm3 / VOLUMEN_UTIL_MAX_HM3) * 100.0)
     
-    # Manejo de extracción cero / sin caudalímetro activo
     if q_ptap_ls > 0:
         q_ptap_m3_s = q_ptap_ls / 1000.0
         consumo_diario_m3 = q_ptap_m3_s * 86400.0
@@ -201,7 +194,6 @@ def calcular_hidraulica_embalse(cota: float, q_ptap_ls: float = 0.0):
         "autonomia_texto": autonomia_texto,
         "excedente_rebose": excedente_rebose
     }
-
 def obtener_alerta(precipitacion, estacion):
     if estacion == "Monsalve": return "AZUL", "🛠️ En Aprendizaje", "#3399FF", "0s"
     if estacion == "Embalse": return "EMBALSE", "🌊 Nivel de Embalse", "#00BFFF", "0s"
@@ -213,7 +205,6 @@ def obtener_alerta(precipitacion, estacion):
     elif precipitacion >= u["amarilla"]: return "AMARILLA", f"🟡 AMARILLA: Excede {u['amarilla']}mm", "#FFFF00", "2s"
     elif precipitacion > 0: return "VERDE", "✅ Lluvia Normal", "#00CC96", "0s"
     return "GRIS", "☁️ Sin lluvia", "#CCCCCC", "0s"
-
 # ============================================================
 # 4. CLIENTE BIGQUERY
 # ============================================================
@@ -227,25 +218,23 @@ def init_bigquery_client():
     except Exception as e:
         st.error(f"❌ Error al conectar con BigQuery: {e}")
         st.stop()
-
 client = init_bigquery_client()
-
-@st.cache_data(ttl=60)
+@st.cache_data(ttl=30)
 def get_last_reading(estacion):
     try:
         query = f"""
         SELECT * FROM `gen-lang-client-0342049346.amb_hidrologia.telemetria_estaciones` 
-        WHERE id_estacion = '{estacion}' 
+        WHERE LOWER(id_estacion) = LOWER('{estacion}') 
         ORDER BY SAFE_CAST(timestamp AS TIMESTAMP) DESC 
         LIMIT 1
         """
         df = client.query(query).to_dataframe()
         if not df.empty:
-            df['timestamp'] = pd.to_datetime(df['timestamp']).dt.tz_localize('UTC').dt.tz_convert('America/Bogota')
+            df['timestamp'] = convertir_fecha_bogota(df['timestamp'])
         return df
     except Exception as e:
+        st.warning(f"Error consultando última lectura de {estacion}: {e}")
         return pd.DataFrame()
-
 @st.cache_data(ttl=60)
 def get_historical_data_range(estacion, fecha_inicio, fecha_fin):
     try:
@@ -265,7 +254,7 @@ def get_historical_data_range(estacion, fecha_inicio, fecha_fin):
         
         query = f"""
         SELECT * FROM `gen-lang-client-0342049346.amb_hidrologia.telemetria_estaciones` 
-        WHERE id_estacion = '{estacion}' 
+        WHERE LOWER(id_estacion) = LOWER('{estacion}') 
         AND SAFE_CAST(timestamp AS TIMESTAMP) >= TIMESTAMP('{f_inicio_str}')
         AND SAFE_CAST(timestamp AS TIMESTAMP) <= TIMESTAMP('{f_fin_str}')
         ORDER BY SAFE_CAST(timestamp AS TIMESTAMP) DESC 
@@ -273,47 +262,50 @@ def get_historical_data_range(estacion, fecha_inicio, fecha_fin):
         """
         df = client.query(query).to_dataframe()
         if not df.empty:
-            df['timestamp'] = pd.to_datetime(df['timestamp']).dt.tz_localize('UTC').dt.tz_convert('America/Bogota')
+            df['timestamp'] = convertir_fecha_bogota(df['timestamp'])
         return df
     except Exception as e:
+        st.warning(f"Error en datos históricos: {e}")
         return pd.DataFrame()
-
-@st.cache_data(ttl=60)
+@st.cache_data(ttl=30)
 def get_cota_embalse_actual_segura():
     try:
-        df_emb = get_last_reading("Embalse")
+        query = """
+        SELECT SAFE_CAST(temperatura AS FLOAT64) as cota 
+        FROM `gen-lang-client-0342049346.amb_hidrologia.telemetria_estaciones` 
+        WHERE LOWER(id_estacion) = 'embalse' AND SAFE_CAST(temperatura AS FLOAT64) > 800
+        ORDER BY SAFE_CAST(timestamp AS TIMESTAMP) DESC 
+        LIMIT 1
+        """
+        df_emb = client.query(query).to_dataframe()
         if not df_emb.empty:
-            c = float(df_emb.iloc[0].get('temperatura', 885.80))
+            c = float(df_emb.iloc[0]['cota'])
             if 818.0 <= c <= 886.0:
                 return c
     except:
         pass
     return 885.80
-
 # ============================================================
 # 5. SELECTOR DE ESTACIÓN (BARRA HORIZONTAL SUPERIOR)
 # ============================================================
 estaciones = ["Embalse", "La_Mariana", "Yerbabuena", "Vegas_del_Quemado", "El_Pajal", "Monsalve"]
-
 if 'estacion_seleccionada' not in st.session_state:
     st.session_state.estacion_seleccionada = "Embalse"
-
 st.markdown("""
 <div style="background: rgba(0,80,115,0.08); padding: 8px 14px; border-radius: 10px; margin-bottom: 12px; border-left: 5px solid #005073; display: flex; justify-content: space-between; align-items: center;">
     <span style="font-weight: 700; color: #005073; font-size: 14px;">📍 SELECCIONE LA ESTACIÓN:</span>
     <span style="font-size: 12px; color: #555;">👈 También disponible en el menú lateral</span>
 </div>
 """, unsafe_allow_html=True)
-
+idx_default = estaciones.index(st.session_state.estacion_seleccionada) if st.session_state.estacion_seleccionada in estaciones else 0
 seleccion = st.radio(
     "Estación:",
     estaciones,
-    index=estaciones.index(st.session_state.estacion_seleccionada) if st.session_state.estacion_seleccionada in estaciones else 0,
+    index=idx_default,
     horizontal=True,
     label_visibility="collapsed"
 )
 st.session_state.estacion_seleccionada = seleccion
-
 # Sincronizar barra lateral
 st.sidebar.markdown("---")
 st.sidebar.markdown("### 📍 Selector de Estación")
@@ -325,7 +317,6 @@ seleccion_sidebar = st.sidebar.selectbox(
 if seleccion_sidebar != seleccion:
     st.session_state.estacion_seleccionada = seleccion_sidebar
     st.rerun()
-
 periodos_grafico = {
     "Últimas 24 horas": 24,
     "Últimos 3 días": 72,
@@ -333,20 +324,16 @@ periodos_grafico = {
     "Últimos 15 días": 360,
     "Último mes": 720
 }
-
 if seleccion == "Embalse":
     p_sel = st.sidebar.selectbox("Período histórico:", list(periodos_grafico.keys()))
     horas = periodos_grafico[p_sel]
 else:
     horas = st.sidebar.slider("⏱️ Horas históricas:", 1, 168, 24, step=1)
-
 fecha_fin = datetime.now(colombia_tz)
 fecha_inicio = fecha_fin - timedelta(hours=horas)
-
 with st.spinner("🔄 Consultando telemetría en tiempo real..."):
     df_actual = get_last_reading(seleccion)
     df_hist = get_historical_data_range(seleccion, fecha_inicio, fecha_fin)
-
 # ============================================================
 # 6. EXPORTACIÓN Y EXCEL OPENPYXL
 # ============================================================
@@ -355,7 +342,6 @@ def preparar_df_para_exportar(df):
     if 'timestamp' in df_export.columns:
         df_export['timestamp'] = df_export['timestamp'].dt.tz_localize(None)
     return df_export
-
 def generar_excel_con_formato(df, nombre_estacion, periodo_descripcion):
     df_export = preparar_df_para_exportar(df)
     output = BytesIO()
@@ -396,7 +382,6 @@ def generar_excel_con_formato(df, nombre_estacion, periodo_descripcion):
             cell.fill = PatternFill(start_color="D9E1F2", end_color="D9E1F2", fill_type="solid")
             
     return output.getvalue()
-
 def generar_resumen_estadistico(df):
     if df.empty: return "No hay datos disponibles"
     resumen = [
@@ -417,7 +402,6 @@ def generar_resumen_estadistico(df):
                 resumen.append(f"   • Registros: {len(datos)}")
                 resumen.append("")
     return "\n".join(resumen)
-
 # ============================================================
 # 7. MÓDULO EDV (EXTENSÓMETROS)
 # ============================================================
@@ -428,11 +412,10 @@ def get_edv_data(extensometro='izquierdo'):
         query = f"SELECT fecha, anillo, lectura, cota_referencia, cota, asiento, dist_datum, notas FROM `gen-lang-client-0342049346.amb_hidrologia.{table}` ORDER BY fecha DESC, CAST(anillo AS INT64) DESC"
         df = client.query(query).to_dataframe()
         if not df.empty:
-            df['fecha'] = pd.to_datetime(df['fecha']).dt.tz_localize('UTC').dt.tz_convert('America/Bogota')
+            df['fecha'] = convertir_fecha_bogota(df['fecha'])
         return df
     except:
         return pd.DataFrame()
-
 def create_edv_profile(df, fecha_sel=None, titulo="Perfil de Deformaciones"):
     if fecha_sel is None: fecha_sel = df['fecha'].max()
     df_f = df[df['fecha'].dt.date == fecha_sel.date()].sort_values('anillo', ascending=False)
@@ -443,7 +426,6 @@ def create_edv_profile(df, fecha_sel=None, titulo="Perfil de Deformaciones"):
     fig.add_hline(y=0, line_dash="dash", line_color="green", line_width=2, annotation_text="FONDO")
     fig.update_layout(title=f'{titulo} - {fecha_sel.strftime("%d/%m/%Y")}', xaxis_title='Asiento (cm)', yaxis_title='Anillo', template='plotly_white', height=420)
     return fig
-
 def mostrar_seccion_edv():
     st.markdown("---")
     st.subheader("📏 Instrumentación Geotécnica - Extensómetros (EDV)")
@@ -460,7 +442,6 @@ def mostrar_seccion_edv():
         f_sel = st.selectbox("Fecha del perfil:", fechas, format_func=lambda x: x.strftime('%d/%m/%Y'))
         fig = create_edv_profile(df_edv, f_sel, f"EDV {ext_sel.capitalize()}")
         if fig: st.plotly_chart(fig, use_container_width=True)
-
 # ============================================================
 # 8. PESTAÑAS PRINCIPALES DEL SISTEMA (5 PESTAÑAS)
 # ============================================================
@@ -471,7 +452,6 @@ tab_situacion, tab_embalse_2026, tab_series, tab_ia, tab_matematica = st.tabs([
     "🤖 Asistente IA MIMAT-C",
     "📐 Fundamento Matemático & Auditoría"
 ])
-
 # ------------------------------------------------------------
 # TAB 1: SITUACIÓN ACTUAL
 # ------------------------------------------------------------
@@ -509,7 +489,7 @@ with tab_situacion:
             c1, c2, c3, c4 = st.columns(4)
             c1.metric("🌊 Cota Actual", f"{cota_actual:.2f} msnm", delta=f"{hidro['excedente_rebose']:+.2f} msnm")
             c2.metric("💧 Volumen Útil", f"{hidro['volumen_util_hm3']:.2f} hm³", delta=f"{hidro['porcentaje_util']:.1f}% útil")
-            c3.metric("⏳ Autonomía PTAP", "Simulador (Tab 2)", help="Actualmente sin extracción activa hacia PTAP. Usa la pestaña de Gestión de Embalse para simular diferentes caudales.")
+            c3.metric("⏳ Autonomía PTAP", "Simulador (Tab 2)", help="Válvula cerrada / sin extracción activa. Usa la pestaña 2 para simular caudales.")
             c4.metric("📐 Área Espejo", f"{hidro['area_ha']:.1f} ha")
             
             st.info(f"📅 Última lectura: {row['timestamp'].strftime('%Y-%m-%d %H:%M:%S')}")
@@ -556,7 +536,6 @@ with tab_situacion:
                     with col3: st.metric("📊 Temp Promedio", f"{t_series.mean():.1f}°C")
     else:
         st.warning("⚠️ Sin datos recientes para esta estación.")
-
 # ------------------------------------------------------------
 # TAB 2: GESTIÓN EMBALSE & SEQUÍA 2026
 # ------------------------------------------------------------
@@ -600,7 +579,6 @@ with tab_embalse_2026:
         fig_curva.add_hline(y=NIVEL_REBOSE_EMBALSE, line_dash="dash", line_color="red", annotation_text="Rebose Morning Glory: 885.75 msnm")
         fig_curva.update_layout(title="Curva Cota vs. Volumen 2026", xaxis_title="Volumen (hm³)", yaxis_title="Cota (msnm)", height=400, template='plotly_white')
         st.plotly_chart(fig_curva, use_container_width=True)
-
 # ------------------------------------------------------------
 # TAB 3: SERIES DE TIEMPO, ROSA DE VIENTOS Y DESCARGAS
 # ------------------------------------------------------------
@@ -696,7 +674,6 @@ with tab_series:
         with c_exp2:
             st.download_button("📝 Google Sheets (CSV)", csv_bytes, f"{seleccion}_{hoy.strftime('%Y%m%d_%H%M')}.csv", "text/csv", use_container_width=True)
             st.caption("📤 Compatible con Google Sheets")
-
 # ------------------------------------------------------------
 # TAB 4: ASISTENTE IA MIMAT-C
 # ------------------------------------------------------------
@@ -734,7 +711,6 @@ with tab_ia:
     if st.button("🗑️ Limpiar conversación", use_container_width=True):
         st.session_state.messages = []
         st.rerun()
-
 # ------------------------------------------------------------
 # TAB 5: FUNDAMENTO MATEMÁTICO & AUDITORÍA DE INGENIERÍA
 # ------------------------------------------------------------
@@ -781,25 +757,21 @@ with tab_matematica:
         Relación entre la lectura de radar no intrusivo y la regla limnimétrica física leída por el tomero a las 6:00 AM y 6:00 PM:
         $$h_{\text{mira\_real}} (\text{cm}) = h_{\text{RQ30}} (\text{cm}) - \text{Offset}_{\text{calibración}} (\text{cm})$$
         """)
-
 # ============================================================
 # 9. SIDEBAR FOOTER
 # ============================================================
 st.sidebar.markdown("---")
 st.sidebar.markdown(f"**Desarrollado por:** {AUTOR}")
 st.sidebar.caption("Proyecto MIMAT-C26 • amb s.a. e.s.p.")
-
 with st.sidebar.expander("🌊 Información del Embalse"):
     st.write(f"**Nivel de Rebose:** {NIVEL_REBOSE_EMBALSE} msnm")
     c_act = get_cota_embalse_actual_segura()
     st.write(f"**Cota Actual:** {c_act:.2f} msnm")
     st.write(f"**Volumen Útil (2026):** {VOLUMEN_UTIL_MAX_HM3} hm³")
     st.write(f"**Volumen Muerto:** {VOLUMEN_MUERTO_HM3} hm³")
-
 with st.sidebar.expander("🤖 Estado del Agente IA"):
     st.write(f"**Servicio:** Cloud Run (MIMAT-C26)")
     st.write(f"**Estado:** {'✅ Activo' if ia_online else '⚠️ Desconectado'}")
-
 with st.sidebar.expander("📏 Extensómetros (EDV)"):
     st.write("**Base de Datos Geotécnica:** BigQuery")
     st.write("- EDV Izquierdo: Activo")
