@@ -33,7 +33,6 @@ st.markdown("""
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700;800&display=swap');
     html, body, [class*="css"] { font-family: 'Inter', sans-serif; }
     
-    /* Flecha/Control de barra lateral grande y visible */
     [data-testid="stSidebarCollapsedControl"] {
         display: block !important;
         background: linear-gradient(135deg, #005073 0%, #0A192F 100%) !important;
@@ -49,7 +48,6 @@ st.markdown("""
         box-shadow: 0 6px 20px rgba(100, 255, 218, 0.6) !important;
     }
     
-    /* Banner institucional */
     .mimat-header {
         background: linear-gradient(135deg, #0A192F 0%, #172A45 50%, #005073 100%);
         padding: 20px 24px;
@@ -124,7 +122,6 @@ def render_logo_sidebar():
                 return
             except:
                 pass
-    # Fallback tipográfico corporativo
     st.sidebar.markdown("""
     <div style="background: linear-gradient(135deg, #005073, #0A192F); padding: 16px; border-radius: 12px; text-align: center; margin-bottom: 15px; border: 1px solid #64FFDA;">
         <h1 style="color: #64FFDA; margin: 0; font-size: 32px; font-weight: 900; letter-spacing: -1px;">amb</h1>
@@ -138,7 +135,7 @@ render_logo_sidebar()
 # 2. METADATOS Y CONSTANTES
 # ============================================================
 AUTOR = "Ing. Mauricio Mora"
-VERSION = "MIMAT-C26 v2.5"
+VERSION = "MIMAT-C26 v2.6"
 SISTEMA = "Sistema Automatizado de Monitoreo MIMAT-C26 - amb"
 AGENTE_API_URL = "https://querybigqueryamb-ia-661926446380.us-central1.run.app"
 
@@ -167,7 +164,7 @@ def interpolar_volumen(c):
 def interpolar_area(c):
     return float(np.interp(c, COTAS_REF, AREAS_REF))
 
-def calcular_hidraulica_embalse(cota: float, q_ptap_ls: float = 1450.0):
+def calcular_hidraulica_embalse(cota: float, q_ptap_ls: float = 0.0):
     cota_val = max(818.0, min(float(cota), 886.00))
     vol_total_hm3 = interpolar_volumen(cota_val)
     vol_total_m3 = vol_total_hm3 * 1_000_000.0
@@ -181,10 +178,16 @@ def calcular_hidraulica_embalse(cota: float, q_ptap_ls: float = 1450.0):
     vol_util_hm3 = vol_util_m3 / 1_000_000.0
     porcentaje_util = min(100.0, (vol_util_hm3 / VOLUMEN_UTIL_MAX_HM3) * 100.0)
     
-    q_ptap_m3_s = q_ptap_ls / 1000.0
-    consumo_diario_m3 = q_ptap_m3_s * 86400.0
-    dias_autonomia = vol_util_m3 / consumo_diario_m3 if consumo_diario_m3 > 0 else 0
-    
+    # Manejo de extracción cero / sin caudalímetro activo
+    if q_ptap_ls > 0:
+        q_ptap_m3_s = q_ptap_ls / 1000.0
+        consumo_diario_m3 = q_ptap_m3_s * 86400.0
+        dias_autonomia = vol_util_m3 / consumo_diario_m3
+        autonomia_texto = f"{dias_autonomia:.0f} Días"
+    else:
+        dias_autonomia = None
+        autonomia_texto = "∞ Indefinida (Sin Extracción)"
+        
     excedente_rebose = cota_val - NIVEL_REBOSE_EMBALSE
     
     return {
@@ -195,6 +198,7 @@ def calcular_hidraulica_embalse(cota: float, q_ptap_ls: float = 1450.0):
         "area_ha": area_ha,
         "m3_por_cm": m3_por_cm,
         "dias_autonomia": dias_autonomia,
+        "autonomia_texto": autonomia_texto,
         "excedente_rebose": excedente_rebose
     }
 
@@ -274,7 +278,6 @@ def get_historical_data_range(estacion, fecha_inicio, fecha_fin):
     except Exception as e:
         return pd.DataFrame()
 
-# Consulta exclusiva y segura para la cota del embalse
 @st.cache_data(ttl=60)
 def get_cota_embalse_actual_segura():
     try:
@@ -459,13 +462,14 @@ def mostrar_seccion_edv():
         if fig: st.plotly_chart(fig, use_container_width=True)
 
 # ============================================================
-# 8. PESTAÑAS PRINCIPALES DEL SISTEMA
+# 8. PESTAÑAS PRINCIPALES DEL SISTEMA (5 PESTAÑAS)
 # ============================================================
-tab_situacion, tab_embalse_2026, tab_series, tab_ia = st.tabs([
+tab_situacion, tab_embalse_2026, tab_series, tab_ia, tab_matematica = st.tabs([
     "📊 Situación Actual", 
     "🌊 Gestión Embalse & Sequía 2026", 
     "📈 Series de Tiempo & Descargas", 
-    "🤖 Asistente IA MIMAT-C"
+    "🤖 Asistente IA MIMAT-C",
+    "📐 Fundamento Matemático & Auditoría"
 ])
 
 # ------------------------------------------------------------
@@ -479,7 +483,7 @@ with tab_situacion:
         if seleccion == "Embalse":
             raw_c = row.get('temperatura', 885.80)
             cota_actual = float(raw_c) if pd.notna(raw_c) and float(raw_c) > 800 else 885.80
-            hidro = calcular_hidraulica_embalse(cota_actual)
+            hidro = calcular_hidraulica_embalse(cota_actual, q_ptap_ls=0.0)
             
             if hidro["excedente_rebose"] >= 0:
                 st.markdown(f"""
@@ -491,23 +495,13 @@ with tab_situacion:
                     </div>
                 </div>
                 """, unsafe_allow_html=True)
-            elif hidro["dias_autonomia"] > 60:
+            else:
                 st.markdown(f"""
                 <div class="alert-box alert-green">
                     <span style="font-size: 24px;">🟢</span>
                     <div>
-                        <strong>ESTADO: SEGURIDAD HÍDRICA NORMAL ({hidro['dias_autonomia']:.0f} Días de Reserva)</strong><br>
-                        Cota en {cota_actual:.2f} msnm. Capacidad útil al {hidro['porcentaje_util']:.1f}%.
-                    </div>
-                </div>
-                """, unsafe_allow_html=True)
-            else:
-                st.markdown(f"""
-                <div class="alert-box alert-red">
-                    <span style="font-size: 24px;">🚨</span>
-                    <div>
-                        <strong>ALERTA DE SEQUÍA SÚPER NIÑO ({hidro['dias_autonomia']:.0f} Días de Reserva)</strong><br>
-                        Nivel de contingencia técnica. Regular extracción hacia PTAP Bosconia.
+                        <strong>ESTADO: OPERACIÓN NORMAL</strong><br>
+                        Cota en {cota_actual:.2f} msnm ({abs(hidro['excedente_rebose']):.2f} msnm bajo rebose). Capacidad útil al {hidro['porcentaje_util']:.1f}%.
                     </div>
                 </div>
                 """, unsafe_allow_html=True)
@@ -515,7 +509,7 @@ with tab_situacion:
             c1, c2, c3, c4 = st.columns(4)
             c1.metric("🌊 Cota Actual", f"{cota_actual:.2f} msnm", delta=f"{hidro['excedente_rebose']:+.2f} msnm")
             c2.metric("💧 Volumen Útil", f"{hidro['volumen_util_hm3']:.2f} hm³", delta=f"{hidro['porcentaje_util']:.1f}% útil")
-            c3.metric("⏳ Autonomía Bucaramanga", f"{hidro['dias_autonomia']:.0f} Días")
+            c3.metric("⏳ Autonomía PTAP", "Simulador (Tab 2)", help="Actualmente sin extracción activa hacia PTAP. Usa la pestaña de Gestión de Embalse para simular diferentes caudales.")
             c4.metric("📐 Área Espejo", f"{hidro['area_ha']:.1f} ha")
             
             st.info(f"📅 Última lectura: {row['timestamp'].strftime('%Y-%m-%d %H:%M:%S')}")
@@ -564,19 +558,18 @@ with tab_situacion:
         st.warning("⚠️ Sin datos recientes para esta estación.")
 
 # ------------------------------------------------------------
-# TAB 2: GESTIÓN EMBALSE & SEQUÍA 2026 (BLINDADA CONTRA ERRORES)
+# TAB 2: GESTIÓN EMBALSE & SEQUÍA 2026
 # ------------------------------------------------------------
 with tab_embalse_2026:
     st.subheader("🌊 Módulo de Gestión: Embalse Tona (Batimetría Multihaz 2026)")
     st.caption("Resolución centímetro a centímetro según Informe Técnico Oficial OPS 071 de 2026")
     
-    # Cota segura independiente de qué estación esté seleccionada
     cota_segura = get_cota_embalse_actual_segura()
             
     col_sim1, col_sim2 = st.columns([1, 2])
     with col_sim1:
         st.markdown("### 🎛️ Simulador de Extracción PTAP")
-        q_sim = st.slider("Extracción hacia Plantas (L/s):", 800, 2500, 1450, step=50)
+        q_sim = st.slider("Extracción hacia Plantas (L/s):", min_value=0, max_value=2500, value=0, step=50, help="Pon 0 para condición sin bombeo/válvula cerrada")
         cota_eval = st.number_input("Cota a Evaluar (msnm):", min_value=818.0, max_value=886.0, value=float(cota_segura), step=0.1)
         
         datos_eval = calcular_hidraulica_embalse(cota_eval, q_sim)
@@ -588,8 +581,13 @@ with tab_embalse_2026:
         * **Volumen Muerto (Sedimentos):** `1.400 hm³`
         * **Volumen Total Acumulado:** `{datos_eval['volumen_total_hm3']:.3f} hm³`
         * **Volumen por cada Centímetro:** `{datos_eval['m3_por_cm']:.1f} m³/cm`
-        * **Autonomía Bucaramanga:** **`{datos_eval['dias_autonomia']:.0f} Días de Reserva`**
+        * **Autonomía Estimada:** **`{datos_eval['autonomia_texto']}`**
         """)
+        
+        if q_sim > 0:
+            st.caption(f"💡 Extrayendo {q_sim} L/s ({q_sim*86.4:.0f} m³/día) sin aportes del río Tona.")
+        else:
+            st.info("ℹ️ Extracción en 0 L/s: El embalse se encuentra en retención o llenado natural.")
         
     with col_sim2:
         cotas_curva = np.linspace(818, 885.8, 100)
@@ -736,6 +734,53 @@ with tab_ia:
     if st.button("🗑️ Limpiar conversación", use_container_width=True):
         st.session_state.messages = []
         st.rerun()
+
+# ------------------------------------------------------------
+# TAB 5: FUNDAMENTO MATEMÁTICO & AUDITORÍA DE INGENIERÍA
+# ------------------------------------------------------------
+with tab_matematica:
+    st.subheader("📐 Fundamentos Físicos, Matemáticos y Normativos")
+    st.caption("Transparencia metodológica y ecuaciones de ingeniería implementadas en MIMAT-C26")
+    
+    with st.expander("📊 1. Modelo de Batimetría Multihaz y Cálculo de Volúmenes (OPS 071-2026)", expanded=True):
+        st.markdown(r"""
+        El cálculo de volumen acumulado $V(h)$ y área superficial de espejo de agua $A(h)$ se basa en el **Levantamiento Batimétrico Multihaz de Alta Definición (Agosto 2026)** realizado con ecosonda NORBIT iWBMSc y perfilador acústico AML-3.
+        
+        Para garantizar precisión continua al centímetro ($0.01\text{ m}$) sin saltos discretos, se emplea interpolación continua monótona:
+        $$\Delta V = V(h_2) - V(h_1) = \int_{h_1}^{h_2} A(h) \, dh$$
+        
+        **Matriz Oficial de Calibración 2026 (Tabla 9 del Informe):**
+        """)
+        df_matriz = pd.DataFrame({
+            "Cota (msnm)": COTAS_REF,
+            "Volumen Acumulado (hm³)": VOLUMENES_REF,
+            "Volumen Acumulado (m³)": [f"{v*1e6:,.0f}" for v in VOLUMENES_REF],
+            "Área Espejo (ha)": AREAS_REF,
+            "Volumen por cada 1 cm (m³/cm)": [f"{a*10000*0.01:,.1f}" for a in AREAS_REF]
+        })
+        st.dataframe(df_matriz, use_container_width=True)
+        st.caption("Normatividad: Cumplimiento Orden Especial Norma S-44 v6.1/2023 de la Organización Hidrográfica Internacional (IOH). Pérdida de volumen útil calculada en -0.8% anual, otorgando vigencia CNO de 5 años (2026-2031).")
+        
+    with st.expander("⚖️ 2. Balance Hídrico y Reconstrucción del Caudal del Río Tona"):
+        st.markdown(r"""
+        La conservación de masa en el vaso del embalse se rige por la ecuación diferencial de continuidad:
+        $$\frac{dV}{dt} = Q_{\text{afluente (Tona)}} - Q_{\text{PTAP}} - Q_{\text{MorningGlory}} - Q_{\text{ecológico}}$$
+        
+        Despejando el caudal de aporte natural del río sin requerir sensor físico en el cauce:
+        $$Q_{\text{Tona}} = A(h) \cdot \frac{\Delta h}{\Delta t} + Q_{\text{PTAP}} + Q_{\text{rebose}}$$
+        """)
+        
+    with st.expander("⏳ 3. Autonomía Hídrica y Contingencia Sequía Súper Niño"):
+        st.markdown(r"""
+        La autonomía de suministro continuo para el Área Metropolitana de Bucaramanga hasta el Nivel Mínimo Técnico ($841.00\text{ msnm}$) se modela como:
+        $$\text{Autonomía (Días)} = \frac{V_{\text{útil actual}} (\text{m}^3) - V(841.00)}{Q_{\text{PTAP}} (\text{m}^3/\text{s}) \times 86.400\text{ s/día}}$$
+        """)
+        
+    with st.expander("📏 4. Calibración de Mira Virtual (Radar Sommer RQ-30)"):
+        st.markdown(r"""
+        Relación entre la lectura de radar no intrusivo y la regla limnimétrica física leída por el tomero a las 6:00 AM y 6:00 PM:
+        $$h_{\text{mira\_real}} (\text{cm}) = h_{\text{RQ30}} (\text{cm}) - \text{Offset}_{\text{calibración}} (\text{cm})$$
+        """)
 
 # ============================================================
 # 9. SIDEBAR FOOTER
