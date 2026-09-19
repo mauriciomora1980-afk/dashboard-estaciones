@@ -84,13 +84,6 @@ st.markdown("""
 """, unsafe_allow_html=True)
 colombia_tz = timezone('America/Bogota')
 utc_tz = timezone('UTC')
-def convertir_fecha_bogota(serie):
-    """Convierte cualquier serie de fechas a hora de Colombia de forma segura"""
-    ts = pd.to_datetime(serie, errors='coerce')
-    if ts.dt.tz is None:
-        return ts.dt.tz_localize('UTC').dt.tz_convert('America/Bogota')
-    else:
-        return ts.dt.tz_convert('America/Bogota')
 # ============================================================
 # 1. ENCABEZADO Y LOGO (amb minúscula)
 # ============================================================
@@ -172,6 +165,7 @@ def calcular_hidraulica_embalse(cota: float, q_ptap_ls: float = 0.0):
     vol_util_hm3 = vol_util_m3 / 1_000_000.0
     porcentaje_util = min(100.0, (vol_util_hm3 / VOLUMEN_UTIL_MAX_HM3) * 100.0)
     
+    # Manejo de extracción cero / sin caudalímetro activo
     if q_ptap_ls > 0:
         q_ptap_m3_s = q_ptap_ls / 1000.0
         consumo_diario_m3 = q_ptap_m3_s * 86400.0
@@ -206,7 +200,7 @@ def obtener_alerta(precipitacion, estacion):
     elif precipitacion > 0: return "VERDE", "✅ Lluvia Normal", "#00CC96", "0s"
     return "GRIS", "☁️ Sin lluvia", "#CCCCCC", "0s"
 # ============================================================
-# 4. CLIENTE BIGQUERY
+# 4. CLIENTE BIGQUERY CON ITERADOR NATIVO (SIN DB-DTYPES)
 # ============================================================
 @st.cache_resource
 def init_bigquery_client():
@@ -219,21 +213,22 @@ def init_bigquery_client():
         st.error(f"❌ Error al conectar con BigQuery: {e}")
         st.stop()
 client = init_bigquery_client()
-@st.cache_data(ttl=30)
+@st.cache_data(ttl=60)
 def get_last_reading(estacion):
     try:
         query = f"""
         SELECT * FROM `gen-lang-client-0342049346.amb_hidrologia.telemetria_estaciones` 
-        WHERE LOWER(id_estacion) = LOWER('{estacion}') 
+        WHERE id_estacion = '{estacion}' 
         ORDER BY SAFE_CAST(timestamp AS TIMESTAMP) DESC 
         LIMIT 1
         """
-        df = client.query(query).to_dataframe()
+        query_job = client.query(query)
+        rows = [dict(row) for row in query_job.result()]
+        df = pd.DataFrame(rows)
         if not df.empty:
-            df['timestamp'] = convertir_fecha_bogota(df['timestamp'])
+            df['timestamp'] = pd.to_datetime(df['timestamp']).dt.tz_localize('UTC').dt.tz_convert('America/Bogota')
         return df
     except Exception as e:
-        st.warning(f"Error consultando última lectura de {estacion}: {e}")
         return pd.DataFrame()
 @st.cache_data(ttl=60)
 def get_historical_data_range(estacion, fecha_inicio, fecha_fin):
@@ -254,32 +249,26 @@ def get_historical_data_range(estacion, fecha_inicio, fecha_fin):
         
         query = f"""
         SELECT * FROM `gen-lang-client-0342049346.amb_hidrologia.telemetria_estaciones` 
-        WHERE LOWER(id_estacion) = LOWER('{estacion}') 
+        WHERE id_estacion = '{estacion}' 
         AND SAFE_CAST(timestamp AS TIMESTAMP) >= TIMESTAMP('{f_inicio_str}')
         AND SAFE_CAST(timestamp AS TIMESTAMP) <= TIMESTAMP('{f_fin_str}')
         ORDER BY SAFE_CAST(timestamp AS TIMESTAMP) DESC 
         LIMIT 50000
         """
-        df = client.query(query).to_dataframe()
+        query_job = client.query(query)
+        rows = [dict(row) for row in query_job.result()]
+        df = pd.DataFrame(rows)
         if not df.empty:
-            df['timestamp'] = convertir_fecha_bogota(df['timestamp'])
+            df['timestamp'] = pd.to_datetime(df['timestamp']).dt.tz_localize('UTC').dt.tz_convert('America/Bogota')
         return df
     except Exception as e:
-        st.warning(f"Error en datos históricos: {e}")
         return pd.DataFrame()
-@st.cache_data(ttl=30)
+@st.cache_data(ttl=60)
 def get_cota_embalse_actual_segura():
     try:
-        query = """
-        SELECT SAFE_CAST(temperatura AS FLOAT64) as cota 
-        FROM `gen-lang-client-0342049346.amb_hidrologia.telemetria_estaciones` 
-        WHERE LOWER(id_estacion) = 'embalse' AND SAFE_CAST(temperatura AS FLOAT64) > 800
-        ORDER BY SAFE_CAST(timestamp AS TIMESTAMP) DESC 
-        LIMIT 1
-        """
-        df_emb = client.query(query).to_dataframe()
+        df_emb = get_last_reading("Embalse")
         if not df_emb.empty:
-            c = float(df_emb.iloc[0]['cota'])
+            c = float(df_emb.iloc[0].get('temperatura', 885.80))
             if 818.0 <= c <= 886.0:
                 return c
     except:
@@ -297,11 +286,10 @@ st.markdown("""
     <span style="font-size: 12px; color: #555;">👈 También disponible en el menú lateral</span>
 </div>
 """, unsafe_allow_html=True)
-idx_default = estaciones.index(st.session_state.estacion_seleccionada) if st.session_state.estacion_seleccionada in estaciones else 0
 seleccion = st.radio(
     "Estación:",
     estaciones,
-    index=idx_default,
+    index=estaciones.index(st.session_state.estacion_seleccionada) if st.session_state.estacion_seleccionada in estaciones else 0,
     horizontal=True,
     label_visibility="collapsed"
 )
@@ -410,9 +398,11 @@ def get_edv_data(extensometro='izquierdo'):
     try:
         table = f"edv_{extensometro}"
         query = f"SELECT fecha, anillo, lectura, cota_referencia, cota, asiento, dist_datum, notas FROM `gen-lang-client-0342049346.amb_hidrologia.{table}` ORDER BY fecha DESC, CAST(anillo AS INT64) DESC"
-        df = client.query(query).to_dataframe()
+        query_job = client.query(query)
+        rows = [dict(row) for row in query_job.result()]
+        df = pd.DataFrame(rows)
         if not df.empty:
-            df['fecha'] = convertir_fecha_bogota(df['fecha'])
+            df['fecha'] = pd.to_datetime(df['fecha']).dt.tz_localize('UTC').dt.tz_convert('America/Bogota')
         return df
     except:
         return pd.DataFrame()
@@ -489,7 +479,7 @@ with tab_situacion:
             c1, c2, c3, c4 = st.columns(4)
             c1.metric("🌊 Cota Actual", f"{cota_actual:.2f} msnm", delta=f"{hidro['excedente_rebose']:+.2f} msnm")
             c2.metric("💧 Volumen Útil", f"{hidro['volumen_util_hm3']:.2f} hm³", delta=f"{hidro['porcentaje_util']:.1f}% útil")
-            c3.metric("⏳ Autonomía PTAP", "Simulador (Tab 2)", help="Válvula cerrada / sin extracción activa. Usa la pestaña 2 para simular caudales.")
+            c3.metric("⏳ Autonomía PTAP", "Simulador (Tab 2)", help="Actualmente sin extracción activa hacia PTAP. Usa la pestaña de Gestión de Embalse para simular diferentes caudales.")
             c4.metric("📐 Área Espejo", f"{hidro['area_ha']:.1f} ha")
             
             st.info(f"📅 Última lectura: {row['timestamp'].strftime('%Y-%m-%d %H:%M:%S')}")
