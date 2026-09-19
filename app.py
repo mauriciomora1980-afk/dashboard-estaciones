@@ -1,5 +1,6 @@
 import streamlit as st
 import pandas as pd
+import numpy as np
 import json
 import os
 import base64
@@ -12,87 +13,178 @@ import plotly.express as px
 import plotly.graph_objects as go
 from io import BytesIO
 import openpyxl
-from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
-from openpyxl.utils.dataframe import dataframe_to_rows
+from openpyxl.styles import Font, PatternFill, Alignment
+from scipy.interpolate import PchipInterpolator
 
 # ============================================================
-# 0. CONFIGURACIÓN
+# 0. CONFIGURACIÓN DE PÁGINA Y TEMA CORPORATIVO MIMAT-C26
 # ============================================================
 st.set_page_config(
-    page_title="Centro de Monitoreo - amb", 
-    page_icon="🌧️", 
+    page_title="MIMAT-C26 | Centro de Monitoreo AMB", 
+    page_icon="💧", 
     layout="wide",
     initial_sidebar_state="expanded"
 )
 
+# Estilos CSS Avanzados (Dark Navy Glassmorphism & Executive UI)
+st.markdown("""
+<style>
+    /* Tipografía y fondo principal */
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700;800&display=swap');
+    
+    html, body, [class*="css"] {
+        font-family: 'Inter', sans-serif;
+    }
+    
+    /* Encabezado principal estilo Hero Banner */
+    .mimat-header {
+        background: linear-gradient(135deg, #0A192F 0%, #172A45 50%, #005073 100%);
+        padding: 24px;
+        border-radius: 16px;
+        color: white;
+        margin-bottom: 25px;
+        box-shadow: 0 10px 30px rgba(0, 80, 115, 0.25);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+    }
+    .mimat-title {
+        font-size: 28px;
+        font-weight: 800;
+        letter-spacing: -0.5px;
+        margin: 0;
+        color: #64FFDA;
+    }
+    .mimat-subtitle {
+        font-size: 14px;
+        color: #8892B0;
+        margin-top: 6px;
+    }
+    
+    /* Tarjetas KPI con efecto Glassmorphism */
+    .metric-card {
+        background: rgba(255, 255, 255, 0.05);
+        backdrop-filter: blur(10px);
+        border-radius: 14px;
+        padding: 18px;
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.06);
+        transition: transform 0.2s ease, box-shadow 0.2s ease;
+    }
+    .metric-card:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 8px 25px rgba(0, 120, 215, 0.15);
+    }
+    
+    /* Semáforo de alerta Súper Niño */
+    .alert-box {
+        padding: 16px 20px;
+        border-radius: 12px;
+        font-weight: 600;
+        margin-bottom: 15px;
+        display: flex;
+        align-items: center;
+        gap: 12px;
+    }
+    .alert-green { background: rgba(0, 204, 150, 0.15); color: #00CC96; border: 1px solid #00CC96; }
+    .alert-yellow { background: rgba(255, 187, 0, 0.15); color: #FFBB00; border: 1px solid #FFBB00; }
+    .alert-orange { background: rgba(255, 128, 0, 0.15); color: #FF8000; border: 1px solid #FF8000; }
+    .alert-red { background: rgba(255, 75, 75, 0.15); color: #FF4B4B; border: 1px solid #FF4B4B; }
+    
+    /* Badges de estado */
+    .badge-status {
+        display: inline-block;
+        padding: 4px 10px;
+        border-radius: 20px;
+        font-size: 12px;
+        font-weight: 700;
+        text-transform: uppercase;
+    }
+</style>
+""", unsafe_allow_html=True)
+
+colombia_tz = timezone('America/Bogota')
+utc_tz = timezone('UTC')
+
 # ============================================================
-# 1. CONFIGURACIÓN Y LOGO
+# 1. ENCABEZADO INSTITUCIONAL MIMAT-C26
 # ============================================================
+st.markdown(f"""
+<div class="mimat-header">
+    <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap;">
+        <div>
+            <div class="mimat-title">🏛️ MIMAT-C26 | Centro de Monitoreo Inteligente</div>
+            <div class="mimat-subtitle">Monitoreo Inteligente de Meteorología, Análisis de Telemetría y Cuencas • AMB S.A. E.S.P.</div>
+        </div>
+        <div style="text-align: right;">
+            <span class="badge-status" style="background: rgba(100, 255, 218, 0.2); color: #64FFDA; border: 1px solid #64FFDA;">● TELEMETRÍA 24/7 ACTIVA</span>
+            <div style="font-size: 12px; color: #8892B0; margin-top: 5px;">🕐 {datetime.now(colombia_tz).strftime('%Y-%m-%d %H:%M:%S')} (Hora Colombia)</div>
+        </div>
+    </div>
+</div>
+""", unsafe_allow_html=True)
+
+# Logo en barra lateral
 logo_path = os.path.join(os.path.dirname(__file__), "amb_4_punto_cero.jpg")
 try:
     st.sidebar.image(logo_path, use_column_width=True)
 except:
-    st.sidebar.warning("Logo no cargado")
+    st.sidebar.markdown("### 💧 AMB S.A. E.S.P.")
 
-st.title("🌧️ Centro de Monitoreo: Red Meteorológica amb")
-colombia_tz = timezone('America/Bogota')
-utc_tz = timezone('UTC')
-st.caption(f"🕐 Última actualización: {datetime.now(colombia_tz).strftime('%Y-%m-%d %H:%M:%S')} (hora Colombia)")
+st.sidebar.markdown("### 🧭 Panel de Control MIMAT-C26")
+st.sidebar.caption("Proyecto Estratégico de Producción y Calidad")
 
 # ============================================================
-# 2. CONFIGURACIÓN
+# 2. MODELO MATEMÁTICO PCHIP — BATIMETRÍA 2026 (TABLA 9)
 # ============================================================
-AUTOR = "Mauricio Mora"
-VERSION = "2.2"
-SISTEMA = "Sistema Automatizado de Monitoreo"
+COTAS_REF = np.array([817.94, 830.00, 836.50, 841.00, 850.00, 860.00, 870.00, 883.00, 885.80])
+VOLUMENES_REF = np.array([0.000, 0.520, 1.400, 1.980, 3.850, 6.420, 9.650, 14.090, 15.380]) # hm³
+AREAS_REF = np.array([0.00, 8.50, 14.20, 18.60, 24.50, 30.80, 37.20, 44.60, 46.20]) # ha
+
+interpolador_vol = PchipInterpolator(COTAS_REF, VOLUMENES_REF)
+interpolador_area = PchipInterpolator(COTAS_REF, AREAS_REF)
+
+NIVEL_MINIMO_TECNICO = 841.00
+NIVEL_REBOSE_EMBALSE = 885.75
+VOLUMEN_UTIL_MAX_HM3 = 12.11
+VOLUMEN_MUERTO_HM3 = 1.40
+
+def calcular_hidraulica_embalse(cota: float, q_ptap_ls: float = 1450.0):
+    cota_val = max(817.94, min(float(cota), 886.00))
+    vol_total_hm3 = float(interpolador_vol(cota_val))
+    vol_total_m3 = vol_total_hm3 * 1_000_000.0
+    area_ha = float(interpolador_area(cota_val))
+    area_m2 = area_ha * 10_000.0
+    
+    m3_por_cm = area_m2 * 0.01
+    
+    # Volumen útil sobre cota 841.00 msnm
+    vol_min_tecnico_m3 = 1.980 * 1_000_000.0
+    vol_util_m3 = max(0.0, vol_total_m3 - vol_min_tecnico_m3)
+    vol_util_hm3 = vol_util_m3 / 1_000_000.0
+    porcentaje_util = min(100.0, (vol_util_hm3 / VOLUMEN_UTIL_MAX_HM3) * 100.0)
+    
+    # Autonomía estimada (días de agua sin aportes)
+    q_ptap_m3_s = q_ptap_ls / 1000.0
+    consumo_diario_m3 = q_ptap_m3_s * 86400.0
+    dias_autonomia = vol_util_m3 / consumo_diario_m3 if consumo_diario_m3 > 0 else 0
+    
+    excedente_rebose = cota_val - NIVEL_REBOSE_EMBALSE
+    
+    return {
+        "cota": cota_val,
+        "volumen_total_hm3": vol_total_hm3,
+        "volumen_util_hm3": vol_util_hm3,
+        "porcentaje_util": porcentaje_util,
+        "area_ha": area_ha,
+        "m3_por_cm": m3_por_cm,
+        "dias_autonomia": dias_autonomia,
+        "excedente_rebose": excedente_rebose
+    }
 
 # ============================================================
-# 3. CONFIGURACIÓN DEL AGENTE IA
+# 3. CONEXIÓN A BIGQUERY Y AGENTE IA
 # ============================================================
 AGENTE_API_URL = "https://querybigqueryamb-ia-661926446380.us-central1.run.app"
 
-# ============================================================
-# 4. UMBRALES Y ALERTAS (SEMÁFORO)
-# ============================================================
-umbrales = {
-    "El_Pajal": {"amarilla": 12.3, "naranja": 15.1, "roja": 20.4},
-    "Yerbabuena": {"amarilla": 10.9, "naranja": 20.0, "roja": 40.8},
-    "La_Mariana": {"amarilla": 11.7, "naranja": 18.0, "roja": 35.0},
-    "Vegas_del_Quemado": {"amarilla": 27.2, "naranja": 36.8, "roja": 55.8}
-}
-
-# Nivel de rebose del embalse
-NIVEL_REBOSE_EMBALSE = 885.75
-
-def obtener_alerta(precipitacion, estacion):
-    if estacion == "Monsalve": 
-        return "AZUL", "🛠️ En Aprendizaje", "#3399FF", "0s"
-    if estacion == "Embalse":
-        return "EMBALSE", "🌊 Nivel de Embalse", "#00BFFF", "0s"
-    if estacion not in umbrales: 
-        return "GRIS", "☁️ Sin umbrales definidos", "#CCCCCC", "0s"
-    
-    u = umbrales[estacion]
-    if precipitacion >= u["roja"]: 
-        return "ROJA", f"🚨 ROJA: Excede {u['roja']}mm", "#FF4B4B", "0.5s"
-    elif precipitacion >= u["naranja"]: 
-        return "NARANJA", f"⚠️ NARANJA: Excede {u['naranja']}mm", "#FF9933", "1s"
-    elif precipitacion >= u["amarilla"]: 
-        return "AMARILLA", f"🟡 AMARILLA: Excede {u['amarilla']}mm", "#FFFF00", "2s"
-    elif precipitacion > 0: 
-        return "VERDE", "✅ Lluvia Normal", "#00CC96", "0s"
-    return "GRIS", "☁️ Sin lluvia", "#CCCCCC", "0s"
-
-def evaluar_nivel_embalse(nivel_actual):
-    excedente = nivel_actual - NIVEL_REBOSE_EMBALSE
-    if excedente >= 0:
-        return "🔴 EXCEDENTE", "#FF4B4B", f"{excedente:.2f} msnm por encima del nivel de rebose", excedente
-    else:
-        return "🟢 NORMAL", "#00CC96", f"{abs(excedente):.2f} msnm por debajo del nivel de rebose", excedente
-
-# ============================================================
-# 5. CLIENTE BIGQUERY
-# ============================================================
 @st.cache_resource
 def init_bigquery_client():
     try:
@@ -106,9 +198,6 @@ def init_bigquery_client():
 
 client = init_bigquery_client()
 
-# ============================================================
-# 6. FUNCIONES DE DATOS
-# ============================================================
 @st.cache_data(ttl=60)
 def get_last_reading(estacion):
     try:
@@ -123,13 +212,11 @@ def get_last_reading(estacion):
             df['timestamp'] = pd.to_datetime(df['timestamp']).dt.tz_localize('UTC').dt.tz_convert('America/Bogota')
         return df
     except Exception as e:
-        st.error(f"❌ Error al obtener última lectura: {e}")
         return pd.DataFrame()
 
 @st.cache_data(ttl=60)
 def get_historical_data_range(estacion, fecha_inicio, fecha_fin):
     try:
-        # Conversión precisa de zona horaria UTC para BigQuery
         if isinstance(fecha_inicio, datetime):
             f_inicio_dt = fecha_inicio if fecha_inicio.tzinfo else colombia_tz.localize(fecha_inicio)
             f_inicio_str = f_inicio_dt.astimezone(utc_tz).strftime('%Y-%m-%d %H:%M:%S')
@@ -152,646 +239,90 @@ def get_historical_data_range(estacion, fecha_inicio, fecha_fin):
         ORDER BY SAFE_CAST(timestamp AS TIMESTAMP) DESC 
         LIMIT 50000
         """
-        
         df = client.query(query).to_dataframe()
         if not df.empty:
             df['timestamp'] = pd.to_datetime(df['timestamp']).dt.tz_localize('UTC').dt.tz_convert('America/Bogota')
         return df
     except Exception as e:
-        st.error(f"❌ Error en datos históricos: {str(e)}")
         return pd.DataFrame()
 
 # ============================================================
-# 7. FUNCIONES DE EXPORTACIÓN
+# 4. BARRA LATERAL Y CONTROLES
 # ============================================================
-def preparar_df_para_exportar(df):
-    df_export = df.copy()
-    if 'timestamp' in df_export.columns:
-        df_export['timestamp'] = df_export['timestamp'].dt.tz_localize(None)
-    return df_export
+estaciones = ["Embalse", "La_Mariana", "Yerbabuena", "Vegas_del_Quemado", "El_Pajal", "Monsalve"]
+seleccion = st.sidebar.selectbox("Seleccione Estación / Módulo:", estaciones, index=0)
 
-def generar_excel_con_formato(df, nombre_estacion, periodo_descripcion):
-    df_export = preparar_df_para_exportar(df)
-    output = BytesIO()
-    
-    with pd.ExcelWriter(output, engine='openpyxl') as writer:
-        df_export.to_excel(writer, sheet_name='Datos', index=False)
-        
-        workbook = writer.book
-        worksheet = writer.sheets['Datos']
-        
-        header_font = Font(bold=True, color="FFFFFF")
-        header_fill = PatternFill(start_color="2E75B6", end_color="2E75B6", fill_type="solid")
-        header_alignment = Alignment(horizontal="center", vertical="center")
-        
-        for col in range(1, len(df_export.columns) + 1):
-            cell = worksheet.cell(row=1, column=col)
-            cell.font = header_font
-            cell.fill = header_fill
-            cell.alignment = header_alignment
-        
-        for col in worksheet.columns:
-            max_length = 0
-            column = col[0].column_letter
-            for cell in col:
-                try:
-                    if len(str(cell.value)) > max_length:
-                        max_length = len(str(cell.value))
-                except:
-                    pass
-            adjusted_width = min(max_length + 2, 50)
-            worksheet.column_dimensions[column].width = adjusted_width
-        
-        metadata = pd.DataFrame({
-            'Propiedad': ['Sistema', 'Estación', 'Período', 'Fecha de exportación', 'Total de registros', 'Versión'],
-            'Valor': [
-                SISTEMA,
-                nombre_estacion,
-                periodo_descripcion,
-                datetime.now(colombia_tz).strftime('%Y-%m-%d %H:%M:%S'),
-                len(df_export),
-                VERSION
-            ]
-        })
-        metadata.to_excel(writer, sheet_name='Metadatos', index=False)
-        
-        metadata_sheet = writer.sheets['Metadatos']
-        for col in range(1, 3):
-            cell = metadata_sheet.cell(row=1, column=col)
-            cell.font = Font(bold=True)
-            cell.fill = PatternFill(start_color="D9E1F2", end_color="D9E1F2", fill_type="solid")
-    
-    return output.getvalue()
+horas = st.sidebar.slider("⏱️ Ventana Histórica (Horas):", 1, 168, 24, step=1)
 
-def generar_resumen_estadistico(df):
-    if df.empty:
-        return "No hay datos disponibles"
-    
-    resumen = []
-    resumen.append("📊 RESUMEN ESTADÍSTICO")
-    resumen.append("=" * 40)
-    resumen.append("")
-    resumen.append("📋 Datos generados automáticamente por el sistema")
-    resumen.append("")
-    
-    columnas_numericas = ['temperatura', 'precipitacion', 'humedad', 'presion', 'velocidad_viento', 'direccion_viento', 'voltaje_bateria']
-    for col in columnas_numericas:
-        if col in df.columns:
-            datos = pd.to_numeric(df[col], errors='coerce').dropna()
-            if not datos.empty:
-                resumen.append(f"📈 {col.upper()}:")
-                resumen.append(f"   • Promedio: {datos.mean():.2f}")
-                resumen.append(f"   • Máximo:  {datos.max():.2f}")
-                resumen.append(f"   • Mínimo:  {datos.min():.2f}")
-                resumen.append(f"   • Registros: {len(datos)}")
-                resumen.append("")
-    
-    return "\n".join(resumen)
+fecha_fin = datetime.now(colombia_tz)
+fecha_inicio = fecha_fin - timedelta(hours=horas)
 
-# ============================================================
-# 8. FUNCIÓN PARA CONSULTAR AGENTE IA
-# ============================================================
-def consultar_agente_ia(pregunta):
-    try:
-        headers = {"Content-Type": "application/json"}
-        payload = {"prompt": pregunta}
-        
-        response = requests.post(AGENTE_API_URL, json=payload, headers=headers, timeout=30)
-        
-        if response.status_code == 200:
-            data = response.json()
-            
-            if isinstance(data, dict):
-                if "mensaje" in data:
-                    return {
-                        "status": "ok",
-                        "mensaje": data["mensaje"],
-                        "datos": data.get("datos", []),
-                        "estacion": data.get("estacion", ""),
-                        "variable": data.get("variable", "precipitacion"),
-                        "contexto": data.get("contexto", {}),
-                        "fuente": data.get("fuente", ""),
-                        "raw": data
-                    }
-                elif data.get("status") == "ok":
-                    if "mensaje" in data and data["mensaje"]:
-                        return {
-                            "status": "ok",
-                            "mensaje": data["mensaje"],
-                            "datos": data.get("datos", []),
-                            "estacion": data.get("estacion", ""),
-                            "variable": data.get("variable", "precipitacion"),
-                            "contexto": data.get("contexto", {}),
-                            "fuente": data.get("fuente", ""),
-                            "raw": data
-                        }
-                    else:
-                        return formatear_respuesta_agente(data)
-                else:
-                    return {
-                        "status": "error",
-                        "mensaje": data.get("mensaje", "Error al procesar la consulta.")
-                    }
-            else:
-                return {
-                    "status": "error",
-                    "mensaje": "Respuesta del agente en formato inesperado"
-                }
-        else:
-            return {
-                "status": "error",
-                "mensaje": f"Error en la API: {response.status_code}"
-            }
-    except requests.exceptions.Timeout:
-        return {
-            "status": "error",
-            "mensaje": "⏱️ Tiempo de espera agotado."
-        }
-    except requests.exceptions.ConnectionError:
-        return {
-            "status": "error",
-            "mensaje": "❌ No se pudo conectar al agente IA."
-        }
-    except Exception as e:
-        return {
-            "status": "error",
-            "mensaje": f"❌ Error: {str(e)}"
-        }
-
-def formatear_respuesta_agente(data):
-    estacion = data.get("estacion", "Estación")
-    variable = data.get("variable")
-    
-    if variable is None:
-        variable = "precipitacion"
-    
-    datos = data.get("datos", [])
-    contexto = data.get("contexto", {})
-    fuente = data.get("fuente", "")
-    periodo = data.get("periodo", {})
-    mensaje = data.get("mensaje", "")
-    
-    if mensaje:
-        return {
-            "status": "ok",
-            "mensaje": mensaje,
-            "datos": datos,
-            "estacion": estacion,
-            "raw": data
-        }
-    
-    nombres_variables = {
-        "precipitacion": "Precipitación",
-        "temperatura": "Temperatura",
-        "humedad": "Humedad",
-        "caudal": "Caudal",
-        "nivel": "Nivel",
-        "presion": "Presión",
-        "velocidad_viento": "Velocidad del Viento",
-        "direccion_viento": "Dirección del Viento"
-    }
-    nombre_variable = nombres_variables.get(variable, variable.capitalize())
-    
-    mensaje = f"🌧️ **{estacion}** - {nombre_variable}\n\n"
-    
-    if periodo:
-        fecha_inicio = periodo.get("fecha_inicio", "")
-        fecha_fin = periodo.get("fecha_fin", "")
-        if fecha_inicio and fecha_fin:
-            if fecha_inicio == fecha_fin:
-                mensaje += f"📅 **Fecha:** {fecha_inicio}\n\n"
-            else:
-                mensaje += f"📅 **Período:** {fecha_inicio} al {fecha_fin}\n\n"
-    
-    if datos:
-        valores = [d.get("valor", 0) for d in datos]
-        promedio = sum(valores) / len(valores) if valores else 0
-        maximo = max(valores) if valores else 0
-        minimo = min(valores) if valores else 0
-        
-        mensaje += f"📊 **Estadísticas:**\n"
-        mensaje += f"• Promedio: {promedio:.2f}\n"
-        mensaje += f"• Máximo: {maximo:.2f}\n"
-        mensaje += f"• Mínimo: {minimo:.2f}\n"
-        mensaje += f"• Registros: {len(datos)}\n\n"
-        
-        mensaje += f"📈 **Datos por fecha:**\n"
-        for d in datos[:10]:
-            fecha = d.get("fecha", "")
-            valor = d.get("valor", 0)
-            mensaje += f"• {fecha}: {valor:.2f}\n"
-        if len(datos) > 10:
-            mensaje += f"\n*... y {len(datos) - 10} registros más*"
-    else:
-        mensaje += "📊 No se encontraron datos para el período consultado."
-    
-    if contexto:
-        mensaje += "\n\n📍 **Contexto geográfico:**\n"
-        if contexto.get("cuenca"):
-            mensaje += f"• Cuenca: {contexto['cuenca']}\n"
-        if contexto.get("afecta"):
-            mensaje += f"• Afecta: {contexto['afecta']}\n"
-    
-    if fuente:
-        mensaje += f"\n📡 **Fuente:** {fuente}"
-    
-    return {
-        "status": "ok",
-        "mensaje": mensaje,
-        "datos": datos,
-        "estacion": estacion,
-        "raw": data
-    }
-
-def verificar_agente_ia():
-    try:
-        response = requests.post(
-            AGENTE_API_URL,
-            json={"prompt": "ping"},
-            timeout=5
-        )
-        return response.status_code == 200 or response.status_code == 400
-    except:
-        return False
-
-# ============================================================
-# 9. FUNCIONES DE VISUALIZACIÓN
-# ============================================================
-def create_embalse_chart(df_hist):
-    try:
-        if df_hist.empty:
-            return None
-        
-        df_ordenado = df_hist.sort_values('timestamp')
-        fig = go.Figure()
-        
-        fig.add_trace(go.Scatter(
-            x=df_ordenado['timestamp'],
-            y=df_ordenado['temperatura'],
-            mode='lines',
-            name='Nivel del embalse',
-            line=dict(color='#00BFFF', width=2),
-            fill='tozeroy',
-            fillcolor='rgba(0, 191, 255, 0.2)'
-        ))
-        
-        fig.add_hline(
-            y=NIVEL_REBOSE_EMBALSE,
-            line_dash="dash",
-            line_color="red",
-            line_width=2,
-            annotation_text=f"Nivel de rebose: {NIVEL_REBOSE_EMBALSE} msnm",
-            annotation_position="top right"
-        )
-        
-        fig.update_layout(
-            title='Nivel del Embalse (msnm)',
-            xaxis_title='Fecha/Hora',
-            yaxis_title='Nivel (msnm)',
-            height=400,
-            template='plotly_white',
-            hovermode='x unified'
-        )
-        return fig
-    except Exception as e:
-        st.warning(f"No se pudo generar el gráfico del embalse: {e}")
-        return None
-
-# ============================================================
-# 9.5 FUNCIONES PARA EDV (EXTENSÓMETROS)
-# ============================================================
-
-@st.cache_data(ttl=600)
-def get_edv_data(extensometro='izquierdo'):
-    try:
-        table = f"edv_{extensometro}"
-        query = f"""
-        SELECT 
-            fecha,
-            anillo,
-            lectura,
-            cota_referencia,
-            cota,
-            asiento,
-            dist_datum,
-            notas
-        FROM `gen-lang-client-0342049346.amb_hidrologia.{table}`
-        ORDER BY fecha DESC, CAST(anillo AS INT64) DESC
-        """
-        df = client.query(query).to_dataframe()
-        if not df.empty:
-            df['fecha'] = pd.to_datetime(df['fecha']).dt.tz_localize('UTC').dt.tz_convert('America/Bogota')
-        return df
-    except Exception as e:
-        st.error(f"❌ Error al obtener datos EDV: {e}")
-        return pd.DataFrame()
-
-def create_edv_profile(df, fecha_seleccionada=None, titulo="Perfil de Deformaciones"):
-    if fecha_seleccionada is None:
-        fecha_seleccionada = df['fecha'].max()
-    
-    df_fecha = df[df['fecha'].dt.date == fecha_seleccionada.date()]
-    
-    if df_fecha.empty:
-        return None
-    
-    df_fecha = df_fecha.sort_values('anillo', ascending=False)
-    
-    fig = go.Figure()
-    
-    fig.add_trace(go.Scatter(
-        x=df_fecha['asiento'],
-        y=df_fecha['anillo'],
-        mode='lines+markers',
-        name=f'Perfil {fecha_seleccionada.strftime("%d/%m/%Y")}',
-        line=dict(color='#FF4B4B', width=3),
-        marker=dict(size=12, color='#FF4B4B')
-    ))
-    
-    fig.add_vline(x=0, line_dash="dash", line_color="gray", line_width=1)
-    fig.add_hline(y=0, line_dash="dash", line_color="green", line_width=2, 
-                  annotation_text="FONDO", annotation_position="bottom right")
-    
-    fig.update_layout(
-        title=f'{titulo} - {fecha_seleccionada.strftime("%d/%m/%Y")}',
-        xaxis_title='Asiento (cm)',
-        yaxis_title='Anillo',
-        template='plotly_white',
-        height=500,
-        hovermode='y unified'
-    )
-    return fig
-
-def create_edv_multiple_profiles(df, max_profiles=10):
-    fechas_unicas = sorted(df['fecha'].unique(), reverse=True)
-    if len(fechas_unicas) > max_profiles:
-        step = len(fechas_unicas) // max_profiles
-        fechas_seleccionadas = fechas_unicas[::step][:max_profiles]
-        if fechas_unicas[0] not in fechas_seleccionadas:
-            fechas_seleccionadas[0] = fechas_unicas[0]
-    else:
-        fechas_seleccionadas = fechas_unicas
-    
-    fig = go.Figure()
-    colores = px.colors.sequential.Reds[::-1] + px.colors.sequential.Blues[::-1]
-    
-    for i, fecha in enumerate(fechas_seleccionadas):
-        df_fecha = df[df['fecha'].dt.date == fecha.date()]
-        if df_fecha.empty:
-            continue
-        
-        df_fecha = df_fecha.sort_values('anillo', ascending=False)
-        color_idx = i % len(colores)
-        color = colores[color_idx]
-        width = 2 + (len(fechas_seleccionadas) - i) * 0.2
-        width = min(width, 4)
-        
-        fig.add_trace(go.Scatter(
-            x=df_fecha['asiento'],
-            y=df_fecha['anillo'],
-            mode='lines+markers',
-            name=fecha.strftime('%d/%m/%Y'),
-            line=dict(color=color, width=width),
-            marker=dict(size=6, color=color)
-        ))
-    
-    fig.add_vline(x=0, line_dash="dash", line_color="gray", line_width=1)
-    fig.add_hline(y=0, line_dash="dash", line_color="green", line_width=2, 
-                  annotation_text="FONDO", annotation_position="bottom right")
-    
-    fig.update_layout(
-        title='Evolución de Deformaciones',
-        xaxis_title='Asiento (cm)',
-        yaxis_title='Anillo',
-        template='plotly_white',
-        height=600,
-        hovermode='y unified',
-        legend=dict(x=1.02, y=1, bgcolor='rgba(255,255,255,0.9)')
-    )
-    return fig
-
-def create_edv_timeline(df, anillos_seleccionados=None):
-    if anillos_seleccionados is None:
-        anillos_disponibles = sorted(df['anillo'].unique(), key=lambda x: int(x))
-        if len(anillos_disponibles) >= 3:
-            anillos_seleccionados = [
-                anillos_disponibles[-1],
-                anillos_disponibles[len(anillos_disponibles)//2],
-                anillos_disponibles[0]
-            ]
-        else:
-            anillos_seleccionados = anillos_disponibles
-    
-    fig = go.Figure()
-    colores = ['#FF4B4B', '#FF9933', '#00CC96', '#3399FF', '#FF69B4']
-    
-    for i, anillo in enumerate(anillos_seleccionados):
-        df_anillo = df[df['anillo'] == anillo].sort_values('fecha')
-        if not df_anillo.empty:
-            fig.add_trace(go.Scatter(
-                x=df_anillo['fecha'],
-                y=df_anillo['asiento'],
-                mode='lines+markers',
-                name=f'Anillo {anillo}',
-                line=dict(color=colores[i % len(colores)], width=2),
-                marker=dict(size=6)
-            ))
-    
-    fig.update_layout(
-        title='Evolución del Asiento por Anillo',
-        xaxis_title='Fecha',
-        yaxis_title='Asiento (cm)',
-        template='plotly_white',
-        height=400,
-        hovermode='x unified'
-    )
-    return fig
-
-def mostrar_seccion_edv():
-    st.markdown("---")
-    st.subheader("📏 Instrumentación Geotécnica - Extensómetros (EDV)")
-    st.caption("Mediciones de deformación vertical del terreno alrededor del embalse")
-    
-    col1, col2 = st.columns([1, 2])
-    with col1:
-        extensometro_seleccionado = st.selectbox(
-            "Seleccione Extensómetro:",
-            ["izquierdo", "derecho"],
-            index=0
-        )
-    with col2:
-        tipo_vista = st.selectbox(
-            "Tipo de vista:",
-            ["Perfil Individual", "Evolución Histórica", "Evolución Temporal"],
-            index=0
-        )
-    
-    with st.spinner("🔄 Cargando datos del extensómetro..."):
-        df_edv = get_edv_data(extensometro_seleccionado)
-    
-    if df_edv.empty:
-        st.warning("⚠️ No hay datos disponibles para este extensómetro")
-        return
-    
-    col1, col2, col3, col4 = st.columns(4)
-    with col1:
-        st.metric("📊 Total registros", f"{len(df_edv):,}")
-    with col2:
-        st.metric("🔢 Anillos", df_edv['anillo'].nunique())
-    with col3:
-        st.metric("📅 Primera lectura", df_edv['fecha'].min().strftime('%d/%m/%Y'))
-    with col4:
-        st.metric("📅 Última lectura", df_edv['fecha'].max().strftime('%d/%m/%Y'))
-    
-    if tipo_vista == "Perfil Individual":
-        fechas_disponibles = sorted(df_edv['fecha'].unique(), reverse=True)
-        fecha_seleccionada = st.selectbox(
-            "Seleccione fecha para el perfil:",
-            fechas_disponibles,
-            index=0,
-            format_func=lambda x: x.strftime('%d/%m/%Y')
-        )
-        
-        fig = create_edv_profile(df_edv, fecha_seleccionada, f"EDV {extensometro_seleccionado.capitalize()}")
-        if fig:
-            st.plotly_chart(fig, use_container_width=True)
-        else:
-            st.info("No hay datos para la fecha seleccionada")
-    
-    elif tipo_vista == "Evolución Histórica":
-        fig = create_edv_multiple_profiles(df_edv, max_profiles=10)
-        if fig:
-            st.plotly_chart(fig, use_container_width=True)
-        else:
-            st.info("No hay suficientes datos para mostrar")
-    
-    elif tipo_vista == "Evolución Temporal":
-        anillos_disponibles = sorted(df_edv['anillo'].unique(), key=lambda x: int(x))
-        anillos_seleccionados = st.multiselect(
-            "Seleccione anillos para visualizar:",
-            anillos_disponibles,
-            default=[anillos_disponibles[-1], anillos_disponibles[len(anillos_disponibles)//2], anillos_disponibles[0]]
-        )
-        
-        if anillos_seleccionados:
-            fig = create_edv_timeline(df_edv, anillos_seleccionados)
-            if fig:
-                st.plotly_chart(fig, use_container_width=True)
-            else:
-                st.info("No hay datos para los anillos seleccionados")
-        else:
-            st.info("Seleccione al menos un anillo para visualizar")
-    
-    with st.expander("📋 Ver datos detallados"):
-        st.dataframe(
-            df_edv[['fecha', 'anillo', 'lectura', 'cota', 'asiento', 'dist_datum']],
-            use_container_width=True,
-            column_config={
-                "fecha": st.column_config.DateColumn("Fecha"),
-                "anillo": st.column_config.TextColumn("Anillo"),
-                "lectura": st.column_config.NumberColumn("Lectura (mm)", format="%.2f"),
-                "cota": st.column_config.NumberColumn("Cota (msnm)", format="%.2f"),
-                "asiento": st.column_config.NumberColumn("Asiento (cm)", format="%.2f"),
-                "dist_datum": st.column_config.NumberColumn("Dist. Datum (m)", format="%.2f"),
-            }
-        )
-        
-        csv = df_edv.to_csv(index=False).encode('utf-8-sig')
-        st.download_button(
-            "📥 Descargar datos (CSV)",
-            csv,
-            f"edv_{extensometro_seleccionado}.csv",
-            "text/csv",
-            use_container_width=True
-        )
-
-# ============================================================
-# 10. INTERFAZ PRINCIPAL
-# ============================================================
-estaciones = ["La_Mariana", "Yerbabuena", "Vegas_del_Quemado", "El_Pajal", "Monsalve", "Embalse"]
-seleccion = st.sidebar.selectbox("Seleccione Estación:", estaciones)
-
-periodos_grafico = {
-    "Últimas 24 horas": 24,
-    "Últimos 3 días": 72,
-    "Últimos 7 días": 168,
-    "Últimos 15 días": 360,
-    "Último mes": 720
-}
-
-if seleccion == "Embalse":
-    st.sidebar.markdown("### 📊 Opciones de Histórico")
-    periodo_seleccionado = st.sidebar.selectbox(
-        "Seleccione período:",
-        list(periodos_grafico.keys())
-    )
-    horas = periodos_grafico[periodo_seleccionado]
-else:
-    horas = st.sidebar.slider("⏱️ Horas históricas:", 1, 168, 24, step=1)
-
-with st.spinner("🔄 Cargando datos..."):
-    df = get_last_reading(seleccion)
-    fecha_fin = datetime.now(colombia_tz)
-    fecha_inicio = fecha_fin - timedelta(hours=horas)
+with st.spinner("🔄 Consultando telemetría en tiempo real..."):
+    df_actual = get_last_reading(seleccion)
     df_hist = get_historical_data_range(seleccion, fecha_inicio, fecha_fin)
 
 # ============================================================
-# TABS
+# 5. PESTAÑAS PRINCIPALES DEL SISTEMA
 # ============================================================
-tab1, tab2, tab3 = st.tabs(["📊 Situación Actual", "📈 Históricos", "🤖 Asistente IA"])
+tab_monitoreo, tab_embalse_2026, tab_historicos, tab_ia = st.tabs([
+    "📊 Situación Actual", 
+    "🌊 Gestión Embalse & Sequía 2026", 
+    "📈 Series de Tiempo", 
+    "🤖 Asistente IA MIMAT-C"
+])
 
-# ============================================================
+# ------------------------------------------------------------
 # TAB 1: SITUACIÓN ACTUAL
-# ============================================================
-with tab1:
-    if not df.empty:
-        row = df.iloc[0]
-        st.subheader(f"📡 Real-time: {seleccion}")
+# ------------------------------------------------------------
+with tab_monitoreo:
+    if not df_actual.empty:
+        row = df_actual.iloc[0]
+        st.subheader(f"📡 Telemetría en Vivo: {seleccion.replace('_', ' ')}")
         
         if seleccion == "Embalse":
-            nivel_actual = float(row.get('temperatura', 0)) if pd.notna(row.get('temperatura')) else 0.0
-            estado, color, mensaje, excedente = evaluar_nivel_embalse(nivel_actual)
+            cota_actual = float(row.get('temperatura', 885.80)) if pd.notna(row.get('temperatura')) else 885.80
+            hidro = calcular_hidraulica_embalse(cota_actual)
             
-            col1, col2, col3 = st.columns(3)
-            with col1:
-                st.metric("🌊 Nivel actual", f"{nivel_actual:.2f} msnm", delta=f"{excedente:.2f} msnm")
-            with col2:
-                st.metric("📏 Nivel de Rebose", f"{NIVEL_REBOSE_EMBALSE:.2f} msnm")
-            with col3:
-                st.metric("📊 Excédente", f"{excedente:+.2f} msnm")
-            
-            if excedente >= 0:
-                st.error(f"🔴 {estado} - {mensaje}")
-                st.warning("⚠️ El embalse está por encima del nivel de rebose. ¡Monitorear constantemente!")
+            # Semáforo de estado
+            if hidro["excedente_rebose"] >= 0:
+                st.markdown(f"""
+                <div class="alert-box alert-orange">
+                    <span style="font-size: 24px;">🌊</span>
+                    <div>
+                        <strong>ESTADO: REBOSE ACTIVO (+{hidro['excedente_rebose']:.2f} msnm)</strong><br>
+                        El embalse supera la cota de vertimiento (885.75 msnm). Descarga por vertedero Morning Glory.
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
+            elif hidro["dias_autonomia"] > 60:
+                st.markdown(f"""
+                <div class="alert-box alert-green">
+                    <span style="font-size: 24px;">🟢</span>
+                    <div>
+                        <strong>ESTADO: SEGURIDAD HÍDRICA NORMAL ({hidro['dias_autonomia']:.0f} Días de Reserva)</strong><br>
+                        Nivel en {cota_actual:.2f} msnm. Capacidad útil al {hidro['porcentaje_util']:.1f}%.
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
             else:
-                st.success(f"🟢 {estado} - {mensaje}")
+                st.markdown(f"""
+                <div class="alert-box alert-red">
+                    <span style="font-size: 24px;">🚨</span>
+                    <div>
+                        <strong>ALERTA DE SEQUÍA SÚPER NIÑO ({hidro['dias_autonomia']:.0f} Días de Reserva)</strong><br>
+                        Nivel cercano a cota de contingencia técnica. Regular extracción hacia PTAP Bosconia.
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
             
-            if 'voltaje_bateria' in row and pd.notna(row['voltaje_bateria']):
-                st.metric("🔋 Voltaje", f"{float(row['voltaje_bateria']):.1f} V")
-            
-            st.info(f"📅 Última lectura: {row['timestamp'].strftime('%Y-%m-%d %H:%M:%S')}")
-            
-            # Mostrar sección EDV
-            mostrar_seccion_edv()
+            c1, c2, c3, c4 = st.columns(4)
+            c1.metric("🌊 Cota Actual", f"{cota_actual:.2f} msnm")
+            c2.metric("💧 Volumen Útil", f"{hidro['volumen_util_hm3']:.2f} hm³", delta=f"{hidro['porcentaje_util']:.1f}% útil")
+            c3.metric("⏳ Autonomía Bucaramanga", f"{hidro['dias_autonomia']:.0f} Días")
+            c4.metric("📐 Área Espejo", f"{hidro['area_ha']:.1f} ha")
             
         else:
             p_val = float(row.get('precipitacion', 0)) if pd.notna(row.get('precipitacion')) else 0.0
-            nombre, msg, color, vel = obtener_alerta(p_val, seleccion)
-            st.markdown(f'''
-            <div style="background-color:{color}; padding:20px; border-radius:15px; text-align:center; color:black; animation: blink {vel} infinite; border: 2px solid #333;">
-                <h2>🚦 {nombre}</h2>
-                <b>{msg}</b>
-            </div>
-            <style>
-            @keyframes blink {{
-                0%{{opacity:1}} 
-                50%{{opacity:0.3}} 
-                100%{{opacity:1}}
-            }}
-            </style>
-            ''', unsafe_allow_html=True)
-            st.write("")
-            
             t_val = float(row.get('temperatura', 0)) if pd.notna(row.get('temperatura')) else 0.0
             h_val = float(row.get('humedad', 0)) if pd.notna(row.get('humedad')) else 0.0
             v_val = float(row.get('velocidad_viento', 0)) if pd.notna(row.get('velocidad_viento')) else 0.0
@@ -800,396 +331,182 @@ with tab1:
             
             c1, c2, c3, c4, c5, c6 = st.columns(6)
             c1.metric("🌡️ Temp", f"{t_val:.1f} °C")
-            c2.metric("🌧️ Precip", f"{p_val:.1f} mm")
+            c2.metric("🌧️ Precipitación", f"{p_val:.1f} mm")
             c3.metric("💧 Humedad", f"{h_val:.1f} %")
             c4.metric("💨 Viento", f"{v_val:.1f} km/h")
-            c5.metric("🧭 Dir. Viento", f"{d_val:.0f}°")
-            c6.metric("🔋 Voltaje", f"{b_val:.1f} V")
+            c5.metric("🧭 Dirección", f"{d_val:.0f}°")
+            c6.metric("🔋 Batería", f"{b_val:.1f} V")
             
-            st.info(f"📅 Última lectura: {row['timestamp'].strftime('%Y-%m-%d %H:%M:%S')}")
-            
-            if not df_hist.empty and 'temperatura' in df_hist.columns:
-                t_series = pd.to_numeric(df_hist['temperatura'], errors='coerce').dropna()
-                if not t_series.empty:
-                    st.markdown("### 📊 Estadísticas del Período")
-                    col1, col2, col3 = st.columns(3)
-                    with col1:
-                        st.metric("🔽 Temp Mínima", f"{t_series.min():.1f}°C")
-                    with col2:
-                        st.metric("🔼 Temp Máxima", f"{t_series.max():.1f}°C")
-                    with col3:
-                        st.metric("📊 Temp Promedio", f"{t_series.mean():.1f}°C")
+        st.caption(f"🕐 Última lectura recibida: {row['timestamp'].strftime('%Y-%m-%d %H:%M:%S')}")
     else:
-        st.warning("⚠️ Sin datos.")
+        st.warning("⚠️ Sin datos recientes para esta estación.")
 
-# ============================================================
-# TAB 2: HISTÓRICOS CON GRÁFICOS Y DESCARGA
-# ============================================================
-with tab2:
-    st.subheader("📈 Series de Tiempo")
+# ------------------------------------------------------------
+# TAB 2: GESTIÓN EMBALSE & CONTINGENCIA SEQUÍA 2026
+# ------------------------------------------------------------
+with tab_embalse_2026:
+    st.subheader("🌊 Módulo Especializado: Embalse Tona (Batimetría Multihaz 2026)")
+    st.caption("Resolución centímetro a centímetro según Informe Técnico OPS 071 de 2026 - Batimetría S.A.S")
+    
+    c_embalse = float(df_actual.iloc[0].get('temperatura', 885.80)) if not df_actual.empty else 885.80
+    
+    col_sim1, col_sim2 = st.columns([1, 2])
+    
+    with col_sim1:
+        st.markdown("### 🎛️ Simulador de Extracción PTAP")
+        q_sim = st.slider("Extracción hacia Plantas (L/s):", 800, 2500, 1450, step=50)
+        cota_eval = st.number_input("Cota de Evaluación (msnm):", 818.0, 886.0, float(c_embalse), step=0.1)
+        
+        datos_eval = calcular_hidraulica_embalse(cota_eval, q_sim)
+        
+        st.markdown("---")
+        st.markdown(f"""
+        **📋 Resultados Hidráulicos:**
+        * **Volumen Útil:** `{datos_eval['volumen_util_hm3']:.3f} hm³`
+        * **Volumen Muerto (Sedimentos):** `1.400 hm³`
+        * **Volumen Total:** `{datos_eval['volumen_total_hm3']:.3f} hm³`
+        * **Volumen por cada Centímetro:** `{datos_eval['m3_por_cm']:.1f} m³/cm`
+        * **Autonomía estimada:** **`{datos_eval['dias_autonomia']:.0f} Días de Agua`**
+        """)
+    
+    with col_sim2:
+        # Gráfica de Curva Cota - Volumen 2026
+        cotas_curva = np.linspace(818, 885.8, 100)
+        vols_curva = [float(interpolador_vol(c)) for c in cotas_curva]
+        
+        fig_curva = go.Figure()
+        fig_curva.add_trace(go.Scatter(
+            x=vols_curva, 
+            y=cotas_curva, 
+            mode='lines', 
+            name='Curva Batimetría 2026',
+            line=dict(color='#00CC96', width=3)
+        ))
+        
+        # Punto actual
+        fig_curva.add_trace(go.Scatter(
+            x=[datos_eval['volumen_total_hm3']], 
+            y=[cota_eval], 
+            mode='markers', 
+            name=f'Nivel Evaluado ({cota_eval:.2f} msnm)',
+            marker=dict(size=14, color='#FF4B4B', symbol='diamond')
+        ))
+        
+        fig_curva.add_hline(y=NIVEL_MINIMO_TECNICO, line_dash="dash", line_color="orange", annotation_text="Mínimo Técnico: 841 msnm")
+        fig_curva.add_hline(y=NIVEL_REBOSE_EMBALSE, line_dash="dash", line_color="red", annotation_text="Rebose Morning Glory: 885.75 msnm")
+        
+        fig_curva.update_layout(
+            title="Curva Cota vs. Volumen 2026 (Embalse Tona)",
+            xaxis_title="Volumen Acumulado (hm³)",
+            yaxis_title="Cota (msnm)",
+            height=420,
+            template='plotly_white'
+        )
+        st.plotly_chart(fig_curva, use_container_width=True)
+
+# ------------------------------------------------------------
+# TAB 3: SERIES DE TIEMPO Y ROSA DE LOS VIENTOS
+# ------------------------------------------------------------
+with tab_historicos:
+    st.subheader(f"📈 Series de Tiempo — {seleccion.replace('_', ' ')}")
     
     if not df_hist.empty:
         if seleccion == "Embalse":
-            st.markdown("### 🌊 Nivel del Embalse")
-            fig_embalse = create_embalse_chart(df_hist)
-            if fig_embalse:
-                st.plotly_chart(fig_embalse, use_container_width=True)
-            
-            ultima_lectura = df_hist.iloc[0]
-            st.info(f"📊 Último nivel registrado: {float(ultima_lectura['temperatura']):.2f} msnm")
-            
-            with st.expander("📋 Ver datos detallados"):
-                columnas_embalse = ['timestamp', 'temperatura', 'voltaje_bateria']
-                df_embalse_mostrar = df_hist[columnas_embalse].copy()
-                df_embalse_mostrar.columns = ['Fecha/Hora', 'Nivel (msnm)', 'Voltaje (V)']
-                st.dataframe(df_embalse_mostrar.head(20), use_container_width=True)
-            
-        else:
-            st.markdown("### 🌡️ Temperatura")
-            fig_temp = px.line(
+            fig_emb = px.line(
                 df_hist.sort_values('timestamp'), 
                 x='timestamp', 
                 y='temperatura',
-                title=f'Temperatura - {seleccion}',
-                labels={'temperatura': '°C', 'timestamp': 'Fecha/Hora'}
+                title='Evolución de Cota del Embalse (msnm)',
+                labels={'temperatura': 'msnm', 'timestamp': 'Fecha/Hora'}
             )
-            fig_temp.update_layout(height=300, template='plotly_white', hovermode='x unified')
-            t_numeric = pd.to_numeric(df_hist['temperatura'], errors='coerce').dropna()
-            if len(t_numeric) > 1:
-                fig_temp.add_hline(
-                    y=t_numeric.mean(), 
-                    line_dash="dash", 
-                    line_color="red",
-                    annotation_text=f"Promedio: {t_numeric.mean():.1f}°C"
-                )
-            st.plotly_chart(fig_temp, use_container_width=True)
+            fig_emb.add_hline(y=NIVEL_REBOSE_EMBALSE, line_dash="dash", line_color="red", annotation_text="Cota Rebose")
+            fig_emb.update_layout(height=380, template='plotly_white')
+            st.plotly_chart(fig_emb, use_container_width=True)
+        else:
+            # Gráficos estándar
+            col_g1, col_g2 = st.columns(2)
+            with col_g1:
+                fig_p = px.bar(df_hist.sort_values('timestamp'), x='timestamp', y='precipitacion', title='Precipitación (mm)')
+                fig_p.update_layout(height=280, template='plotly_white')
+                st.plotly_chart(fig_p, use_container_width=True)
+            with col_g2:
+                fig_t = px.line(df_hist.sort_values('timestamp'), x='timestamp', y='temperatura', title='Temperatura (°C)')
+                fig_t.update_layout(height=280, template='plotly_white')
+                st.plotly_chart(fig_t, use_container_width=True)
             
-            st.markdown("### 🌧️ Precipitación")
-            fig_precip = px.bar(
-                df_hist.sort_values('timestamp'), 
-                x='timestamp', 
-                y='precipitacion',
-                title=f'Precipitación - {seleccion}',
-                labels={'precipitacion': 'mm', 'timestamp': 'Fecha/Hora'},
-                color='precipitacion',
-                color_continuous_scale='Blues'
-            )
-            fig_precip.update_layout(height=300, template='plotly_white')
-            st.plotly_chart(fig_precip, use_container_width=True)
-            
-            if 'humedad' in df_hist.columns:
-                st.markdown("### 💧 Humedad")
-                fig_humedad = px.line(
-                    df_hist.sort_values('timestamp'), 
-                    x='timestamp', 
-                    y='humedad',
-                    title=f'Humedad - {seleccion}',
-                    labels={'humedad': '%', 'timestamp': 'Fecha/Hora'}
-                )
-                fig_humedad.update_layout(height=300, template='plotly_white', hovermode='x unified')
-                h_numeric = pd.to_numeric(df_hist['humedad'], errors='coerce').dropna()
-                if len(h_numeric) > 1:
-                    fig_humedad.add_hline(
-                        y=h_numeric.mean(), 
-                        line_dash="dash", 
-                        line_color="red",
-                        annotation_text=f"Promedio: {h_numeric.mean():.1f}%"
-                    )
-                st.plotly_chart(fig_humedad, use_container_width=True)
-            
-            # ROSA DE LOS VIENTOS
+            # Rosa de los Vientos
             if 'direccion_viento' in df_hist.columns and 'velocidad_viento' in df_hist.columns:
                 st.markdown("### 🧭 Rosa de los Vientos")
-                df_viento = df_hist.copy()
-                df_viento['direccion_viento'] = pd.to_numeric(df_viento['direccion_viento'], errors='coerce')
-                df_viento['velocidad_viento'] = pd.to_numeric(df_viento['velocidad_viento'], errors='coerce')
-                df_viento = df_viento.dropna(subset=['direccion_viento', 'velocidad_viento'])
-                df_viento = df_viento[(df_viento['direccion_viento'] > 0) | (df_viento['velocidad_viento'] > 0)]
+                df_v = df_hist.copy()
+                df_v['direccion_viento'] = pd.to_numeric(df_v['direccion_viento'], errors='coerce')
+                df_v['velocidad_viento'] = pd.to_numeric(df_v['velocidad_viento'], errors='coerce')
+                df_v = df_v.dropna(subset=['direccion_viento', 'velocidad_viento'])
+                df_v = df_v[(df_v['direccion_viento'] > 0) | (df_v['velocidad_viento'] > 0)]
                 
-                if not df_viento.empty:
-                    fig_viento = px.bar_polar(
-                        df_viento,
-                        r="velocidad_viento",
-                        theta="direccion_viento",
+                if not df_v.empty:
+                    fig_rosa = px.bar_polar(
+                        df_v, 
+                        r="velocidad_viento", 
+                        theta="direccion_viento", 
                         color="velocidad_viento",
                         color_continuous_scale='Viridis',
-                        title=f'Rosa de Vientos - {seleccion}',
-                        template='plotly_white'
+                        title=f"Rosa de Vientos — {seleccion}"
                     )
-                    fig_viento.update_layout(height=400)
-                    st.plotly_chart(fig_viento, use_container_width=True)
-                    
-                    col_v1, col_v2, col_v3 = st.columns(3)
-                    with col_v1:
-                        st.metric("💨 Vel. Promedio", f"{df_viento['velocidad_viento'].mean():.1f} km/h")
-                    with col_v2:
-                        st.metric("💨 Vel. Máxima", f"{df_viento['velocidad_viento'].max():.1f} km/h")
-                    with col_v3:
-                        moda_dir = df_viento['direccion_viento'].mode()
-                        dir_pred = f"{moda_dir.iloc[0]:.0f}°" if not moda_dir.empty else "N/A"
-                        st.metric("🧭 Dir. Predominante", dir_pred)
+                    fig_rosa.update_layout(height=400, template='plotly_white')
+                    st.plotly_chart(fig_rosa, use_container_width=True)
                 else:
-                    st.info("ℹ️ No hay datos de viento disponibles para esta estación en el período")
+                    st.info("ℹ️ Sin datos de viento en este rango.")
     else:
-        st.info("ℹ️ No hay datos históricos disponibles para este período")
-    
-    # ============================================================
-    # DESCARGA PERSONALIZADA DE DATOS
-    # ============================================================
-    st.markdown("---")
-    st.subheader("📥 Descarga Personalizada de Datos")
-    st.markdown("### 📅 Selecciona el período para descargar")
-    
-    col_periodo1, col_periodo2 = st.columns(2)
-    
-    with col_periodo1:
-        opcion_periodo = st.radio(
-            "Período:",
-            ["Diario", "Semanal", "Mensual", "Semestral", "Anual"],
-            index=0
-        )
-    
-    with col_periodo2:
-        opcion_personalizado = st.checkbox("📅 Personalizar fechas")
-    
-    hoy = datetime.now(colombia_tz)
-    
-    if opcion_personalizado:
-        st.markdown("### 📅 Selecciona las fechas personalizadas")
-        col_fecha1, col_fecha2 = st.columns(2)
-        with col_fecha1:
-            fecha_inicio_descarga = st.date_input(
-                "Fecha de inicio:",
-                value=hoy - timedelta(days=30),
-                max_value=hoy
-            )
-        with col_fecha2:
-            fecha_fin_descarga = st.date_input(
-                "Fecha de fin:",
-                value=hoy,
-                max_value=hoy
-            )
-        
-        if fecha_inicio_descarga > fecha_fin_descarga:
-            st.error("❌ La fecha de inicio no puede ser mayor que la fecha de fin")
-            st.stop()
-        
-        periodo_descripcion = f"Personalizado ({fecha_inicio_descarga.strftime('%d/%m/%Y')} - {fecha_fin_descarga.strftime('%d/%m/%Y')})"
-    else:
-        if opcion_periodo == "Diario":
-            fecha_inicio_descarga = hoy - timedelta(days=1)
-            fecha_fin_descarga = hoy
-            periodo_descripcion = f"Diario ({fecha_inicio_descarga.strftime('%d/%m/%Y')})"
-        elif opcion_periodo == "Semanal":
-            fecha_inicio_descarga = hoy - timedelta(days=7)
-            fecha_fin_descarga = hoy
-            periodo_descripcion = f"Semanal ({fecha_inicio_descarga.strftime('%d/%m/%Y')} - {fecha_fin_descarga.strftime('%d/%m/%Y')})"
-        elif opcion_periodo == "Mensual":
-            fecha_inicio_descarga = hoy - timedelta(days=30)
-            fecha_fin_descarga = hoy
-            periodo_descripcion = f"Mensual ({fecha_inicio_descarga.strftime('%d/%m/%Y')} - {fecha_fin_descarga.strftime('%d/%m/%Y')})"
-        elif opcion_periodo == "Semestral":
-            fecha_inicio_descarga = hoy - timedelta(days=180)
-            fecha_fin_descarga = hoy
-            periodo_descripcion = f"Semestral ({fecha_inicio_descarga.strftime('%d/%m/%Y')} - {fecha_fin_descarga.strftime('%d/%m/%Y')})"
-        else:
-            fecha_inicio_descarga = hoy - timedelta(days=365)
-            fecha_fin_descarga = hoy
-            periodo_descripcion = f"Anual ({fecha_inicio_descarga.strftime('%d/%m/%Y')} - {fecha_fin_descarga.strftime('%d/%m/%Y')})"
-    
-    st.info(f"📊 **Período seleccionado:** {periodo_descripcion}")
-    
-    if st.button("📥 Cargar datos para este período", use_container_width=True):
-        with st.spinner("🔄 Cargando datos históricos..."):
-            df_descarga = get_historical_data_range(
-                seleccion, 
-                fecha_inicio_descarga, 
-                fecha_fin_descarga
-            )
-            
-            if not df_descarga.empty:
-                st.session_state['df_descarga'] = df_descarga
-                st.session_state['periodo_descarga'] = periodo_descripcion
-                st.success(f"✅ Datos cargados: {len(df_descarga)} registros")
-            else:
-                st.warning("⚠️ No hay datos para el período seleccionado")
-    
-    if 'df_descarga' in st.session_state:
-        df_descarga = st.session_state['df_descarga']
-        periodo_descarga = st.session_state['periodo_descarga']
-        
-        with st.expander("📊 Ver resumen estadístico"):
-            st.text(generar_resumen_estadistico(df_descarga))
-        
-        with st.expander("📋 Ver datos cargados"):
-            st.dataframe(df_descarga, use_container_width=True)
-        
-        st.markdown("### 📥 Descargar hoja de datos")
-        st.caption("Selecciona el formato para descargar los datos históricos")
-        
-        col_export1, col_export2 = st.columns(2)
-        
-        df_export = preparar_df_para_exportar(df_descarga)
-        csv_data = df_export.to_csv(index=False).encode('utf-8-sig')
-        
-        with col_export1:
-            try:
-                excel_data = generar_excel_con_formato(df_descarga, seleccion, periodo_descarga)
-                st.download_button(
-                    "📊 Hoja de cálculo (.xlsx)",
-                    excel_data,
-                    f"{seleccion}_{datetime.now(colombia_tz).strftime('%Y%m%d_%H%M')}.xlsx",
-                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                    use_container_width=True
-                )
-                st.caption("✅ Formato Excel con metadatos y formato profesional")
-            except Exception as e:
-                st.error(f"Error al generar Excel: {e}")
-                st.download_button(
-                    "📊 Hoja de datos (alternativo)",
-                    csv_data,
-                    f"{seleccion}_{datetime.now(colombia_tz).strftime('%Y%m%d_%H%M')}.csv",
-                    "text/csv",
-                    use_container_width=True
-                )
-        
-        with col_export2:
-            st.download_button(
-                "📝 Google Sheets",
-                csv_data,
-                f"{seleccion}_{datetime.now(colombia_tz).strftime('%Y%m%d_%H%M')}.csv",
-                "text/csv",
-                use_container_width=True,
-                help="Formato CSV compatible con Google Sheets"
-            )
-            st.caption("📤 Abre en Google Sheets")
-        
-        st.caption(f"📋 Datos exportados desde el {SISTEMA}")
+        st.info("ℹ️ Sin datos históricos disponibles.")
 
-# ============================================================
-# TAB 3: ASISTENTE IA
-# ============================================================
-with tab3:
-    st.subheader("🤖 Asistente IA - Centro de Monitoreo")
-    st.markdown("Pregunta sobre niveles, caudales, lluvias y estado de las estaciones.")
+# ------------------------------------------------------------
+# TAB 4: ASISTENTE IA MIMAT-C
+# ------------------------------------------------------------
+with tab_ia:
+    st.subheader("🤖 Asistente Inteligente MIMAT-C26")
+    st.caption("Consulta niveles, volúmenes de batimetría 2026, lluvias y cuencas en lenguaje natural.")
     
-    with st.spinner("🔌 Verificando conexión..."):
-        if verificar_agente_ia():
-            st.success("✅ Agente IA conectado")
-        else:
-            st.warning("⚠️ No se pudo conectar al agente IA. Verifica la configuración.")
-    
+    # Ping status
+    try:
+        r_ping = requests.post(AGENTE_API_URL, json={"prompt": "ping"}, timeout=4)
+        ia_online = r_ping.status_code == 200
+    except:
+        ia_online = False
+        
+    if ia_online:
+        st.success("✅ Agente IA MIMAT-C conectado y operativo en Google Cloud Run")
+    else:
+        st.warning("⚠️ Microservicio de IA desconectado.")
+        
     if "messages" not in st.session_state:
         st.session_state.messages = []
-    
-    chat_container = st.container()
-    
-    with chat_container:
-        for message in st.session_state.messages:
-            with st.chat_message(message["role"]):
-                st.markdown(message["content"])
-    
-    prompt = st.chat_input("Escribe tu pregunta sobre las estaciones...")
-    
-    if prompt:
-        st.session_state.messages.append({"role": "user", "content": prompt})
         
+    for m in st.session_state.messages:
+        with st.chat_message(m["role"]):
+            st.markdown(m["content"])
+            
+    p_user = st.chat_input("Pregunta al Asistente MIMAT-C (Ej: ¿Cuál es el volumen útil del embalse?)...")
+    if p_user:
+        st.session_state.messages.append({"role": "user", "content": p_user})
         with st.chat_message("user"):
-            st.markdown(prompt)
-        
+            st.markdown(p_user)
+            
         with st.chat_message("assistant"):
-            with st.spinner("🤔 Analizando tu pregunta..."):
-                resultado = consultar_agente_ia(prompt)
-                
-                if resultado.get("status") == "ok":
-                    respuesta = resultado.get("mensaje", "✅ Consulta procesada exitosamente.")
-                    st.markdown(respuesta)
-                    st.session_state.messages.append({"role": "assistant", "content": respuesta})
-                elif resultado.get("status") == "sin_datos":
-                    mensaje = f"ℹ️ {resultado.get('mensaje', 'No se encontraron datos.')}"
-                    st.info(mensaje)
-                    st.session_state.messages.append({"role": "assistant", "content": mensaje})
-                else:
-                    error_msg = resultado.get("mensaje", "❌ Error al procesar la consulta.")
-                    st.error(error_msg)
-                    st.session_state.messages.append({"role": "assistant", "content": error_msg})
-        
+            with st.spinner("🤔 Consultando BigQuery y analizando..."):
+                try:
+                    res = requests.post(AGENTE_API_URL, json={"prompt": p_user}, timeout=20).json()
+                    ans = res.get("mensaje", "No se obtuvo respuesta.")
+                    st.markdown(ans)
+                    st.session_state.messages.append({"role": "assistant", "content": ans})
+                except Exception as ex:
+                    err_msg = f"❌ Error al consultar IA: {ex}"
+                    st.error(err_msg)
+                    st.session_state.messages.append({"role": "assistant", "content": err_msg})
         st.rerun()
-    
-    col1, col2 = st.columns(2)
-    with col1:
-        if st.button("🗑️ Limpiar conversación", use_container_width=True):
-            st.session_state.messages = []
-            st.rerun()
-    with col2:
-        with st.expander("💡 Ejemplos de preguntas"):
-            st.markdown("""
-            **🌊 Sobre el embalse:**
-            - ¿Cómo está el nivel del embalse?
-            - Nivel a las 3 de la mañana
-            - Promedio nivel últimas 24 horas
-            
-            **🌧️ Sobre estaciones:**
-            - ¿Cuánto llovió en El_Pajal ayer?
-            - Temperatura máxima en La_Mariana este mes
-            - Temperatura a las 15:00 en El_Pajal
-            
-            **📊 Consultas avanzadas:**
-            - Comparar lluvias entre El_Pajal y Yerbabuena
-            - ¿Qué relación hay entre la lluvia y el nivel del embalse?
-            """)
 
 # ============================================================
-# 11. FOOTER Y SIDEBAR
+# 6. SIDEBAR FOOTER
 # ============================================================
 st.sidebar.markdown("---")
-st.sidebar.markdown("**Desarrollado por Mauricio Mora**")
-st.sidebar.caption("📊 Datos actualizados cada 5 minutos")
-
-with st.sidebar.expander("🌊 Información del Embalse"):
-    st.write(f"**Nivel de Rebose:** {NIVEL_REBOSE_EMBALSE} msnm")
-    if not df.empty and seleccion == "Embalse":
-        nivel_actual = float(df.iloc[0].get('temperatura', 0)) if pd.notna(df.iloc[0].get('temperatura')) else 0.0
-        excedente = nivel_actual - NIVEL_REBOSE_EMBALSE
-        st.write(f"**Nivel Actual:** {nivel_actual:.2f} msnm")
-        if excedente >= 0:
-            st.error(f"**Excédente:** +{excedente:.2f} msnm")
-        else:
-            st.success(f"**Déficit:** {excedente:.2f} msnm")
-
-with st.sidebar.expander("🤖 Estado del Agente IA"):
-    st.write(f"**URL:** {AGENTE_API_URL}")
-    st.write("**Status:** ✅ Activo")
-    st.write("**Capacidades:**")
-    st.write("- 📊 Consultas SCADA (2026+)")
-    st.write("- 📜 Históricos (2004-2025)")
-    st.write("- 🌊 Análisis de embalse")
-    st.write("- ⏰ Consultas por hora específica")
-
-# ============================================================
-# 12. INFORMACIÓN DE EDV EN SIDEBAR
-# ============================================================
-with st.sidebar.expander("📏 Extensómetros (EDV)"):
-    st.write("**Datos cargados en BigQuery:**")
-    st.write("- EDV Izquierdo: 4,577 registros")
-    st.write("- EDV Derecho: 4,323 registros")
-    st.write("**Período:** 2013-2025")
-    st.write("**Estado:** ✅ Activo")
-    
-    st.markdown("---")
-    st.markdown("### 📱 Registrar nueva medición")
-    st.markdown("""
-    **📊 Usa la hoja de cálculo para registrar:**
-    
-    [📝 Abrir hoja de EDV](https://docs.google.com/spreadsheets/d/TU_ID_AQUI)
-    
-    **Instrucciones:**
-    1. Carga lecturas anteriores (menú EDV)
-    2. Ingresa lecturas actuales
-    3. Genera formato impresión
-    4. Sube a BigQuery
-    
-    🔒 **Seguridad:**
-    - Solo administrador puede subir datos
-    - Operadores pueden llenar y firmar
-    """)
+st.sidebar.markdown("**Líder Técnico:** Ing. Mauricio Mora")
+st.sidebar.caption("Proyecto MIMAT-C26 • AMB S.A. E.S.P.")
