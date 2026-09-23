@@ -398,22 +398,7 @@ if seleccion_sidebar != seleccion:
     st.session_state.estacion_seleccionada = seleccion_sidebar
     st.rerun()
 
-periodos_grafico = {
-    "Últimas 3 horas (Operación Inmediata)": 3,
-    "Últimas 6 horas (Turno de Extracción)": 6,
-    "Últimas 12 horas": 12,
-    "Últimas 24 horas (Balance Diario)": 24,
-    "Últimos 3 días": 72,
-    "Últimos 7 días": 168,
-    "Últimos 15 días": 360,
-    "Último mes": 720
-}
-
-if seleccion == "Embalse":
-    p_sel = st.sidebar.selectbox("Período histórico:", list(periodos_grafico.keys()), index=1)
-    horas = periodos_grafico[p_sel]
-else:
-    horas = st.sidebar.slider("⏱️ Horas históricas:", 1, 168, 24, step=1)
+horas = st.sidebar.slider("⏱️ Horas históricas:", 1, 168, 24, step=1, help="Rango de horas para consultar y graficar telemetría histórica")
 
 fecha_fin = datetime.now(colombia_tz)
 fecha_inicio = fecha_fin - timedelta(hours=horas)
@@ -606,12 +591,16 @@ def generar_resumen_estadistico(df, nombre_estacion=""):
         resumen.append(f"   • Cota Mínima:                 {c_min:.3f} msnm")
         resumen.append(f"   • Descenso Acumulado:          {desc_cm:+.2f} cm")
         resumen.append("")
-        resumen.append("💧 EXTRACCIÓN & BALANCE PTAP BOSCONIA:")
+        resumen.append("💧 EXTRACCIÓN & BALANCE DE MASAS PTAP BOSCONIA:")
         resumen.append(f"   • Metros Cúbicos Entregados:   {m3_tot:,.1f} m³")
-        resumen.append(f"   • Caudal Medio Estimado:        {q_medio_ls:,.1f} L/s ({q_medio_ls/1000.0:.3f} m³/s)")
+        resumen.append(f"   • Tasa Neta Vaciado Embalse:    {q_medio_ls:,.1f} L/s ({q_medio_ls/1000.0:.3f} m³/s)")
         resumen.append(f"   • Volumen Útil Remanente:       {vol_util_act:.3f} hm³")
         resumen.append(f"   • Autonomía Hídrica:           {f'{dias_aut:.1f} Días' if dias_aut else 'Indefinida'}")
         resumen.append(f"   • Registros Analizados:         {len(df)}")
+        resumen.append("")
+        resumen.append("⚖️ ECUACIÓN DE BALANCE HIDROLÓGICO:")
+        resumen.append(f"   Q_CRC_Bosconia (~400 L/s) = Q_Tasa_Neta ({q_medio_ls:,.0f} L/s) + Q_Afluentes_Cuenca (~{max(0, 400 - q_medio_ls):,.0f} L/s)")
+        resumen.append("   * Afluentes tributarios: Río Tona principal + Qdas. Las Ranas, Gualilo, La Reforma y Los Monos.")
         resumen.append("")
         resumen.append("ℹ️ NOTA TÉCNICA: La estación Embalse registra exclusivamente niveles hidrométricos (msnm) y volúmenes hídricos.")
         return "\n".join(resumen)
@@ -701,6 +690,12 @@ with tab_situacion:
             hidro = calcular_hidraulica_embalse(cota_actual, q_ptap_ls=0.0)
             bal = calcular_balance_dinamico(df_hist)
             
+            # Descenso total acumulado desde inicio de maniobra en cota de rebose (885.75 msnm)
+            descenso_total_cm = (cota_actual - NIVEL_REBOSE_EMBALSE) * 100.0
+            vol_max_rebose_m3 = interpolar_volumen(NIVEL_REBOSE_EMBALSE) * 1_000_000.0
+            vol_actual_m3 = interpolar_volumen(cota_actual) * 1_000_000.0
+            vol_entregado_total_m3 = max(0.0, vol_max_rebose_m3 - vol_actual_m3)
+            
             if hidro["excedente_rebose"] > 0:
                 st.markdown(f"""
                 <div class="alert-box alert-green" style="border-left: 5px solid #00CC96; background: rgba(0, 204, 150, 0.12);">
@@ -726,48 +721,50 @@ with tab_situacion:
                 <div class="alert-box alert-green">
                     <span style="font-size: 24px;">🟢</span>
                     <div>
-                        <strong>ESTADO: OPERACIÓN NORMAL (SIN REBOSE)</strong><br>
-                        Cota calibrada en <strong>{cota_actual:.2f} msnm</strong> ({abs(hidro['excedente_rebose']):.2f} msnm bajo vertedero). Capacidad útil al <strong>{hidro['porcentaje_util']:.1f}%</strong> ({hidro['volumen_util_hm3']:.2f} hm³).
+                        <strong>ESTADO: OPERACIÓN NORMAL (EXTRACCIÓN ACTIVA HACIA CRC BOSCONIA)</strong><br>
+                        Cota calibrada en <strong>{cota_actual:.2f} msnm</strong>. Descenso total acumulado de <strong>{abs(descenso_total_cm):.1f} cm</strong> ({abs(hidro['excedente_rebose']):.2f} msnm bajo vertedero). Volumen acumulado entregado: <strong>{vol_entregado_total_m3:,.0f} m³</strong>. Capacidad útil al <strong>{hidro['porcentaje_util']:.1f}%</strong> ({hidro['volumen_util_hm3']:.2f} hm³).
                     </div>
                 </div>
                 """, unsafe_allow_html=True)
             
             c1, c2, c3, c4 = st.columns(4)
-            c1.metric("🌊 Cota Calibrada", f"{cota_actual:.2f} msnm", delta=f"{hidro['excedente_rebose']:+.2f} msnm vs Rebose", help=f"Sensor OTT: {cota_raw:.2f} msnm | Offset calibrado: -{OFFSET_RADAR_EMBALSE*100:.0f} cm")
+            c1.metric("🌊 Cota Calibrada", f"{cota_actual:.2f} msnm", delta=f"{descenso_total_cm:+.1f} cm vs Rebose", help=f"Sensor OTT: {cota_raw:.2f} msnm | Offset calibrado: -{OFFSET_RADAR_EMBALSE*100:.0f} cm")
             c2.metric("💧 Volumen Útil", f"{hidro['volumen_util_hm3']:.2f} hm³", delta=f"{hidro['porcentaje_util']:.1f}% útil")
+            c3.metric("📉 Descenso Total Acumulado", f"{abs(descenso_total_cm):.1f} cm", delta=f"~{vol_entregado_total_m3:,.0f} m³ a CRC", delta_color="inverse", help="Descenso total medido desde la cota de rebose 885.75 msnm")
             if hidro["q_rebose_ls"] > 0:
-                c3.metric("🌊 Caudal Rebose MG", f"{hidro['q_rebose_m3_s']:.2f} m³/s", delta=f"{hidro['q_rebose_ls']:,.0f} L/s hacia Puente Tona")
+                c4.metric("🌊 Caudal Rebose MG", f"{hidro['q_rebose_m3_s']:.2f} m³/s", delta=f"{hidro['q_rebose_ls']:,.0f} L/s hacia Puente Tona")
             elif bal and bal["q_neto_ls"] > 0:
-                c3.metric("📉 Tasa Neta Vaciado", f"{bal['q_neto_ls']:.0f} L/s", delta=f"{bal['vaciado_diario_m3']:,.0f} m³/día", delta_color="inverse", help="Descenso neto del vaso. Salida Real a PTAP = Tasa Neta + Aportes Río Tona.")
+                c4.metric("⚡ Tasa Neta Vaciado", f"{bal['q_neto_ls']:.0f} L/s", delta=f"{bal['vaciado_diario_m3']:,.0f} m³/día", delta_color="inverse", help=f"Velocidad neta de vaciado en las últimas {bal['horas']:.1f} horas. Salida Válvula CRC = Tasa Neta + Aporte Río Tona.")
             else:
-                c3.metric("⏳ Autonomía PTAP", "Simulador (Tab 2)", help="Usa la pestaña 2 para simular escenarios de extracción.")
-            c4.metric("📐 Área Espejo", f"{hidro['area_ha']:.1f} ha", delta=f"{hidro['m3_por_cm']:.0f} m³/cm")
+                c4.metric("📐 Área Espejo", f"{hidro['area_ha']:.1f} ha", delta=f"{hidro['m3_por_cm']:.0f} m³/cm")
             
             # Tarjeta de Balance Dinámico en Tiempo Real (Derivada Batimétrica)
             if bal:
                 st.markdown("---")
-                st.markdown("### ⚖️ Balance Hídrico Dinámico en Vivo (Extracción PTAP Bosconia)")
-                st.caption(f"Cálculo automático de volumen consumido, caudal y autonomía a partir del descenso medido en las últimas **{bal['horas']:.1f} horas**.")
+                st.markdown("### ⚖️ Balance Hídrico Dinámico en Vivo (Extracción CRC Bosconia)")
+                st.caption(f"Descenso total de la maniobra y tasa neta reciente calculada con la telemetría de las últimas **{bal['horas']:.1f} horas**.")
                 
                 bc1, bc2, bc3, bc4 = st.columns(4)
-                bc1.metric("⏱️ Período Analizado", f"{bal['horas']:.1f} h", delta=f"Cota: {bal['cota_ini']:.2f} → {bal['cota_fin']:.2f}")
-                bc2.metric("📉 Descenso Acumulado", f"{bal['delta_cota_cm']:+.1f} cm", delta=f"{bal['vel_cm_dia']:+.1f} cm/día")
+                bc1.metric("📉 Descenso Total Maniobra", f"{abs(descenso_total_cm):.1f} cm", delta=f"{vol_entregado_total_m3:,.0f} m³ acumulados", delta_color="inverse", help="Descenso total desde que inició la descarga en 885.75 msnm")
+                bc2.metric("⚡ Tasa Neta Reciente", f"{bal['q_neto_ls']:.0f} L/s", delta=f"{bal['vel_cm_dia']:+.1f} cm/día", delta_color="inverse", help=f"Velocidad neta de vaciado en las últimas {bal['horas']:.1f} horas")
+                bc3.metric(f"🚰 Volumen Ventana ({bal['horas']:.1f}h)", f"{abs(bal['delta_v_m3']):,.0f} m³", delta=f"{bal['delta_cota_cm']:+.1f} cm en ventana")
+                bc4.metric("⏳ Autonomía Real Dinámica", f"{bal['dias_autonomia']:.0f} Días" if bal['dias_autonomia'] else "N/A", help="Días restantes de agua continua hasta el Nivel Mínimo Técnico (841 msnm)")
                 
-                if bal['q_neto_ls'] > 0:
-                    bc3.metric("🚰 Tasa Neta Extracción", f"{abs(bal['delta_v_m3']):,.0f} m³", delta=f"Caudal Neto: {bal['q_neto_ls']:.0f} L/s", delta_color="inverse")
-                    bc4.metric("⏳ Autonomía Real Dinámica", f"{bal['dias_autonomia']:.0f} Días" if bal['dias_autonomia'] else "N/A", help="Días restantes de agua continua hasta el Nivel Mínimo Técnico (841 msnm)")
-                elif bal['q_neto_ls'] < 0:
-                    bc3.metric("🌧️ Recarga Neta Río Tona", f"{abs(bal['delta_v_m3']):,.0f} m³", delta=f"Aporte: +{abs(bal['q_neto_ls']):.0f} L/s")
-                    bc4.metric("📈 Estado Embalse", "En Llenado / Recarga", help="Aportes del Río Tona superan la extracción")
-                else:
-                    bc3.metric("⚖️ Balance Neto", "0 m³", delta="En equilibrio")
-                    bc4.metric("📈 Estado Embalse", "Nivel Estable")
-                    
                 st.markdown(f"""
-                <div style="background: rgba(0,80,115,0.06); padding: 12px 16px; border-radius: 8px; border-left: 4px solid #005073; margin-top: 10px; font-size: 13px;">
-                    <strong>📐 Ecuación de Continuidad & Balance Hidráulico:</strong><br>
-                    <code>Q_Salida_PTAP_Bosconia = Q_Tasa_Neta_Vaciado ({bal['q_neto_ls']:.0f} L/s) + Q_Afluente_Río_Tona (Entrada Cola Embalse)</code><br>
-                    <em>El embalse desciende a una tasa neta de <strong>{bal['q_neto_ls']:.0f} L/s</strong>. Si la apertura fijada en la Cámara de Válvulas es de <strong>~400 L/s</strong>, la diferencia (<strong>~{max(0, 400 - bal['q_neto_ls']):.0f} L/s</strong>) corresponde a la recarga natural continua que el Río Tona le entrega a la cola del embalse.</em>
+                <div style="background: rgba(0,80,115,0.06); padding: 14px 18px; border-radius: 8px; border-left: 4px solid #005073; margin-top: 10px; font-size: 13px; line-height: 1.5;">
+                    <strong style="color: #005073; font-size: 14px;">⚖️ Principio Físico: Balance de Masas & Continuidad Hidráulica</strong><br>
+                    <div style="margin-top: 6px; font-family: monospace; background: rgba(255,255,255,0.7); padding: 6px 10px; border-radius: 4px; border: 1px solid #cce0eb;">
+                        <strong>Q_Salida_CRC_Bosconia</strong> = <strong>Q_Tasa_Neta_Vaciado ({bal['q_neto_ls']:.0f} L/s)</strong> + <strong>∑ Q_Afluentes_Cuenca_Tona (~{max(0, 400 - bal['q_neto_ls']):.0f} L/s)</strong>
+                    </div>
+                    <div style="margin-top: 8px;">
+                        <strong>🌊 ¿Por qué el embalse desciende a menor tasa (~{bal['q_neto_ls']:.0f} L/s) de lo que sale a Bosconia (~400 L/s)?</strong><br>
+                        El embalse no es un tanque cerrado estanco, sino un sistema dinámico regulador en balance de masas continuo:
+                        <ul style="margin: 4px 0 6px 18px; padding: 0;">
+                            <li><strong>Entradas (Afluentes de Cuenca):</strong> Recarga continua del <strong>Río Tona</strong> principal y sus quebradas tributarias directas: <strong>Las Ranas, Gualilo, La Reforma y Los Monos</strong> (aporte sumado estimado en cola: <strong>~{max(0, 400 - bal['q_neto_ls']):.0f} L/s</strong>).</li>
+                            <li><strong>Salida (Consumo PTAP):</strong> Conducción y entrega por gravedad hacia la válvula <strong>CRC Bosconia</strong> (fijada en <strong>~400 L/s</strong>).</li>
+                            <li><strong>Variación de Almacenamiento (ΔV/Δt):</strong> El vaso del embalse solo cede la diferencia neta (<strong>{bal['q_neto_ls']:.0f} L/s</strong>), acumulando un descenso real de <strong>{abs(descenso_total_cm):.1f} cm</strong> ({vol_entregado_total_m3:,.0f} m³ entregados a planta) desde el inicio de la descarga.</li>
+                        </ul>
+                    </div>
                 </div>
                 """, unsafe_allow_html=True)
                     
@@ -882,21 +879,21 @@ with tab_series:
             # Gráficas 2 y 3: Metros Cúbicos Consumidos y Caudal (L/s)
             col_emb1, col_emb2 = st.columns(2)
             with col_emb1:
-                fig_m3 = px.area(df_enr_hist, x='timestamp', y='m3_consumidos_bosconia', title='📦 Volumen Entregado a PTAP Bosconia (m³ Acumulados)', labels={'m3_consumidos_bosconia': 'Metros Cúbicos (m³)', 'timestamp': 'Fecha/Hora'}, color_discrete_sequence=['#00CC96'])
+                fig_m3 = px.area(df_enr_hist, x='timestamp', y='m3_consumidos_bosconia', title='📦 Volumen Entregado a CRC Bosconia (m³ Acumulados)', labels={'m3_consumidos_bosconia': 'Metros Cúbicos (m³)', 'timestamp': 'Fecha/Hora'}, color_discrete_sequence=['#00CC96'])
                 fig_m3.update_layout(height=280, template='plotly_white')
                 st.plotly_chart(fig_m3, use_container_width=True)
                 
             with col_emb2:
                 fig_q = go.Figure()
-                fig_q.add_trace(go.Scatter(x=df_enr_hist['timestamp'], y=df_enr_hist['caudal_medio_bosconia_ls'], mode='lines', name='Caudal Bosconia (L/s)', line=dict(color='#005073', width=2.5)))
+                fig_q.add_trace(go.Scatter(x=df_enr_hist['timestamp'], y=df_enr_hist['caudal_medio_bosconia_ls'], mode='lines', name='Caudal CRC Bosconia (L/s)', line=dict(color='#005073', width=2.5)))
                 if df_enr_hist['caudal_rebose_ls'].max() > 0:
                     fig_q.add_trace(go.Scatter(x=df_enr_hist['timestamp'], y=df_enr_hist['caudal_rebose_ls'], mode='lines', name='Caudal Rebose Morning Glory (L/s)', line=dict(color='#FF4B4B', width=2, dash='dot')))
-                fig_q.update_layout(title='⚡ Caudal de Extracción & Rebose (L/s)', xaxis_title='Fecha/Hora', yaxis_title='Caudal (L/s)', height=280, template='plotly_white', legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1))
+                fig_q.update_layout(title='⚡ Caudal CRC Bosconia & Rebose (L/s)', xaxis_title='Fecha/Hora', yaxis_title='Caudal (L/s)', height=280, template='plotly_white', legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1))
                 st.plotly_chart(fig_q, use_container_width=True)
             
             # Bloque de Balance Volumétrico Bosconia en Vivo
             if not df_enr_hist.empty:
-                st.markdown("### 💧 Balance Volumétrico & Extracción PTAP Bosconia")
+                st.markdown("### 💧 Balance Volumétrico & Extracción CRC Bosconia")
                 m3_totales_periodo = df_enr_hist['m3_consumidos_bosconia'].max()
                 c_ini_p = df_enr_hist['cota_embalse_msnm'].iloc[0]
                 c_fin_p = df_enr_hist['cota_embalse_msnm'].iloc[-1]
@@ -908,12 +905,18 @@ with tab_series:
                 q_medio_ls = (m3_totales_periodo / delta_s_p) * 1000.0 if delta_s_p > 60 else 0.0
                 
                 cb1, cb2, cb3, cb4 = st.columns(4)
-                cb1.metric("📦 Metros Cúbicos Entregados", f"{m3_totales_periodo:,.1f} m³", help="Volumen acumulado entregado a Bosconia en el período visualizado")
+                cb1.metric("📦 Metros Cúbicos Entregados", f"{m3_totales_periodo:,.1f} m³", help="Volumen acumulado entregado a CRC Bosconia en el período visualizado")
                 cb2.metric("⚡ Tasa Neta Vaciado", f"{q_medio_ls:,.1f} L/s", help="Tasa neta calculada por gradiente batimétrico")
                 cb3.metric("📉 Descenso Acumulado", f"{desc_tot_cm:+.2f} cm")
                 cb4.metric("🌊 Cota Calibrada Actual", f"{c_fin_p:.2f} msnm")
                 
-                st.caption("💡 **Nota de Balance:** La tasa neta calculada corresponde al descenso efectivo del embalse. La salida real hacia PTAP Bosconia equivale a: `Q_PTAP = Tasa_Neta + Q_Río_Tona (Entrada)`.")
+                st.markdown(f"""
+                <div style="background: rgba(0,80,115,0.05); padding: 10px 14px; border-radius: 6px; border-left: 3px solid #005073; margin: 8px 0; font-size: 12.5px;">
+                    ⚖️ <strong>Balance de Masas & Continuidad:</strong> Tasa neta calculada en el período: <strong>{q_medio_ls:,.0f} L/s</strong>.<br>
+                    <code>Q_CRC_Bosconia (~400 L/s) = Tasa_Neta ({q_medio_ls:,.0f} L/s) + ∑ Q_Afluentes (~{max(0, 400 - q_medio_ls):,.0f} L/s)</code><br>
+                    <em>El caudal afluente corresponde a la recarga continua de cuenca: <strong>Río Tona principal</strong> + microcuencas tributarias <strong>Quebrada Las Ranas, Quebrada Gualilo, Quebrada La Reforma y Quebrada Los Monos</strong>.</em>
+                </div>
+                """, unsafe_allow_html=True)
                 
                 df_bal_24h_vista = consolidar_balance_diario_embalse(df_enr_hist)
                 if not df_bal_24h_vista.empty:
