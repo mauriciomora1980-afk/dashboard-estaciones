@@ -134,7 +134,7 @@ render_logo_sidebar()
 # ============================================================
 # 2. METADATOS Y CONSTANTES
 # ============================================================
-AUTOR = "Mauricio Mora - Auxiliar Operativo III"
+AUTOR = "Ing. Mauricio Mora"
 VERSION = "MIMAT-C26 v2.6"
 SISTEMA = "Sistema Automatizado de Monitoreo MIMAT-C26 - amb"
 AGENTE_API_URL = "https://querybigqueryamb-ia-661926446380.us-central1.run.app"
@@ -147,15 +147,15 @@ umbrales = {
 }
 
 # ============================================================
-# 3. MODELO MATEMÁTICO — BATIMETRÍA 2026 & REBOSADERO MORNING GLORY
+# 3. MODELO MATEMÁTICO — BATIMETRÍA 2026 (NUMPY NATIVO)
 # ============================================================
 COTAS_REF = np.array([817.94, 830.00, 836.50, 841.00, 850.00, 860.00, 870.00, 883.00, 885.80])
 VOLUMENES_REF = np.array([0.000, 0.520, 1.400, 1.980, 3.850, 6.420, 9.650, 14.090, 15.380]) # hm³
 AREAS_REF = np.array([0.00, 8.50, 14.20, 18.60, 24.50, 30.80, 37.20, 44.60, 46.20]) # ha
 
 NIVEL_MINIMO_TECNICO = 841.00
-NIVEL_REBOSE_EMBALSE = 885.75  # Cota de cresta del vertedero según planos As-Built 2016
-OFFSET_RADAR_EMBALSE = 0.05    # Desfase del sensor radar OTT (+5 cm)
+NIVEL_REBOSE_EMBALSE = 885.75
+OFFSET_RADAR_EMBALSE = 0.05 # Desfase del sensor radar OTT (5 cm)
 VOLUMEN_UTIL_MAX_HM3 = 12.11
 VOLUMEN_MUERTO_HM3 = 1.40
 
@@ -283,7 +283,7 @@ def obtener_alerta(precipitacion, estacion):
     return "GRIS", "☁️ Sin lluvia", "#CCCCCC", "0s"
 
 # ============================================================
-# 4. CLIENTE BIGQUERY CON ITERADOR NATIVO (SIN DB-DTYPES)
+# 4. CLIENTE BIGQUERY
 # ============================================================
 @st.cache_resource
 def init_bigquery_client():
@@ -423,8 +423,74 @@ with st.spinner("🔄 Consultando telemetría en tiempo real..."):
     df_hist = get_historical_data_range(seleccion, fecha_inicio, fecha_fin)
 
 # ============================================================
-# 6. EXPORTACIÓN Y EXCEL OPENPYXL
+# 6. EXPORTACIÓN Y EXCEL OPENPYXL (CON BALANCE BOSCONIA 24H)
 # ============================================================
+def enriquecer_datos_embalse(df):
+    if df.empty or 'temperatura' not in df.columns:
+        return df
+    df_e = df.copy().sort_values('timestamp')
+    c_raw = pd.to_numeric(df_e['temperatura'], errors='coerce')
+    df_e['cota_embalse_msnm'] = (c_raw - OFFSET_RADAR_EMBALSE).round(3)
+    
+    df_e['volumen_total_hm3'] = df_e['cota_embalse_msnm'].apply(lambda c: round(interpolar_volumen(c), 4) if pd.notna(c) else None)
+    df_e['volumen_util_hm3'] = df_e['volumen_total_hm3'].apply(lambda v: round(max(0.0, v - 1.980), 4) if pd.notna(v) else None)
+    
+    c_ini = df_e['cota_embalse_msnm'].iloc[0]
+    v_ini_m3 = (df_e['volumen_total_hm3'].iloc[0] or 0) * 1_000_000.0
+    
+    df_e['descenso_acumulado_cm'] = ((c_ini - df_e['cota_embalse_msnm']) * 100.0).round(2)
+    df_e['m3_consumidos_bosconia'] = df_e['volumen_total_hm3'].apply(lambda v: max(0.0, round(v_ini_m3 - (v * 1_000_000.0), 1)) if pd.notna(v) else 0.0)
+    df_e['caudal_rebose_ls'] = df_e['cota_embalse_msnm'].apply(lambda c: round(calcular_caudal_morning_glory(c)[1], 1) if pd.notna(c) else 0.0)
+    
+    t_ini = df_e['timestamp'].iloc[0]
+    df_e['delta_segundos_acum'] = (df_e['timestamp'] - t_ini).dt.total_seconds()
+    df_e['caudal_medio_bosconia_ls'] = df_e.apply(
+        lambda r: round((r['m3_consumidos_bosconia'] / r['delta_segundos_acum']) * 1000.0, 1) if r['delta_segundos_acum'] > 300 else 0.0,
+        axis=1
+    )
+    
+    return df_e
+
+def consolidar_balance_diario_embalse(df_emb_enr):
+    if df_emb_enr.empty:
+        return pd.DataFrame()
+    df_c = df_emb_enr.copy()
+    if 'timestamp' in df_c.columns:
+        df_c['fecha_dia'] = df_c['timestamp'].dt.strftime('%Y-%m-%d')
+    else:
+        return pd.DataFrame()
+        
+    resumen_dias = []
+    for fecha_dia, grupo in df_c.groupby('fecha_dia'):
+        g_s = grupo.sort_values('timestamp')
+        if len(g_s) < 2:
+            continue
+        c_ini = g_s.iloc[0]['cota_embalse_msnm']
+        c_fin = g_s.iloc[-1]['cota_embalse_msnm']
+        v_ini = g_s.iloc[0]['volumen_total_hm3'] * 1_000_000.0
+        v_fin = g_s.iloc[-1]['volumen_total_hm3'] * 1_000_000.0
+        
+        t_ini = g_s.iloc[0]['timestamp']
+        t_fin = g_s.iloc[-1]['timestamp']
+        delta_s = max(1.0, (t_fin - t_ini).total_seconds())
+        delta_horas = delta_s / 3600.0
+        
+        delta_cm = (c_ini - c_fin) * 100.0
+        m3_dia = max(0.0, v_ini - v_fin)
+        q_ls = (m3_dia / delta_s) * 1000.0 if delta_s > 60 else 0.0
+        
+        resumen_dias.append({
+            "Fecha": fecha_dia,
+            "Horas Monitoreadas": round(delta_horas, 1),
+            "Cota Inicial (msnm)": round(c_ini, 3),
+            "Cota Final (msnm)": round(c_fin, 3),
+            "Descenso (cm)": round(delta_cm, 2),
+            "Metros Cúbicos Entregados Bosconia (m³)": round(m3_dia, 1),
+            "Caudal Medio Estimado (L/s)": round(q_ls, 1),
+            "Vol. Útil Remanente (hm³)": round(g_s.iloc[-1]['volumen_util_hm3'], 3)
+        })
+    return pd.DataFrame(resumen_dias)
+
 def preparar_df_para_exportar(df):
     df_export = df.copy()
     if 'timestamp' in df_export.columns:
@@ -432,36 +498,67 @@ def preparar_df_para_exportar(df):
     return df_export
 
 def generar_excel_con_formato(df, nombre_estacion, periodo_descripcion):
-    df_export = preparar_df_para_exportar(df)
     output = BytesIO()
     
     with pd.ExcelWriter(output, engine='openpyxl') as writer:
-        df_export.to_excel(writer, sheet_name='Datos', index=False)
-        workbook = writer.book
-        worksheet = writer.sheets['Datos']
-        
-        header_font = Font(bold=True, color="FFFFFF")
-        header_fill = PatternFill(start_color="005073", end_color="005073", fill_type="solid")
-        header_alignment = Alignment(horizontal="center", vertical="center")
-        
-        for col in range(1, len(df_export.columns) + 1):
-            cell = worksheet.cell(row=1, column=col)
-            cell.font = header_font
-            cell.fill = header_fill
-            cell.alignment = header_alignment
-        
-        for col in worksheet.columns:
-            max_len = 0
-            col_letter = col[0].column_letter
-            for cell in col:
-                try:
-                    if len(str(cell.value)) > max_len: max_len = len(str(cell.value))
-                except: pass
-            worksheet.column_dimensions[col_letter].width = min(max_len + 3, 50)
+        if nombre_estacion == "Embalse" and 'temperatura' in df.columns:
+            df_enr = enriquecer_datos_embalse(df)
+            df_balance_24h = consolidar_balance_diario_embalse(df_enr)
+            df_enr_export = preparar_df_para_exportar(df_enr)
+            
+            # Hoja 1: Balance Consolidado 24h
+            if not df_balance_24h.empty:
+                df_balance_24h.to_excel(writer, sheet_name='Balance_Bosconia_24h', index=False)
+                ws_bal = writer.sheets['Balance_Bosconia_24h']
+                header_font = Font(bold=True, color="FFFFFF")
+                header_fill = PatternFill(start_color="005073", end_color="005073", fill_type="solid")
+                header_alignment = Alignment(horizontal="center", vertical="center")
+                for col in range(1, len(df_balance_24h.columns) + 1):
+                    cell = ws_bal.cell(row=1, column=col)
+                    cell.font = header_font
+                    cell.fill = header_fill
+                    cell.alignment = header_alignment
+                for col in ws_bal.columns:
+                    max_len = max(len(str(cell.value or '')) for cell in col)
+                    col_letter = col[0].column_letter
+                    ws_bal.column_dimensions[col_letter].width = min(max_len + 4, 40)
+            
+            # Hoja 2: Telemetría Detallada
+            df_enr_export.to_excel(writer, sheet_name='Telemetria_Embalse', index=False)
+            worksheet = writer.sheets['Telemetria_Embalse']
+            header_font = Font(bold=True, color="FFFFFF")
+            header_fill = PatternFill(start_color="172A45", end_color="172A45", fill_type="solid")
+            for col in range(1, len(df_enr_export.columns) + 1):
+                cell = worksheet.cell(row=1, column=col)
+                cell.font = header_font
+                cell.fill = header_fill
+                cell.alignment = Alignment(horizontal="center", vertical="center")
+            for col in worksheet.columns:
+                max_len = max(len(str(cell.value or '')) for cell in col)
+                col_letter = col[0].column_letter
+                worksheet.column_dimensions[col_letter].width = min(max_len + 3, 50)
+            df_registros_len = len(df_enr_export)
+        else:
+            df_export = preparar_df_para_exportar(df)
+            df_export.to_excel(writer, sheet_name='Datos', index=False)
+            worksheet = writer.sheets['Datos']
+            header_font = Font(bold=True, color="FFFFFF")
+            header_fill = PatternFill(start_color="005073", end_color="005073", fill_type="solid")
+            header_alignment = Alignment(horizontal="center", vertical="center")
+            for col in range(1, len(df_export.columns) + 1):
+                cell = worksheet.cell(row=1, column=col)
+                cell.font = header_font
+                cell.fill = header_fill
+                cell.alignment = header_alignment
+            for col in worksheet.columns:
+                max_len = max(len(str(cell.value or '')) for cell in col)
+                col_letter = col[0].column_letter
+                worksheet.column_dimensions[col_letter].width = min(max_len + 3, 50)
+            df_registros_len = len(df_export)
         
         metadata = pd.DataFrame({
             'Propiedad': ['Sistema', 'Proyecto', 'Estación', 'Período', 'Fecha exportación', 'Total registros', 'Responsable'],
-            'Valor': [SISTEMA, "MIMAT-C26", nombre_estacion, periodo_descripcion, datetime.now(colombia_tz).strftime('%Y-%m-%d %H:%M:%S'), len(df_export), AUTOR]
+            'Valor': [SISTEMA, "MIMAT-C26", nombre_estacion, periodo_descripcion, datetime.now(colombia_tz).strftime('%Y-%m-%d %H:%M:%S'), df_registros_len, AUTOR]
         })
         metadata.to_excel(writer, sheet_name='Metadatos', index=False)
         m_sheet = writer.sheets['Metadatos']
@@ -472,19 +569,59 @@ def generar_excel_con_formato(df, nombre_estacion, periodo_descripcion):
             
     return output.getvalue()
 
-def generar_resumen_estadistico(df):
+def generar_resumen_estadistico(df, nombre_estacion=""):
     if df.empty: return "No hay datos disponibles"
     resumen = [
-        "📊 RESUMEN ESTADÍSTICO — MIMAT-C26 (amb)",
-        "=" * 45,
+        f"📊 RESUMEN ESTADÍSTICO — MIMAT-C26 (amb) [{nombre_estacion or 'Telemetría'}]",
+        "=" * 50,
         f"📋 Generado el {datetime.now(colombia_tz).strftime('%Y-%m-%d %H:%M')}",
         ""
     ]
+    
+    # Manejo especializado para el Embalse Tona
+    if nombre_estacion == "Embalse" or (len(df) > 0 and pd.to_numeric(df.get('temperatura', pd.Series()), errors='coerce').mean() > 800):
+        df_enr = enriquecer_datos_embalse(df)
+        c_ini = df_enr['cota_embalse_msnm'].iloc[0]
+        c_fin = df_enr['cota_embalse_msnm'].iloc[-1]
+        c_max = df_enr['cota_embalse_msnm'].max()
+        c_min = df_enr['cota_embalse_msnm'].min()
+        c_mean = df_enr['cota_embalse_msnm'].mean()
+        
+        m3_tot = df_enr['m3_consumidos_bosconia'].max()
+        desc_cm = (c_ini - c_fin) * 100.0
+        
+        t_ini = df_enr['timestamp'].iloc[0]
+        t_fin = df_enr['timestamp'].iloc[-1]
+        delta_s = max(1.0, (t_fin - t_ini).total_seconds())
+        q_medio_ls = (m3_tot / delta_s) * 1000.0 if delta_s > 60 else 0.0
+        
+        vol_util_act = df_enr['volumen_util_hm3'].iloc[-1]
+        dias_aut = (vol_util_act * 1_000_000.0) / (q_medio_ls * 86.4) if q_medio_ls > 0 else None
+        
+        resumen.append("🌊 PARÁMETROS HIDRÁULICOS DEL EMBALSE:")
+        resumen.append(f"   • Cota Actual:                 {c_fin:.3f} msnm")
+        resumen.append(f"   • Cota Inicial del Período:    {c_ini:.3f} msnm")
+        resumen.append(f"   • Cota Promedio:               {c_mean:.3f} msnm")
+        resumen.append(f"   • Cota Máxima:                 {c_max:.3f} msnm")
+        resumen.append(f"   • Cota Mínima:                 {c_min:.3f} msnm")
+        resumen.append(f"   • Descenso Acumulado:          {desc_cm:+.2f} cm")
+        resumen.append("")
+        resumen.append("💧 EXTRACCIÓN & BALANCE PTAP BOSCONIA:")
+        resumen.append(f"   • Metros Cúbicos Entregados:   {m3_tot:,.1f} m³")
+        resumen.append(f"   • Caudal Medio Estimado:        {q_medio_ls:,.1f} L/s ({q_medio_ls/1000.0:.3f} m³/s)")
+        resumen.append(f"   • Volumen Útil Remanente:       {vol_util_act:.3f} hm³")
+        resumen.append(f"   • Autonomía Hídrica:           {f'{dias_aut:.1f} Días' if dias_aut else 'Indefinida'}")
+        resumen.append(f"   • Registros Analizados:         {len(df)}")
+        resumen.append("")
+        resumen.append("ℹ️ NOTA TÉCNICA: La estación Embalse registra exclusivamente niveles hidrométricos (msnm) y volúmenes hídricos.")
+        return "\n".join(resumen)
+        
+    # Para estaciones meteorológicas (La Mariana, Yerbabuena, etc.)
     cols = ['temperatura', 'precipitacion', 'humedad', 'presion', 'velocidad_viento', 'direccion_viento', 'voltaje_bateria']
     for col in cols:
         if col in df.columns:
             datos = pd.to_numeric(df[col], errors='coerce').dropna()
-            if not datos.empty:
+            if not datos.empty and (datos.abs().max() > 0 or col in ['temperatura', 'precipitacion']):
                 resumen.append(f"📈 {col.upper()}:")
                 resumen.append(f"   • Promedio: {datos.mean():.2f}")
                 resumen.append(f"   • Máximo:  {datos.max():.2f}")
@@ -726,10 +863,52 @@ with tab_series:
     
     if not df_hist.empty:
         if seleccion == "Embalse":
-            fig_emb = px.line(df_hist.sort_values('timestamp'), x='timestamp', y='temperatura', title='Evolución Cota Embalse (msnm)', labels={'temperatura': 'msnm', 'timestamp': 'Fecha/Hora'})
-            fig_emb.add_hline(y=NIVEL_REBOSE_EMBALSE, line_dash="dash", line_color="red", annotation_text="Rebose Morning Glory")
-            fig_emb.update_layout(height=350, template='plotly_white')
+            df_enr_hist = enriquecer_datos_embalse(df_hist)
+            
+            # Gráfica 1: Cota de Nivel del Embalse
+            fig_emb = px.line(df_enr_hist, x='timestamp', y='cota_embalse_msnm', title='🌊 Evolución de la Cota del Embalse (msnm)', labels={'cota_embalse_msnm': 'Cota (msnm)', 'timestamp': 'Fecha/Hora'})
+            fig_emb.add_hline(y=NIVEL_REBOSE_EMBALSE, line_dash="dash", line_color="red", annotation_text="Rebose Morning Glory (885.75 msnm)")
+            fig_emb.update_layout(height=320, template='plotly_white')
             st.plotly_chart(fig_emb, use_container_width=True)
+            
+            # Gráficas 2 y 3: Metros Cúbicos Consumidos y Caudal (L/s)
+            col_emb1, col_emb2 = st.columns(2)
+            with col_emb1:
+                fig_m3 = px.area(df_enr_hist, x='timestamp', y='m3_consumidos_bosconia', title='📦 Volumen Entregado a PTAP Bosconia (m³ Acumulados)', labels={'m3_consumidos_bosconia': 'Metros Cúbicos (m³)', 'timestamp': 'Fecha/Hora'}, color_discrete_sequence=['#00CC96'])
+                fig_m3.update_layout(height=280, template='plotly_white')
+                st.plotly_chart(fig_m3, use_container_width=True)
+                
+            with col_emb2:
+                fig_q = go.Figure()
+                fig_q.add_trace(go.Scatter(x=df_enr_hist['timestamp'], y=df_enr_hist['caudal_medio_bosconia_ls'], mode='lines', name='Caudal Bosconia (L/s)', line=dict(color='#005073', width=2.5)))
+                if df_enr_hist['caudal_rebose_ls'].max() > 0:
+                    fig_q.add_trace(go.Scatter(x=df_enr_hist['timestamp'], y=df_enr_hist['caudal_rebose_ls'], mode='lines', name='Caudal Rebose Morning Glory (L/s)', line=dict(color='#FF4B4B', width=2, dash='dot')))
+                fig_q.update_layout(title='⚡ Caudal de Extracción & Rebose (L/s)', xaxis_title='Fecha/Hora', yaxis_title='Caudal (L/s)', height=280, template='plotly_white', legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1))
+                st.plotly_chart(fig_q, use_container_width=True)
+            
+            # Bloque de Balance Volumétrico Bosconia en Vivo
+            if not df_enr_hist.empty:
+                st.markdown("### 💧 Balance Volumétrico & Extracción PTAP Bosconia")
+                m3_totales_periodo = df_enr_hist['m3_consumidos_bosconia'].max()
+                c_ini_p = df_enr_hist['cota_embalse_msnm'].iloc[0]
+                c_fin_p = df_enr_hist['cota_embalse_msnm'].iloc[-1]
+                desc_tot_cm = (c_ini_p - c_fin_p) * 100.0
+                
+                t_ini_p = df_enr_hist['timestamp'].iloc[0]
+                t_fin_p = df_enr_hist['timestamp'].iloc[-1]
+                delta_s_p = max(1.0, (t_fin_p - t_ini_p).total_seconds())
+                q_medio_ls = (m3_totales_periodo / delta_s_p) * 1000.0 if delta_s_p > 60 else 0.0
+                
+                cb1, cb2, cb3, cb4 = st.columns(4)
+                cb1.metric("📦 Metros Cúbicos Entregados", f"{m3_totales_periodo:,.1f} m³", help="Volumen acumulado entregado a Bosconia en el período visualizado")
+                cb2.metric("⚡ Caudal Medio Calculado", f"{q_medio_ls:,.1f} L/s", help="Caudal medio equivalente por gradiente batimétrico")
+                cb3.metric("📉 Descenso Acumulado", f"{desc_tot_cm:+.2f} cm")
+                cb4.metric("🌊 Cota Calibrada Actual", f"{c_fin_p:.2f} msnm")
+                
+                df_bal_24h_vista = consolidar_balance_diario_embalse(df_enr_hist)
+                if not df_bal_24h_vista.empty:
+                    st.markdown("#### 📅 Consolidado por Bloques de 24 Horas Exactas:")
+                    st.dataframe(df_bal_24h_vista, use_container_width=True)
         else:
             col_g1, col_g2 = st.columns(2)
             with col_g1:
@@ -770,19 +949,33 @@ with tab_series:
     st.markdown("---")
     st.subheader("📥 Descarga Oficial de Datos")
     col_per1, col_per2 = st.columns(2)
-    with col_per1: op_periodo = st.radio("Período:", ["Diario", "Semanal", "Mensual", "Semestral", "Anual"], index=0)
-    with col_per2: op_custom = st.checkbox("📅 Personalizar fechas de descarga")
+    with col_per1: 
+        opciones_periodo = ["Desde el Viernes (Inicio Extracción)", "Diario (24h Exactas)", "Semanal", "Mensual", "Semestral", "Anual"]
+        op_periodo = st.radio("Período predefinido:", opciones_periodo, index=0 if seleccion == "Embalse" else 1)
+    with col_per2: 
+        op_custom = st.checkbox("📅 Personalizar fechas de descarga")
+        
     hoy = datetime.now(colombia_tz)
     if op_custom:
         c_f1, c_f2 = st.columns(2)
-        with c_f1: f_ini_d = st.date_input("Fecha Inicio:", value=hoy - timedelta(days=30), max_value=hoy)
+        with c_f1: f_ini_d = st.date_input("Fecha Inicio:", value=hoy - timedelta(days=7), max_value=hoy)
         with c_f2: f_fin_d = st.date_input("Fecha Fin:", value=hoy, max_value=hoy)
         desc_periodo = f"Personalizado ({f_ini_d.strftime('%d/%m/%Y')} - {f_fin_d.strftime('%d/%m/%Y')})"
     else:
-        dias_map = {"Diario": 1, "Semanal": 7, "Mensual": 30, "Semestral": 180, "Anual": 365}
-        f_ini_d = hoy - timedelta(days=dias_map[op_periodo])
-        f_fin_d = hoy
-        desc_periodo = f"{op_periodo} ({f_ini_d.strftime('%d/%m/%Y')} - {f_fin_d.strftime('%d/%m/%Y')})"
+        if op_periodo == "Desde el Viernes (Inicio Extracción)":
+            dias_desde_viernes = (hoy.weekday() - 4) % 7
+            if dias_desde_viernes == 0 and hoy.weekday() != 4:
+                dias_desde_viernes = 7
+            elif dias_desde_viernes == 0:
+                dias_desde_viernes = 0
+            f_ini_d = hoy - timedelta(days=dias_desde_viernes if dias_desde_viernes > 0 else 4)
+            f_fin_d = hoy
+            desc_periodo = f"Desde el Viernes ({f_ini_d.strftime('%d/%m/%Y')} a {f_fin_d.strftime('%d/%m/%Y')})"
+        else:
+            dias_map = {"Diario (24h Exactas)": 1, "Semanal": 7, "Mensual": 30, "Semestral": 180, "Anual": 365}
+            f_ini_d = hoy - timedelta(days=dias_map.get(op_periodo, 1))
+            f_fin_d = hoy
+            desc_periodo = f"{op_periodo} ({f_ini_d.strftime('%d/%m/%Y')} - {f_fin_d.strftime('%d/%m/%Y')})"
         
     st.info(f"📊 **Período seleccionado para descarga:** {desc_periodo}")
     if st.button("📥 Cargar datos para exportar", use_container_width=True):
@@ -791,15 +984,29 @@ with tab_series:
             if not df_d.empty:
                 st.session_state['df_descarga'] = df_d
                 st.session_state['periodo_descarga'] = desc_periodo
-                st.success(f"✅ Datos listos: {len(df_d)} registros")
+                st.success(f"✅ Datos listos: {len(df_d)} registros procesados")
             else:
                 st.warning("⚠️ Sin datos para el rango seleccionado.")
                 
     if 'df_descarga' in st.session_state:
         df_exp = st.session_state['df_descarga']
         per_exp = st.session_state['periodo_descarga']
-        with st.expander("📊 Ver Resumen Estadístico"): st.text(generar_resumen_estadistico(df_exp))
-        with st.expander("📋 Ver Matriz de Datos"): st.dataframe(df_exp, use_container_width=True)
+        
+        with st.expander("📊 Ver Resumen Estadístico"): 
+            st.text(generar_resumen_estadistico(df_exp, seleccion))
+            
+        if seleccion == "Embalse" and 'temperatura' in df_exp.columns:
+            df_enr_exp = enriquecer_datos_embalse(df_exp)
+            df_bal_exp = consolidar_balance_diario_embalse(df_enr_exp)
+            if not df_bal_exp.empty:
+                st.markdown("### 📊 Balance Diario Consolidado hacia PTAP Bosconia (24 Horas Exactas):")
+                st.dataframe(df_bal_exp, use_container_width=True)
+            with st.expander("📋 Ver Matriz Detallada Enriquecida"):
+                st.dataframe(df_enr_exp, use_container_width=True)
+        else:
+            with st.expander("📋 Ver Matriz de Datos"): 
+                st.dataframe(df_exp, use_container_width=True)
+                
         c_exp1, c_exp2 = st.columns(2)
         df_p = preparar_df_para_exportar(df_exp)
         csv_bytes = df_p.to_csv(index=False).encode('utf-8-sig')
@@ -807,7 +1014,7 @@ with tab_series:
             try:
                 xlsx_bytes = generar_excel_con_formato(df_exp, seleccion, per_exp)
                 st.download_button("📊 Hoja de Cálculo (.xlsx)", xlsx_bytes, f"{seleccion}_{hoy.strftime('%Y%m%d_%H%M')}.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True)
-                st.caption("✅ Formato Excel oficial con metadatos amb")
+                st.caption("✅ Formato Excel oficial amb (con Hoja de Balance 24h)")
             except:
                 st.download_button("📊 Hoja de Datos (CSV)", csv_bytes, f"{seleccion}_{hoy.strftime('%Y%m%d_%H%M')}.csv", "text/csv", use_container_width=True)
         with c_exp2:
@@ -923,7 +1130,7 @@ st.sidebar.caption("Proyecto MIMAT-C26 • amb s.a. e.s.p.")
 with st.sidebar.expander("🌊 Información del Embalse"):
     st.write(f"**Nivel de Rebose:** {NIVEL_REBOSE_EMBALSE} msnm")
     c_act = get_cota_embalse_actual_segura()
-    st.write(f"**Cota Calibrada:** {c_act:.2f} msnm")
+    st.write(f"**Cota Actual:** {c_act:.2f} msnm")
     st.write(f"**Volumen Útil (2026):** {VOLUMEN_UTIL_MAX_HM3} hm³")
     st.write(f"**Volumen Muerto:** {VOLUMEN_MUERTO_HM3} hm³")
 
