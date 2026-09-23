@@ -736,9 +736,9 @@ with tab_situacion:
             c1.metric("🌊 Cota Calibrada", f"{cota_actual:.2f} msnm", delta=f"{hidro['excedente_rebose']:+.2f} msnm vs Rebose", help=f"Sensor OTT: {cota_raw:.2f} msnm | Offset calibrado: -{OFFSET_RADAR_EMBALSE*100:.0f} cm")
             c2.metric("💧 Volumen Útil", f"{hidro['volumen_util_hm3']:.2f} hm³", delta=f"{hidro['porcentaje_util']:.1f}% útil")
             if hidro["q_rebose_ls"] > 0:
-                c3.metric("🌊 Caudal Rebose MG", f"{hidro['q_rebose_m3_s']:.2f} m³/s", delta=f"{hidro['q_rebose_ls']:,.0f} L/s")
+                c3.metric("🌊 Caudal Rebose MG", f"{hidro['q_rebose_m3_s']:.2f} m³/s", delta=f"{hidro['q_rebose_ls']:,.0f} L/s hacia Puente Tona")
             elif bal and bal["q_neto_ls"] > 0:
-                c3.metric("🚰 Consumo Bosconia", f"{bal['q_neto_ls']:.0f} L/s", delta=f"{bal['vaciado_diario_m3']:,.0f} m³/día", delta_color="inverse")
+                c3.metric("📉 Tasa Neta Vaciado", f"{bal['q_neto_ls']:.0f} L/s", delta=f"{bal['vaciado_diario_m3']:,.0f} m³/día", delta_color="inverse", help="Descenso neto del vaso. Salida Real a PTAP = Tasa Neta + Aportes Río Tona.")
             else:
                 c3.metric("⏳ Autonomía PTAP", "Simulador (Tab 2)", help="Usa la pestaña 2 para simular escenarios de extracción.")
             c4.metric("📐 Área Espejo", f"{hidro['area_ha']:.1f} ha", delta=f"{hidro['m3_por_cm']:.0f} m³/cm")
@@ -754,7 +754,7 @@ with tab_situacion:
                 bc2.metric("📉 Descenso Acumulado", f"{bal['delta_cota_cm']:+.1f} cm", delta=f"{bal['vel_cm_dia']:+.1f} cm/día")
                 
                 if bal['q_neto_ls'] > 0:
-                    bc3.metric("🚰 Consumo PTAP Bosconia", f"{abs(bal['delta_v_m3']):,.0f} m³", delta=f"Caudal: {bal['q_neto_ls']:.0f} L/s", delta_color="inverse")
+                    bc3.metric("🚰 Tasa Neta Extracción", f"{abs(bal['delta_v_m3']):,.0f} m³", delta=f"Caudal Neto: {bal['q_neto_ls']:.0f} L/s", delta_color="inverse")
                     bc4.metric("⏳ Autonomía Real Dinámica", f"{bal['dias_autonomia']:.0f} Días" if bal['dias_autonomia'] else "N/A", help="Días restantes de agua continua hasta el Nivel Mínimo Técnico (841 msnm)")
                 elif bal['q_neto_ls'] < 0:
                     bc3.metric("🌧️ Recarga Neta Río Tona", f"{abs(bal['delta_v_m3']):,.0f} m³", delta=f"Aporte: +{abs(bal['q_neto_ls']):.0f} L/s")
@@ -762,6 +762,14 @@ with tab_situacion:
                 else:
                     bc3.metric("⚖️ Balance Neto", "0 m³", delta="En equilibrio")
                     bc4.metric("📈 Estado Embalse", "Nivel Estable")
+                    
+                st.markdown(f"""
+                <div style="background: rgba(0,80,115,0.06); padding: 12px 16px; border-radius: 8px; border-left: 4px solid #005073; margin-top: 10px; font-size: 13px;">
+                    <strong>📐 Ecuación de Continuidad & Balance Hidráulico:</strong><br>
+                    <code>Q_Salida_PTAP_Bosconia = Q_Tasa_Neta_Vaciado ({bal['q_neto_ls']:.0f} L/s) + Q_Afluente_Río_Tona (Entrada Cola Embalse)</code><br>
+                    <em>El embalse desciende a una tasa neta de <strong>{bal['q_neto_ls']:.0f} L/s</strong>. Si la apertura fijada en la Cámara de Válvulas es de <strong>~400 L/s</strong>, la diferencia (<strong>~{max(0, 400 - bal['q_neto_ls']):.0f} L/s</strong>) corresponde a la recarga natural continua que el Río Tona le entrega a la cola del embalse.</em>
+                </div>
+                """, unsafe_allow_html=True)
                     
             st.info(f"📅 Última lectura: {row['timestamp'].strftime('%Y-%m-%d %H:%M:%S')}")
             mostrar_seccion_edv()
@@ -901,9 +909,11 @@ with tab_series:
                 
                 cb1, cb2, cb3, cb4 = st.columns(4)
                 cb1.metric("📦 Metros Cúbicos Entregados", f"{m3_totales_periodo:,.1f} m³", help="Volumen acumulado entregado a Bosconia en el período visualizado")
-                cb2.metric("⚡ Caudal Medio Calculado", f"{q_medio_ls:,.1f} L/s", help="Caudal medio equivalente por gradiente batimétrico")
+                cb2.metric("⚡ Tasa Neta Vaciado", f"{q_medio_ls:,.1f} L/s", help="Tasa neta calculada por gradiente batimétrico")
                 cb3.metric("📉 Descenso Acumulado", f"{desc_tot_cm:+.2f} cm")
                 cb4.metric("🌊 Cota Calibrada Actual", f"{c_fin_p:.2f} msnm")
+                
+                st.caption("💡 **Nota de Balance:** La tasa neta calculada corresponde al descenso efectivo del embalse. La salida real hacia PTAP Bosconia equivale a: `Q_PTAP = Tasa_Neta + Q_Río_Tona (Entrada)`.")
                 
                 df_bal_24h_vista = consolidar_balance_diario_embalse(df_enr_hist)
                 if not df_bal_24h_vista.empty:
