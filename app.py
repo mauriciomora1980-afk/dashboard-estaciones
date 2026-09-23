@@ -399,7 +399,10 @@ if seleccion_sidebar != seleccion:
     st.rerun()
 
 periodos_grafico = {
-    "Últimas 24 horas": 24,
+    "Últimas 3 horas (Operación Inmediata)": 3,
+    "Últimas 6 horas (Turno de Extracción)": 6,
+    "Últimas 12 horas": 12,
+    "Últimas 24 horas (Balance Diario)": 24,
     "Últimos 3 días": 72,
     "Últimos 7 días": 168,
     "Últimos 15 días": 360,
@@ -407,7 +410,7 @@ periodos_grafico = {
 }
 
 if seleccion == "Embalse":
-    p_sel = st.sidebar.selectbox("Período histórico:", list(periodos_grafico.keys()))
+    p_sel = st.sidebar.selectbox("Período histórico:", list(periodos_grafico.keys()), index=1)
     horas = periodos_grafico[p_sel]
 else:
     horas = st.sidebar.slider("⏱️ Horas históricas:", 1, 168, 24, step=1)
@@ -932,3 +935,7 @@ with st.sidebar.expander("📏 Extensómetros (EDV)"):
     st.write("**Base de Datos Geotécnica:** BigQuery")
     st.write("- EDV Izquierdo: Activo")
     st.write("- EDV Derecho: Activo")
+
+# ============================================================
+# FIN DEL CÓDIGO — SISTEMA MIMAT-C26 (amb)
+# ============================================================
