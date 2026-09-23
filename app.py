@@ -703,11 +703,11 @@ with tab_situacion:
             
             if hidro["excedente_rebose"] > 0:
                 st.markdown(f"""
-                <div class="alert-box alert-orange">
+                <div class="alert-box alert-green" style="border-left: 5px solid #00CC96; background: rgba(0, 204, 150, 0.12);">
                     <span style="font-size: 24px;">🌊</span>
                     <div>
-                        <strong>ESTADO: REBOSE MORNING GLORY ACTIVO (+{hidro['excedente_rebose']:.2f} msnm)</strong><br>
-                        Cota calibrada en <strong>{cota_actual:.2f} msnm</strong>. Descargando <strong>{hidro['q_rebose_m3_s']:.2f} m³/s ({hidro['q_rebose_ls']:,.0f} L/s)</strong> por el pozo Morning Glory.
+                        <strong>ESTADO: ALTA DISPONIBILIDAD HÍDRICA — REBOSE ACTIVO HACIA PUENTE TONA (+{hidro['excedente_rebose']:.2f} msnm)</strong><br>
+                        Cota calibrada en <strong>{cota_actual:.2f} msnm</strong>. Entregando <strong>{hidro['q_rebose_m3_s']:.2f} m³/s ({hidro['q_rebose_ls']:,.0f} L/s)</strong> por el pozo Morning Glory hacia Puente Tona (confluencia con Río Suratá). Mayor disponibilidad de agua cruda en cuenca para maximizar captación hacia PTAP Bosconia y futura PTAP Los Angelinos.
                     </div>
                 </div>
                 """, unsafe_allow_html=True)
@@ -837,7 +837,7 @@ with tab_embalse_2026:
         """)
         
         if datos_eval['q_rebose_ls'] > 0:
-            st.warning(f"🌊 **Rebose activo:** Descargando {datos_eval['q_rebose_m3_s']:.2f} m³/s al Río Tona por encima de la cota 885.75 msnm.")
+            st.success(f"🌊 **Excedente hídrico activo hacia Puente Tona:** Descargando {datos_eval['q_rebose_m3_s']:.2f} m³/s ({datos_eval['q_rebose_ls']:,.0f} L/s) por encima de la cota 885.75 msnm hacia la confluencia con el Río Suratá (mayor disponibilidad para PTAP Bosconia y futura PTAP Los Angelinos).")
         elif q_sim > 0:
             st.caption(f"💡 Extrayendo {q_sim} L/s ({q_sim*86.4:.0f} m³/día) sin aportes del río Tona.")
         else:
@@ -950,8 +950,8 @@ with tab_series:
     st.subheader("📥 Descarga Oficial de Datos")
     col_per1, col_per2 = st.columns(2)
     with col_per1: 
-        opciones_periodo = ["Desde el Viernes (Inicio Extracción)", "Diario (24h Exactas)", "Semanal", "Mensual", "Semestral", "Anual"]
-        op_periodo = st.radio("Período predefinido:", opciones_periodo, index=0 if seleccion == "Embalse" else 1)
+        opciones_periodo = ["Diario (24h)", "Semanal", "Mensual", "Semestral", "Anual"]
+        op_periodo = st.radio("Período predefinido:", opciones_periodo, index=0)
     with col_per2: 
         op_custom = st.checkbox("📅 Personalizar fechas de descarga")
         
@@ -962,20 +962,10 @@ with tab_series:
         with c_f2: f_fin_d = st.date_input("Fecha Fin:", value=hoy, max_value=hoy)
         desc_periodo = f"Personalizado ({f_ini_d.strftime('%d/%m/%Y')} - {f_fin_d.strftime('%d/%m/%Y')})"
     else:
-        if op_periodo == "Desde el Viernes (Inicio Extracción)":
-            dias_desde_viernes = (hoy.weekday() - 4) % 7
-            if dias_desde_viernes == 0 and hoy.weekday() != 4:
-                dias_desde_viernes = 7
-            elif dias_desde_viernes == 0:
-                dias_desde_viernes = 0
-            f_ini_d = hoy - timedelta(days=dias_desde_viernes if dias_desde_viernes > 0 else 4)
-            f_fin_d = hoy
-            desc_periodo = f"Desde el Viernes ({f_ini_d.strftime('%d/%m/%Y')} a {f_fin_d.strftime('%d/%m/%Y')})"
-        else:
-            dias_map = {"Diario (24h Exactas)": 1, "Semanal": 7, "Mensual": 30, "Semestral": 180, "Anual": 365}
-            f_ini_d = hoy - timedelta(days=dias_map.get(op_periodo, 1))
-            f_fin_d = hoy
-            desc_periodo = f"{op_periodo} ({f_ini_d.strftime('%d/%m/%Y')} - {f_fin_d.strftime('%d/%m/%Y')})"
+        dias_map = {"Diario (24h)": 1, "Semanal": 7, "Mensual": 30, "Semestral": 180, "Anual": 365}
+        f_ini_d = hoy - timedelta(days=dias_map.get(op_periodo, 1))
+        f_fin_d = hoy
+        desc_periodo = f"{op_periodo} ({f_ini_d.strftime('%d/%m/%Y')} - {f_fin_d.strftime('%d/%m/%Y')})"
         
     st.info(f"📊 **Período seleccionado para descarga:** {desc_periodo}")
     if st.button("📥 Cargar datos para exportar", use_container_width=True):
