@@ -147,16 +147,21 @@ umbrales = {
 }
 
 # ============================================================
-# 3. MODELO MATEMÁTICO — BATIMETRÍA 2026 (NUMPY NATIVO)
+# 3. MODELO MATEMÁTICO — BATIMETRÍA 2026 & REBOSADERO MORNING GLORY
 # ============================================================
 COTAS_REF = np.array([817.94, 830.00, 836.50, 841.00, 850.00, 860.00, 870.00, 883.00, 885.80])
 VOLUMENES_REF = np.array([0.000, 0.520, 1.400, 1.980, 3.850, 6.420, 9.650, 14.090, 15.380]) # hm³
 AREAS_REF = np.array([0.00, 8.50, 14.20, 18.60, 24.50, 30.80, 37.20, 44.60, 46.20]) # ha
 
 NIVEL_MINIMO_TECNICO = 841.00
-NIVEL_REBOSE_EMBALSE = 885.80
+NIVEL_REBOSE_EMBALSE = 885.75  # Cota de cresta del vertedero según planos As-Built 2016
+OFFSET_RADAR_EMBALSE = 0.05    # Desfase del sensor radar OTT (+5 cm)
 VOLUMEN_UTIL_MAX_HM3 = 12.11
 VOLUMEN_MUERTO_HM3 = 1.40
+
+# Calibración Oficial Rebosadero Morning Glory (Plano As-Built CONALVÍAS / INAR & Aforos 2017)
+COTAS_MG_REF = np.array([0.00, 0.02, 0.03, 0.04, 0.05, 0.06, 0.07, 0.08, 0.09, 0.10, 0.11, 0.12, 0.13, 0.14, 0.16, 0.18, 0.19, 0.20, 0.22, 1.00, 2.02, 2.75, 3.40, 4.05, 4.70, 4.75, 4.85, 4.95, 5.20, 5.50, 5.80])
+CAUDAL_MG_REF = np.array([0.00, 0.78, 1.82, 2.86, 3.90, 4.94, 5.98, 7.02, 8.06, 9.10, 10.14, 11.18, 12.23, 13.27, 15.37, 17.47, 18.52, 19.58, 21.69, 114.60, 347.90, 556.80, 827.20, 1041.70, 1284.00, 1305.70, 1347.90, 1374.60, 1407.70, 1425.10, 1452.00]) # m³/s
 
 def interpolar_volumen(c):
     return float(np.interp(c, COTAS_REF, VOLUMENES_REF))
@@ -164,8 +169,68 @@ def interpolar_volumen(c):
 def interpolar_area(c):
     return float(np.interp(c, COTAS_REF, AREAS_REF))
 
-def calcular_hidraulica_embalse(cota: float, q_ptap_ls: float = 0.0):
-    cota_val = max(818.0, min(float(cota), 886.00))
+def calcular_caudal_morning_glory(cota_real: float):
+    h_sobre_vertedero = max(0.0, cota_real - NIVEL_REBOSE_EMBALSE)
+    if h_sobre_vertedero <= 0.0:
+        return 0.0, 0.0
+    q_m3_s = float(np.interp(h_sobre_vertedero, COTAS_MG_REF, CAUDAL_MG_REF))
+    q_ls = q_m3_s * 1000.0
+    return q_m3_s, q_ls
+
+def calcular_balance_dinamico(df_hist):
+    if df_hist.empty or len(df_hist) < 2:
+        return None
+    df_s = df_hist.sort_values('timestamp').dropna(subset=['temperatura'])
+    if len(df_s) < 2:
+        return None
+    
+    t_ini = df_s.iloc[0]['timestamp']
+    t_fin = df_s.iloc[-1]['timestamp']
+    delta_horas = (t_fin - t_ini).total_seconds() / 3600.0
+    if delta_horas < 0.2:
+        return None
+        
+    c_ini_raw = float(df_s.iloc[0]['temperatura'])
+    c_fin_raw = float(df_s.iloc[-1]['temperatura'])
+    c_ini = c_ini_raw - OFFSET_RADAR_EMBALSE
+    c_fin = c_fin_raw - OFFSET_RADAR_EMBALSE
+    
+    delta_cota_m = c_fin - c_ini
+    delta_cota_cm = delta_cota_m * 100.0
+    
+    vel_cm_hora = delta_cota_cm / delta_horas
+    vel_cm_dia = vel_cm_hora * 24.0
+    
+    v_ini_m3 = interpolar_volumen(c_ini) * 1_000_000.0
+    v_fin_m3 = interpolar_volumen(c_fin) * 1_000_000.0
+    delta_v_m3 = v_fin_m3 - v_ini_m3
+    
+    delta_s = (t_fin - t_ini).total_seconds()
+    q_neto_m3_s = - (delta_v_m3 / delta_s) # Positivo si vacía, negativo si llena
+    q_neto_ls = q_neto_m3_s * 1000.0
+    vaciado_diario_m3 = q_neto_m3_s * 86400.0
+    
+    vol_util_m3 = max(0.0, (interpolar_volumen(c_fin) - 1.980) * 1_000_000.0)
+    if q_neto_m3_s > 0:
+        dias_autonomia = vol_util_m3 / (q_neto_m3_s * 86400.0)
+    else:
+        dias_autonomia = None
+        
+    return {
+        "horas": delta_horas,
+        "cota_ini": c_ini,
+        "cota_fin": c_fin,
+        "delta_cota_cm": delta_cota_cm,
+        "vel_cm_hora": vel_cm_hora,
+        "vel_cm_dia": vel_cm_dia,
+        "delta_v_m3": delta_v_m3,
+        "q_neto_ls": q_neto_ls,
+        "vaciado_diario_m3": vaciado_diario_m3,
+        "dias_autonomia": dias_autonomia
+    }
+
+def calcular_hidraulica_embalse(cota_calibrada: float, q_ptap_ls: float = 0.0):
+    cota_val = max(818.0, min(float(cota_calibrada), 886.00))
     vol_total_hm3 = interpolar_volumen(cota_val)
     vol_total_m3 = vol_total_hm3 * 1_000_000.0
     area_ha = interpolar_area(cota_val)
@@ -189,6 +254,7 @@ def calcular_hidraulica_embalse(cota: float, q_ptap_ls: float = 0.0):
         autonomia_texto = "∞ Indefinida (Sin Extracción)"
         
     excedente_rebose = cota_val - NIVEL_REBOSE_EMBALSE
+    q_rebose_m3_s, q_rebose_ls = calcular_caudal_morning_glory(cota_val)
     
     return {
         "cota": cota_val,
@@ -199,7 +265,9 @@ def calcular_hidraulica_embalse(cota: float, q_ptap_ls: float = 0.0):
         "m3_por_cm": m3_por_cm,
         "dias_autonomia": dias_autonomia,
         "autonomia_texto": autonomia_texto,
-        "excedente_rebose": excedente_rebose
+        "excedente_rebose": excedente_rebose,
+        "q_rebose_m3_s": q_rebose_m3_s,
+        "q_rebose_ls": q_rebose_ls
     }
 
 def obtener_alerta(precipitacion, estacion):
@@ -287,12 +355,12 @@ def get_cota_embalse_actual_segura():
     try:
         df_emb = get_last_reading("Embalse")
         if not df_emb.empty:
-            c = float(df_emb.iloc[0].get('temperatura', 885.80))
+            c = float(df_emb.iloc[0].get('temperatura', 885.80)) - OFFSET_RADAR_EMBALSE
             if 818.0 <= c <= 886.0:
                 return c
     except:
         pass
-    return 885.80
+    return 885.75
 
 # ============================================================
 # 5. SELECTOR DE ESTACIÓN (BARRA HORIZONTAL SUPERIOR)
@@ -488,16 +556,28 @@ with tab_situacion:
         
         if seleccion == "Embalse":
             raw_c = row.get('temperatura', 885.80)
-            cota_actual = float(raw_c) if pd.notna(raw_c) and float(raw_c) > 800 else 885.80
+            cota_raw = float(raw_c) if pd.notna(raw_c) and float(raw_c) > 800 else 885.80
+            cota_actual = cota_raw - OFFSET_RADAR_EMBALSE
             hidro = calcular_hidraulica_embalse(cota_actual, q_ptap_ls=0.0)
+            bal = calcular_balance_dinamico(df_hist)
             
-            if hidro["excedente_rebose"] >= 0:
+            if hidro["excedente_rebose"] > 0:
                 st.markdown(f"""
                 <div class="alert-box alert-orange">
                     <span style="font-size: 24px;">🌊</span>
                     <div>
-                        <strong>ESTADO: REBOSE ACTIVO (+{hidro['excedente_rebose']:.2f} msnm)</strong><br>
-                        El embalse supera la cota de vertimiento (885.80 msnm). Descarga por Morning Glory.
+                        <strong>ESTADO: REBOSE MORNING GLORY ACTIVO (+{hidro['excedente_rebose']:.2f} msnm)</strong><br>
+                        Cota calibrada en <strong>{cota_actual:.2f} msnm</strong>. Descargando <strong>{hidro['q_rebose_m3_s']:.2f} m³/s ({hidro['q_rebose_ls']:,.0f} L/s)</strong> por el pozo Morning Glory.
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
+            elif abs(hidro["excedente_rebose"]) < 0.01:
+                st.markdown(f"""
+                <div class="alert-box alert-green">
+                    <span style="font-size: 24px;">🟢</span>
+                    <div>
+                        <strong>ESTADO: EMBALSE A CAPACIDAD MÁXIMA (885.75 msnm)</strong><br>
+                        Nivel exacto al labio del vertedero. Sin rebose activo (0 L/s). Capacidad útil al 100%.
                     </div>
                 </div>
                 """, unsafe_allow_html=True)
@@ -506,18 +586,43 @@ with tab_situacion:
                 <div class="alert-box alert-green">
                     <span style="font-size: 24px;">🟢</span>
                     <div>
-                        <strong>ESTADO: OPERACIÓN NORMAL</strong><br>
-                        Cota en {cota_actual:.2f} msnm ({abs(hidro['excedente_rebose']):.2f} msnm bajo rebose). Capacidad útil al {hidro['porcentaje_util']:.1f}%.
+                        <strong>ESTADO: OPERACIÓN NORMAL (SIN REBOSE)</strong><br>
+                        Cota calibrada en <strong>{cota_actual:.2f} msnm</strong> ({abs(hidro['excedente_rebose']):.2f} msnm bajo vertedero). Capacidad útil al <strong>{hidro['porcentaje_util']:.1f}%</strong> ({hidro['volumen_util_hm3']:.2f} hm³).
                     </div>
                 </div>
                 """, unsafe_allow_html=True)
             
             c1, c2, c3, c4 = st.columns(4)
-            c1.metric("🌊 Cota Actual", f"{cota_actual:.2f} msnm", delta=f"{hidro['excedente_rebose']:+.2f} msnm")
+            c1.metric("🌊 Cota Calibrada", f"{cota_actual:.2f} msnm", delta=f"{hidro['excedente_rebose']:+.2f} msnm vs Rebose", help=f"Sensor OTT: {cota_raw:.2f} msnm | Offset calibrado: -{OFFSET_RADAR_EMBALSE*100:.0f} cm")
             c2.metric("💧 Volumen Útil", f"{hidro['volumen_util_hm3']:.2f} hm³", delta=f"{hidro['porcentaje_util']:.1f}% útil")
-            c3.metric("⏳ Autonomía PTAP", "Simulador (Tab 2)", help="Actualmente sin extracción activa hacia PTAP. Usa la pestaña de Gestión de Embalse para simular diferentes caudales.")
-            c4.metric("📐 Área Espejo", f"{hidro['area_ha']:.1f} ha")
+            if hidro["q_rebose_ls"] > 0:
+                c3.metric("🌊 Caudal Rebose MG", f"{hidro['q_rebose_m3_s']:.2f} m³/s", delta=f"{hidro['q_rebose_ls']:,.0f} L/s")
+            elif bal and bal["q_neto_ls"] > 0:
+                c3.metric("🚰 Consumo Bosconia", f"{bal['q_neto_ls']:.0f} L/s", delta=f"{bal['vaciado_diario_m3']:,.0f} m³/día", delta_color="inverse")
+            else:
+                c3.metric("⏳ Autonomía PTAP", "Simulador (Tab 2)", help="Usa la pestaña 2 para simular escenarios de extracción.")
+            c4.metric("📐 Área Espejo", f"{hidro['area_ha']:.1f} ha", delta=f"{hidro['m3_por_cm']:.0f} m³/cm")
             
+            # Tarjeta de Balance Dinámico en Tiempo Real (Derivada Batimétrica)
+            if bal:
+                st.markdown("---")
+                st.markdown("### ⚖️ Balance Hídrico Dinámico en Vivo (Extracción PTAP Bosconia)")
+                st.caption(f"Cálculo automático de volumen consumido, caudal y autonomía a partir del descenso medido en las últimas **{bal['horas']:.1f} horas**.")
+                
+                bc1, bc2, bc3, bc4 = st.columns(4)
+                bc1.metric("⏱️ Período Analizado", f"{bal['horas']:.1f} h", delta=f"Cota: {bal['cota_ini']:.2f} → {bal['cota_fin']:.2f}")
+                bc2.metric("📉 Descenso Acumulado", f"{bal['delta_cota_cm']:+.1f} cm", delta=f"{bal['vel_cm_dia']:+.1f} cm/día")
+                
+                if bal['q_neto_ls'] > 0:
+                    bc3.metric("🚰 Consumo PTAP Bosconia", f"{abs(bal['delta_v_m3']):,.0f} m³", delta=f"Caudal: {bal['q_neto_ls']:.0f} L/s", delta_color="inverse")
+                    bc4.metric("⏳ Autonomía Real Dinámica", f"{bal['dias_autonomia']:.0f} Días" if bal['dias_autonomia'] else "N/A", help="Días restantes de agua continua hasta el Nivel Mínimo Técnico (841 msnm)")
+                elif bal['q_neto_ls'] < 0:
+                    bc3.metric("🌧️ Recarga Neta Río Tona", f"{abs(bal['delta_v_m3']):,.0f} m³", delta=f"Aporte: +{abs(bal['q_neto_ls']):.0f} L/s")
+                    bc4.metric("📈 Estado Embalse", "En Llenado / Recarga", help="Aportes del Río Tona superan la extracción")
+                else:
+                    bc3.metric("⚖️ Balance Neto", "0 m³", delta="En equilibrio")
+                    bc4.metric("📈 Estado Embalse", "Nivel Estable")
+                    
             st.info(f"📅 Última lectura: {row['timestamp'].strftime('%Y-%m-%d %H:%M:%S')}")
             mostrar_seccion_edv()
             
@@ -588,9 +693,12 @@ with tab_embalse_2026:
         * **Volumen Total Acumulado:** `{datos_eval['volumen_total_hm3']:.3f} hm³`
         * **Volumen por cada Centímetro:** `{datos_eval['m3_por_cm']:.1f} m³/cm`
         * **Autonomía Estimada:** **`{datos_eval['autonomia_texto']}`**
+        * **Caudal Rebose Morning Glory:** `{datos_eval['q_rebose_m3_s']:.2f} m³/s ({datos_eval['q_rebose_ls']:,.0f} L/s)`
         """)
         
-        if q_sim > 0:
+        if datos_eval['q_rebose_ls'] > 0:
+            st.warning(f"🌊 **Rebose activo:** Descargando {datos_eval['q_rebose_m3_s']:.2f} m³/s al Río Tona por encima de la cota 885.75 msnm.")
+        elif q_sim > 0:
             st.caption(f"💡 Extrayendo {q_sim} L/s ({q_sim*86.4:.0f} m³/día) sin aportes del río Tona.")
         else:
             st.info("ℹ️ Extracción en 0 L/s: El embalse se encuentra en retención o llenado natural.")
@@ -603,7 +711,7 @@ with tab_embalse_2026:
         fig_curva.add_trace(go.Scatter(x=vols_curva, y=cotas_curva, mode='lines', name='Curva Batimetría 2026', line=dict(color='#00CC96', width=3)))
         fig_curva.add_trace(go.Scatter(x=[datos_eval['volumen_total_hm3']], y=[cota_eval], mode='markers', name=f'Cota ({cota_eval:.2f} msnm)', marker=dict(size=13, color='#FF4B4B', symbol='diamond')))
         fig_curva.add_hline(y=NIVEL_MINIMO_TECNICO, line_dash="dash", line_color="orange", annotation_text="Mínimo Técnico: 841 msnm")
-        fig_curva.add_hline(y=NIVEL_REBOSE_EMBALSE, line_dash="dash", line_color="red", annotation_text="Rebose Morning Glory: 885.80 msnm")
+        fig_curva.add_hline(y=NIVEL_REBOSE_EMBALSE, line_dash="dash", line_color="red", annotation_text="Rebose Morning Glory: 885.75 msnm")
         fig_curva.update_layout(title="Curva Cota vs. Volumen 2026", xaxis_title="Volumen (hm³)", yaxis_title="Cota (msnm)", height=400, template='plotly_white')
         st.plotly_chart(fig_curva, use_container_width=True)
 
@@ -787,6 +895,20 @@ with tab_matematica:
         Relación entre la lectura de radar no intrusivo y la regla limnimétrica física leída por el tomero a las 6:00 AM y 6:00 PM:
         $$h_{\text{mira\_real}} (\text{cm}) = h_{\text{RQ30}} (\text{cm}) - \text{Offset}_{\text{calibración}} (\text{cm})$$
         """)
+        
+    with st.expander("🌊 5. Curva Hidráulica Oficial del Rebosadero Morning Glory (885.75 msnm)"):
+        st.markdown(r"""
+        El rebosadero de excesos tipo tulipa (*Morning Glory*) inicia vertimiento en la cota de cresta **$885.75\text{ msnm}$** según planos de obra construida (Plano CEB-402AB-VER-030 Conalvías / INAR 2016).
+        
+        La ecuación polinómica oficial de calibración ($R^2 = 0.99938$) para una sobre-elevación $x = h - 885.75\text{ m}$ es:
+        $$Q_{\text{Morning Glory}} (\text{m}^3/\text{s}) = -3.18926 x^4 + 23.22934 x^3 - 2.37295 x^2 + 103.93073 x - 1.29492$$
+        
+        **Matriz de Calibración de Vertimiento (Aforos Históricos):**
+        * $h = 885.75\text{ msnm} \rightarrow x = 0.00\text{ m} \rightarrow Q_{\text{rebose}} = 0.00\text{ m}^3/\text{s}$ (Cresta del vertedero / Sin Rebose)
+        * $h = 885.80\text{ msnm} \rightarrow x = 0.05\text{ m} \rightarrow Q_{\text{rebose}} = 3.90\text{ m}^3/\text{s}$ ($3.900\text{ L/s}$)
+        * $h = 885.85\text{ msnm} \rightarrow x = 0.10\text{ m} \rightarrow Q_{\text{rebose}} = 9.10\text{ m}^3/\text{s}$ ($9.100\text{ L/s}$)
+        * $h = 885.95\text{ msnm} \rightarrow x = 0.20\text{ m} \rightarrow Q_{\text{rebose}} = 19.58\text{ m}^3/\text{s}$ ($19.580\text{ L/s}$)
+        """)
 
 # ============================================================
 # 9. SIDEBAR FOOTER
@@ -798,7 +920,7 @@ st.sidebar.caption("Proyecto MIMAT-C26 • amb s.a. e.s.p.")
 with st.sidebar.expander("🌊 Información del Embalse"):
     st.write(f"**Nivel de Rebose:** {NIVEL_REBOSE_EMBALSE} msnm")
     c_act = get_cota_embalse_actual_segura()
-    st.write(f"**Cota Actual:** {c_act:.2f} msnm")
+    st.write(f"**Cota Calibrada:** {c_act:.2f} msnm")
     st.write(f"**Volumen Útil (2026):** {VOLUMEN_UTIL_MAX_HM3} hm³")
     st.write(f"**Volumen Muerto:** {VOLUMEN_MUERTO_HM3} hm³")
 
