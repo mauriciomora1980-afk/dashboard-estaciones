@@ -363,6 +363,345 @@ def get_cota_embalse_actual_segura():
     return 885.75
 
 # ============================================================
+# 4.1 METADATOS HIDROLÓGICOS & GEORREFERENCIACIÓN OFICIAL (amb)
+# ============================================================
+METADATA_ESTACIONES_AMB = {
+    "Embalse": {
+        "nombre_completo": "Embalse Tona (Radar OTT)",
+        "tipo_sensor": "Radar Hidrométrico OTT (Nivel Vaso)",
+        "cuenca_principal": "Cuenca Regulada del Río Tona",
+        "subsistema_abastecimiento": "Alimentación a PTAP Bosconia (vía CRC Bosconia)",
+        "zona": "Presa / Vaso del Embalse",
+        "dms": "7°09'12.96\"N 73°02'44.88\"W",
+        "lat": 7.153600,
+        "lon": -73.045800,
+        "altitud_msnm": 885.75,
+        "peso_cuenca": 0.0,
+        "lag_horas": "0 min (In Situ)",
+        "microcuencas": "Vaso Principal de Almacenamiento Tona",
+        "descripcion": "Medición milimétrica continua del nivel del vaso para cálculo de balance de masas, tasa neta de vaciado y resiliencia útil hacia PTAP Bosconia.",
+        "color": "#005073"
+    },
+    "La_Mariana": {
+        "nombre_completo": "Estación La Mariana",
+        "tipo_sensor": "Estación Meteorológica Automática",
+        "cuenca_principal": "Parte Alta Cuenca Río Frío",
+        "subsistema_abastecimiento": "Alimentación a PTAP La Florida",
+        "zona": "Filo Divisorio / Cabecera Río Frío",
+        "dms": "7°07'21.86\"N 73°00'25.27\"W",
+        "lat": 7.122739,
+        "lon": -73.007019,
+        "altitud_msnm": 2050.0,
+        "peso_cuenca": 0.15,
+        "lag_horas": "1.5 - 2.5 h",
+        "microcuencas": "Escorrentía Lateral & Flanco Oriental Pajal-Golondrinas",
+        "descripcion": "Monitorea la parte alta de la cuenca del Río Frío (fuente de abastecimiento de PTAP La Florida) y el filo divisorio oriental colindante con Golondrinas y El Pajal.",
+        "color": "#AB63FA"
+    },
+    "El_Pajal": {
+        "nombre_completo": "Estación El Pajal",
+        "tipo_sensor": "Estación Meteorológica Automática",
+        "cuenca_principal": "Parte Alta Quebrada Golondrinas & Ladera Sur Tona",
+        "subsistema_abastecimiento": "Captación Golondrinas (RQ30) & Afluentes Ladera Sur",
+        "zona": "Ladera Media-Alta Sur / Microcuenca Golondrinas",
+        "dms": "7°08'26.09\"N 72°59'59.10\"W",
+        "lat": 7.140581,
+        "lon": -72.999750,
+        "altitud_msnm": 2300.0,
+        "peso_cuenca": 0.20,
+        "lag_horas": "30 - 60 min",
+        "microcuencas": "Qda. el Gualilo (mitad embalse) & Qda. La Reforma (cercana a presa)",
+        "descripcion": "Monitorea la ladera sur del embalse (Quebrada el Gualilo en la mitad y Quebrada La Reforma cercana a la presa/radar) y la Captación Golondrinas (RQ30).",
+        "color": "#FFA15A"
+    },
+    "Vegas_del_Quemado": {
+        "nombre_completo": "Estación Vegas del Quemado",
+        "tipo_sensor": "Estación Meteorológica Automática",
+        "cuenca_principal": "Parte Alta Quebrada Arnania & Ladera Norte Tona",
+        "subsistema_abastecimiento": "Captación Arnania (RQ30) & Qda. Los Monos (Litoral Derecho)",
+        "zona": "Cuenca Media Norte / Valle de Arnania",
+        "dms": "7°12'54.10\"N 73°00'46.10\"W",
+        "lat": 7.215028,
+        "lon": -73.012806,
+        "altitud_msnm": 2150.0,
+        "peso_cuenca": 0.30,
+        "lag_horas": "1.0 - 2.0 h",
+        "microcuencas": "Qda. Los Monos (Litoral Derecho frente a Reforma) & Cabecera Arnania",
+        "descripcion": "Monitorea la ladera norte del embalse (Quebrada Los Monos en el litoral derecho frente a La Reforma) y la Captación Arnania (RQ30).",
+        "color": "#00CC96"
+    },
+    "Yerbabuena": {
+        "nombre_completo": "Estación Yerbabuena",
+        "tipo_sensor": "Estación Meteorológica Automática",
+        "cuenca_principal": "Alta Cuenca / Nacimiento Río Tona (Zona Páramo)",
+        "subsistema_abastecimiento": "Recarga Principal Embalse Tona & PTAP Bosconia",
+        "zona": "Cabecera Alta / Páramo de Tona",
+        "dms": "7°11'44.99\"N 72°54'52.99\"W",
+        "lat": 7.195831,
+        "lon": -72.914719,
+        "altitud_msnm": 3250.0,
+        "peso_cuenca": 0.35,
+        "lag_horas": "2.0 - 3.5 h",
+        "microcuencas": "Río Tona (Cauce Principal) & Quebrada Ranás (Entrada Fondo Cola)",
+        "descripcion": "Ubicada en el páramo de nacimiento del Río Tona. Monitorea la recarga pluvial principal y la Quebrada Ranás que desemboca directamente en la zona fondo cola del embalse.",
+        "color": "#005073"
+    },
+    "Monsalve": {
+        "nombre_completo": "Estación Monsalve",
+        "tipo_sensor": "Estación Meteorológica Automática",
+        "cuenca_principal": "Alta Cuenca / Zona Páramo del Río Suratá (Santurbán / Sisavita)",
+        "subsistema_abastecimiento": "Cuenca Alta Río Suratá (Captaciones Norte & Futura PTAP Los Angelinos)",
+        "zona": "Páramo de Santurbán / Sisavita / Cachirí",
+        "dms": "7°26'30.50\"N 72°55'51.30\"W",
+        "lat": 7.441806,
+        "lon": -72.930917,
+        "altitud_msnm": 3550.0,
+        "peso_cuenca": 0.0,
+        "lag_horas": "3.0 - 5.0 h",
+        "microcuencas": "Cabecera Alta Río Suratá & Microcuenca Sisavita",
+        "descripcion": "Ubicada en la alta montaña del Páramo de Santurbán y Sisavita. Monitorea la cabecera del Río Suratá, eje hídrico norte del sistema metropolitano de abastecimiento.",
+        "color": "#3399FF"
+    }
+}
+
+@st.cache_data(ttl=120)
+def obtener_precipitacion_cuenca_tona(fecha_inicio, fecha_fin):
+    try:
+        if isinstance(fecha_inicio, datetime):
+            f_ini_dt = fecha_inicio if fecha_inicio.tzinfo else colombia_tz.localize(fecha_inicio)
+            f_ini_str = f_ini_dt.astimezone(utc_tz).strftime('%Y-%m-%d %H:%M:%S')
+        else:
+            f_ini_dt = colombia_tz.localize(datetime.combine(fecha_inicio, datetime.min.time()))
+            f_ini_str = f_ini_dt.astimezone(utc_tz).strftime('%Y-%m-%d %H:%M:%S')
+            
+        if isinstance(fecha_fin, datetime):
+            f_fin_dt = fecha_fin if fecha_fin.tzinfo else colombia_tz.localize(fecha_fin)
+            f_fin_str = f_fin_dt.astimezone(utc_tz).strftime('%Y-%m-%d %H:%M:%S')
+        else:
+            f_fin_dt = colombia_tz.localize(datetime.combine(fecha_fin, datetime.max.time()))
+            f_fin_str = f_fin_dt.astimezone(utc_tz).strftime('%Y-%m-%d %H:%M:%S')
+            
+        estaciones_cuenca = ['Yerbabuena', 'Vegas_del_Quemado', 'El_Pajal', 'La_Mariana']
+        estaciones_str = "', '".join(estaciones_cuenca)
+        
+        query = f"""
+        SELECT id_estacion, 
+               SUM(SAFE_CAST(precipitacion AS FLOAT64)) as precip_total,
+               MAX(SAFE_CAST(precipitacion AS FLOAT64)) as precip_max_evento,
+               COUNT(*) as num_registros
+        FROM `gen-lang-client-0342049346.amb_hidrologia.telemetria_estaciones`
+        WHERE id_estacion IN ('{estaciones_str}')
+        AND SAFE_CAST(timestamp AS TIMESTAMP) >= TIMESTAMP('{f_ini_str}')
+        AND SAFE_CAST(timestamp AS TIMESTAMP) <= TIMESTAMP('{f_fin_str}')
+        GROUP BY id_estacion
+        """
+        query_job = client.query(query)
+        rows = [dict(row) for row in query_job.result()]
+        return pd.DataFrame(rows)
+    except Exception as e:
+        return pd.DataFrame()
+
+def calcular_atribucion_cuenca_tona(df_cuenca, q_afluente_ls):
+    registros = []
+    suma_precip_pura = 0.0
+    suma_ponderada = 0.0
+    
+    mapa_precip = {}
+    if not df_cuenca.empty and 'id_estacion' in df_cuenca.columns:
+        for _, r in df_cuenca.iterrows():
+            est_id = r['id_estacion']
+            p_tot = float(r.get('precip_total', 0.0) or 0.0)
+            p_max = float(r.get('precip_max_evento', 0.0) or 0.0)
+            mapa_precip[est_id] = {'total': p_tot, 'max': p_max}
+            
+    for est_id in ['Yerbabuena', 'Vegas_del_Quemado', 'El_Pajal', 'La_Mariana']:
+        meta = METADATA_ESTACIONES_AMB[est_id]
+        p_info = mapa_precip.get(est_id, {'total': 0.0, 'max': 0.0})
+        p_val = max(0.0, p_info['total'])
+        suma_precip_pura += p_val
+        aporte_pond = p_val * meta['peso_cuenca']
+        suma_ponderada += aporte_pond
+        
+        registros.append({
+            "id_estacion": est_id,
+            "nombre": meta["nombre_completo"],
+            "zona": meta["zona"],
+            "microcuencas": meta["microcuencas"],
+            "subsistema": meta["subsistema_abastecimiento"],
+            "altitud_msnm": meta["altitud_msnm"],
+            "peso_cuenca": meta["peso_cuenca"],
+            "lag_horas": meta["lag_horas"],
+            "color": meta["color"],
+            "precipitacion_mm": p_val,
+            "precip_max_mm": p_info['max'],
+            "aporte_ponderado": aporte_pond,
+            "lat": meta["lat"],
+            "lon": meta["lon"]
+        })
+        
+    df_atrib = pd.DataFrame(registros)
+    
+    if suma_ponderada > 0:
+        df_atrib['porcentaje_atribucion'] = (df_atrib['aporte_ponderado'] / suma_ponderada) * 100.0
+        estado_cuenca = "LLUVIA ACTIVA"
+        est_dominante = df_atrib.sort_values('porcentaje_atribucion', ascending=False).iloc[0]
+        mensaje_diagnostico = f"🌧️ <strong>Recarga Activa por Precipitación en Cuenca:</strong> El caudal afluente estimado (~{q_afluente_ls:,.0f} L/s) está originado principalmente en <strong>{est_dominante['nombre']}</strong> ({est_dominante['porcentaje_atribucion']:.1f}% de influencia con {est_dominante['precipitacion_mm']:.1f} mm acumulados), activando la escorrentía en <strong>{est_dominante['microcuencas']}</strong> ({est_dominante['subsistema']}) con un tiempo de tránsito (Lag) de <strong>{est_dominante['lag_horas']}</strong> hacia la cola del embalse."
+    else:
+        df_atrib['porcentaje_atribucion'] = df_atrib['peso_cuenca'] * 100.0
+        estado_cuenca = "ESTIAJE BASE"
+        est_dominante = df_atrib.sort_values('peso_cuenca', ascending=False).iloc[0]
+        mensaje_diagnostico = f"☀️ <strong>Régimen de Estiaje / Flujo Base Subterráneo:</strong> Sin precipitaciones acumuladas en las estaciones durante esta ventana de tiempo. El caudal continuo de recarga en cola (~{q_afluente_ls:,.0f} L/s) proviene del rendimiento hidrogeológico base natural de las microcuencas (Río Tona cabecera, Las Ranas, Gualilo, La Reforma y Los Monos)."
+        
+    df_atrib['caudal_estimado_ls'] = (df_atrib['porcentaje_atribucion'] / 100.0) * max(0.0, q_afluente_ls)
+    
+    return {
+        "df": df_atrib,
+        "estado": estado_cuenca,
+        "suma_precip_mm": suma_precip_pura,
+        "estacion_dominante": est_dominante['nombre'],
+        "diagnostico": mensaje_diagnostico
+    }
+
+def mostrar_ficha_geografica_estacion(nombre_estacion):
+    if nombre_estacion not in METADATA_ESTACIONES_AMB:
+        return
+    meta = METADATA_ESTACIONES_AMB[nombre_estacion]
+    
+    st.markdown("---")
+    st.subheader(f"📍 Georreferenciación & Contexto Hidrológico — {meta['nombre_completo']}")
+    
+    col_info, col_map = st.columns([1.3, 1])
+    with col_info:
+        st.markdown(f"""
+        <div style="background: rgba(0,80,115,0.05); padding: 14px 18px; border-radius: 10px; border-left: 5px solid {meta['color']}; font-size: 13px; line-height: 1.6;">
+            <strong>🏞️ Cuenca Hidrológica:</strong> {meta['cuenca_principal']}<br>
+            <strong>🏢 Subsistema / PTAP Abastecida:</strong> <span style="color: #005073; font-weight: 700;">{meta['subsistema_abastecimiento']}</span><br>
+            <strong>🏔️ Altitud Oficial:</strong> <strong>{meta['altitud_msnm']:,.1f} msnm</strong><br>
+            <strong>📍 Coordenadas Sexagesimales (DMS):</strong> <code>{meta['dms']}</code><br>
+            <strong>🌐 Coordenadas Decimales:</strong> <code>{meta['lat']:.6f}°N, {meta['lon']:.6f}°W</code><br>
+            <strong>📡 Instrumentación Operativa:</strong> {meta['tipo_sensor']}<br>
+            <div style="margin-top: 8px; padding-top: 6px; border-top: 1px dashed rgba(0,80,115,0.2); font-style: italic; color: #444;">
+                {meta['descripcion']}
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+        
+    with col_map:
+        df_punto = pd.DataFrame([{
+            'lat': meta['lat'],
+            'lon': meta['lon'],
+            'nombre': meta['nombre_completo'],
+            'altitud': f"{meta['altitud_msnm']:.0f} msnm",
+            'sistema': meta['subsistema_abastecimiento']
+        }])
+        fig_map_ind = px.scatter_mapbox(
+            df_punto,
+            lat='lat',
+            lon='lon',
+            hover_name='nombre',
+            hover_data={'lat': False, 'lon': False, 'altitud': True, 'sistema': True},
+            zoom=12,
+            height=240
+        )
+        fig_map_ind.update_traces(marker=dict(size=16, color=meta['color']))
+        fig_map_ind.update_layout(
+            mapbox_style="open-street-map",
+            margin=dict(t=0, b=0, l=0, r=0)
+        )
+        st.plotly_chart(fig_map_ind, use_container_width=True)
+
+def mostrar_modulo_atribucion_cuenca(df_cuenca, q_afluente_ls, horas):
+    res = calcular_atribucion_cuenca_tona(df_cuenca, q_afluente_ls)
+    df_atrib = res["df"]
+    
+    st.markdown("---")
+    st.subheader("🛰️ Inteligencia de Cuenca: Trazabilidad & Atribución de Aportes Hídricos")
+    st.caption(f"Identificación en tiempo real del origen de la recarga en la cola del Río Tona en las últimas **{horas:.1f} horas**.")
+    
+    color_border = "#00CC96" if res["estado"] == "LLUVIA ACTIVA" else "#005073"
+    icono = "🌧️" if res["estado"] == "LLUVIA ACTIVA" else "☀️"
+    
+    st.markdown(f"""
+    <div style="background: rgba(0,80,115,0.06); padding: 14px 18px; border-radius: 10px; border-left: 5px solid {color_border}; margin-bottom: 15px; font-size: 13.5px; line-height: 1.5;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; flex-wrap: wrap;">
+            <strong style="color: #005073; font-size: 14px;">{icono} DIAGNÓSTICO INTELIGENTE DE RECARGA DE CUENCA:</strong>
+            <span class="badge-status" style="background: rgba(0,80,115,0.15); color: #005073; border: 1px solid #005073;">ESTADO: {res['estado']}</span>
+        </div>
+        {res['diagnostico']}
+    </div>
+    """, unsafe_allow_html=True)
+    
+    col_g1, col_g2 = st.columns(2)
+    with col_g1:
+        fig_donut = px.pie(
+            df_atrib, 
+            names='id_estacion', 
+            values='porcentaje_atribucion', 
+            title='🍰 % Distribución de Aportes a la Cola del Embalse',
+            hole=0.45,
+            color='id_estacion',
+            color_discrete_map={row['id_estacion']: row['color'] for _, row in df_atrib.iterrows()}
+        )
+        fig_donut.update_traces(textposition='inside', textinfo='percent+label')
+        fig_donut.update_layout(height=300, template='plotly_white', margin=dict(t=40, b=10, l=10, r=10))
+        st.plotly_chart(fig_donut, use_container_width=True)
+        
+    with col_g2:
+        fig_bar = px.bar(
+            df_atrib,
+            x='id_estacion',
+            y='precipitacion_mm',
+            title='🌧️ Precipitación Registrada en Cuenca (mm)',
+            color='id_estacion',
+            color_discrete_map={row['id_estacion']: row['color'] for _, row in df_atrib.iterrows()},
+            text='precipitacion_mm'
+        )
+        fig_bar.update_traces(texttemplate='%{text:.1f} mm', textposition='outside')
+        fig_bar.update_layout(height=300, template='plotly_white', xaxis_title="Estación Meteorológica", yaxis_title="Lluvia Acumulada (mm)", showlegend=False, margin=dict(t=40, b=10, l=10, r=10))
+        st.plotly_chart(fig_bar, use_container_width=True)
+        
+    st.markdown("#### 📋 Matriz Hidrológica de Cuenca & Tiempos de Tránsito (Lag Time):")
+    df_tabla = df_atrib[['nombre', 'zona', 'microcuencas', 'subsistema', 'precipitacion_mm', 'lag_horas', 'porcentaje_atribucion', 'caudal_estimado_ls']].copy()
+    df_tabla.columns = ['Estación', 'Zona Cuenca', 'Microcuencas / Quebradas', 'Subsistema Abastecido', 'Lluvia (mm)', 'Retardo (Lag)', 'Aporte (%)', 'Q Estimado (L/s)']
+    df_tabla['Lluvia (mm)'] = df_tabla['Lluvia (mm)'].apply(lambda x: f"{x:.1f} mm")
+    df_tabla['Aporte (%)'] = df_tabla['Aporte (%)'].apply(lambda x: f"{x:.1f} %")
+    df_tabla['Q Estimado (L/s)'] = df_tabla['Q Estimado (L/s)'].apply(lambda x: f"{x:,.0f} L/s")
+    
+    st.dataframe(df_tabla, use_container_width=True, hide_index=True)
+    
+    # Mapa General de Cuenca en el Bloque del Embalse
+    st.markdown("#### 🗺️ Mapa de Trazabilidad Espacial de la Cuenca Tona & Estaciones:")
+    df_mapa_cuenca = pd.DataFrame([
+        {
+            'lat': m['lat'],
+            'lon': m['lon'],
+            'nombre': m['nombre_completo'],
+            'tipo': m['tipo_sensor'],
+            'altitud': f"{m['altitud_msnm']:.0f} msnm",
+            'subsistema': m['subsistema_abastecimiento'],
+            'color': m['color']
+        }
+        for k, m in METADATA_ESTACIONES_AMB.items()
+    ])
+    fig_map_cuenca = px.scatter_mapbox(
+        df_mapa_cuenca,
+        lat='lat',
+        lon='lon',
+        hover_name='nombre',
+        hover_data={'tipo': True, 'altitud': True, 'subsistema': True, 'lat': False, 'lon': False},
+        color='nombre',
+        zoom=10,
+        height=340
+    )
+    fig_map_cuenca.update_traces(marker=dict(size=14))
+    fig_map_cuenca.update_layout(
+        mapbox_style="open-street-map",
+        margin=dict(t=10, b=10, l=10, r=10),
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
+    )
+    st.plotly_chart(fig_map_cuenca, use_container_width=True)
+
+# ============================================================
 # 5. SELECTOR DE ESTACIÓN (BARRA HORIZONTAL SUPERIOR)
 # ============================================================
 estaciones = ["Embalse", "La_Mariana", "Yerbabuena", "Vegas_del_Quemado", "El_Pajal", "Monsalve"]
@@ -541,16 +880,46 @@ def generar_excel_con_formato(df, nombre_estacion, periodo_descripcion):
                 worksheet.column_dimensions[col_letter].width = min(max_len + 3, 50)
             df_registros_len = len(df_export)
         
-        metadata = pd.DataFrame({
-            'Propiedad': ['Sistema', 'Proyecto', 'Estación', 'Período', 'Fecha exportación', 'Total registros', 'Responsable'],
-            'Valor': [SISTEMA, "MIMAT-C26", nombre_estacion, periodo_descripcion, datetime.now(colombia_tz).strftime('%Y-%m-%d %H:%M:%S'), df_registros_len, AUTOR]
-        })
+        if es_embalse:
+            meta_rows = [
+                ['Sistema de Información', SISTEMA],
+                ['Proyecto Institucional', 'MIMAT-C26 • amb s.a. e.s.p.'],
+                ['Estación / Sensor', 'Embalse Tona — Radar OTT (Nivel Vaso)'],
+                ['Período de Consulta', periodo_descripcion],
+                ['Fecha de Generación', datetime.now(colombia_tz).strftime('%Y-%m-%d %H:%M:%S')],
+                ['Total Registros', df_registros_len],
+                ['Líder Técnico / Autor', AUTOR],
+                ['Cota de Rebose Base', f"{NIVEL_REBOSE_EMBALSE} msnm"],
+                ['Cota Mínima Técnica', f"{NIVEL_MINIMO_TECNICO} msnm"],
+                ['Volumen Útil Batimetría 2026', f"{VOLUMEN_UTIL_MAX_HM3} hm³"],
+                ['Válvula de Salida PTAP', 'CRC Bosconia (Cámara de Rompimiento de Carga)'],
+                ['---', '---'],
+                ['AFLUENTES & MORFOLOGÍA DIRECTA DEL EMBALSE', 'UBICACIÓN ESPACIAL & FUNCIÓN'],
+                ['Río Tona (Cauce Principal)', 'Ingreso por Zona Fondo Cola (Cabecera Páramo Yerbabuena)'],
+                ['Quebrada Ranás', 'Desembocadura directa en Zona Fondo Cola del Embalse'],
+                ['Quebrada el Gualilo', 'Margen Sur (Litoral Izquierdo, en la mitad del vaso)'],
+                ['Quebrada La Reforma', 'Margen Sur (Litoral Izquierdo, cercana a presa y radar OTT)'],
+                ['Quebrada Los Monos', 'Margen Norte (Litoral Derecho, frente a Quebrada La Reforma)'],
+                ['---', '---'],
+                ['Ecuación de Continuidad', 'Q_CRC_Bosconia = Q_Tasa_Neta_Vaciado + ∑ Q_Afluentes_Cuenca']
+            ]
+            metadata = pd.DataFrame(meta_rows, columns=['Parámetro / Microcuenca', 'Descripción Técnica'])
+        else:
+            metadata = pd.DataFrame({
+                'Propiedad': ['Sistema', 'Proyecto', 'Estación', 'Período', 'Fecha exportación', 'Total registros', 'Responsable'],
+                'Valor': [SISTEMA, "MIMAT-C26", nombre_estacion, periodo_descripcion, datetime.now(colombia_tz).strftime('%Y-%m-%d %H:%M:%S'), df_registros_len, AUTOR]
+            })
+            
         metadata.to_excel(writer, sheet_name='Metadatos', index=False)
         m_sheet = writer.sheets['Metadatos']
         for col in range(1, 3):
             cell = m_sheet.cell(row=1, column=col)
             cell.font = Font(bold=True)
             cell.fill = PatternFill(start_color="D9E1F2", end_color="D9E1F2", fill_type="solid")
+        for col in m_sheet.columns:
+            max_len = max(len(str(cell.value or '')) for cell in col)
+            col_letter = col[0].column_letter
+            m_sheet.column_dimensions[col_letter].width = min(max_len + 4, 60)
             
     return output.getvalue()
 
@@ -600,7 +969,7 @@ def generar_resumen_estadistico(df, nombre_estacion=""):
         resumen.append("")
         resumen.append("⚖️ ECUACIÓN DE BALANCE HIDROLÓGICO:")
         resumen.append(f"   Q_CRC_Bosconia (~400 L/s) = Q_Tasa_Neta ({q_medio_ls:,.0f} L/s) + Q_Afluentes_Cuenca (~{max(0, 400 - q_medio_ls):,.0f} L/s)")
-        resumen.append("   * Afluentes tributarios: Río Tona principal + Qdas. Las Ranas, Gualilo, La Reforma y Los Monos.")
+        resumen.append("   * Afluentes tributarios: Río Tona + Qda. Ranás (fondo cola) + Qda. el Gualilo (mitad) + Qda. La Reforma (presa) + Qda. Los Monos (litoral derecho frente a Reforma).")
         resumen.append("")
         resumen.append("ℹ️ NOTA TÉCNICA: La estación Embalse registra exclusivamente niveles hidrométricos (msnm) y volúmenes hídricos.")
         return "\n".join(resumen)
@@ -760,13 +1129,18 @@ with tab_situacion:
                         <strong>🌊 ¿Por qué el embalse desciende a menor tasa (~{bal['q_neto_ls']:.0f} L/s) de lo que sale a Bosconia (~400 L/s)?</strong><br>
                         El embalse no es un tanque cerrado estanco, sino un sistema dinámico regulador en balance de masas continuo:
                         <ul style="margin: 4px 0 6px 18px; padding: 0;">
-                            <li><strong>Entradas (Afluentes de Cuenca):</strong> Recarga continua del <strong>Río Tona</strong> principal y sus quebradas tributarias directas: <strong>Las Ranas, Gualilo, La Reforma y Los Monos</strong> (aporte sumado estimado en cola: <strong>~{max(0, 400 - bal['q_neto_ls']):.0f} L/s</strong>).</li>
+                            <li><strong>Entradas (Afluentes de Cuenca):</strong> Recarga continua del <strong>Río Tona</strong> y sus quebradas tributarias directas: <strong>Quebrada Ranás</strong> (desemboca en fondo cola), <strong>Quebrada el Gualilo</strong> (mitad del vaso), <strong>Quebrada La Reforma</strong> (cercana a la presa/radar) y <strong>Quebrada Los Monos</strong> (litoral derecho norte, frente a La Reforma) con un aporte sumado estimado en cola de <strong>~{max(0, 400 - bal['q_neto_ls']):.0f} L/s</strong>.</li>
                             <li><strong>Salida (Consumo PTAP):</strong> Conducción y entrega por gravedad hacia la válvula <strong>CRC Bosconia</strong> (fijada en <strong>~400 L/s</strong>).</li>
                             <li><strong>Variación de Almacenamiento (ΔV/Δt):</strong> El vaso del embalse solo cede la diferencia neta (<strong>{bal['q_neto_ls']:.0f} L/s</strong>), acumulando un descenso real de <strong>{abs(descenso_total_cm):.1f} cm</strong> ({vol_entregado_total_m3:,.0f} m³ entregados a planta) desde el inicio de la descarga.</li>
                         </ul>
                     </div>
                 </div>
                 """, unsafe_allow_html=True)
+                
+                # Módulo de Inteligencia de Cuenca (Trazabilidad y Atribución Hidrológica)
+                q_afluente_calc_ls = max(0.0, 400.0 - bal['q_neto_ls'])
+                df_cuenca_tona = obtener_precipitacion_cuenca_tona(fecha_inicio, fecha_fin)
+                mostrar_modulo_atribucion_cuenca(df_cuenca_tona, q_afluente_calc_ls, bal['horas'])
                     
             st.info(f"📅 Última lectura: {row['timestamp'].strftime('%Y-%m-%d %H:%M:%S')}")
             mostrar_seccion_edv()
@@ -810,6 +1184,8 @@ with tab_situacion:
                     with col1: st.metric("🔽 Temp Mínima", f"{t_series.min():.1f}°C")
                     with col2: st.metric("🔼 Temp Máxima", f"{t_series.max():.1f}°C")
                     with col3: st.metric("📊 Temp Promedio", f"{t_series.mean():.1f}°C")
+                    
+            mostrar_ficha_geografica_estacion(seleccion)
     else:
         st.warning("⚠️ Sin datos recientes para esta estación.")
 
@@ -825,7 +1201,7 @@ with tab_embalse_2026:
     col_sim1, col_sim2 = st.columns([1, 2])
     with col_sim1:
         st.markdown("### 🎛️ Simulador de Extracción PTAP")
-        q_sim = st.slider("Extracción hacia Plantas (L/s):", min_value=0, max_value=2500, value=0, step=50, help="Pon 0 para condición sin bombeo/válvula cerrada")
+        q_sim = st.slider("Extracción hacia Plantas / PTAP (L/s):", min_value=0, max_value=2500, value=0, step=50, help="Simulador de extracción hacia PTAP Bosconia / Los Angelinos y escenarios de estrés hasta 2,500 L/s. Pon 0 para retención/vaciado cero.")
         cota_eval = st.number_input("Cota a Evaluar (msnm):", min_value=818.0, max_value=886.0, value=float(cota_segura), step=0.1)
         
         datos_eval = calcular_hidraulica_embalse(cota_eval, q_sim)
