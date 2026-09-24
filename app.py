@@ -587,26 +587,26 @@ def mostrar_ficha_geografica_estacion(nombre_estacion):
         """, unsafe_allow_html=True)
         
     with col_map:
-        df_punto = pd.DataFrame([{
-            'lat': meta['lat'],
-            'lon': meta['lon'],
-            'nombre': meta['nombre_completo'],
-            'altitud': f"{meta['altitud_msnm']:.0f} msnm",
-            'sistema': meta['subsistema_abastecimiento']
-        }])
-        fig_map_ind = px.scatter_mapbox(
-            df_punto,
-            lat='lat',
-            lon='lon',
-            hover_name='nombre',
-            hover_data={'lat': False, 'lon': False, 'altitud': True, 'sistema': True},
-            zoom=12,
-            height=240
-        )
-        fig_map_ind.update_traces(marker=dict(size=16, color=meta['color']))
+        fig_map_ind = go.Figure()
+        fig_map_ind.add_trace(go.Scattermapbox(
+            lat=[meta['lat']],
+            lon=[meta['lon']],
+            mode='markers+text',
+            marker=dict(size=16, color=meta['color']),
+            text=[meta['nombre_completo'].split('(')[0].strip()],
+            textposition='top center',
+            hoverinfo='text',
+            hovertext=f"<b>{meta['nombre_completo']}</b><br>• Altitud: {meta['altitud_msnm']:.0f} msnm<br>• {meta['subsistema_abastecimiento']}"
+        ))
         fig_map_ind.update_layout(
-            mapbox_style="open-street-map",
-            margin=dict(t=0, b=0, l=0, r=0)
+            mapbox=dict(
+                style="open-street-map",
+                center=dict(lat=meta['lat'], lon=meta['lon']),
+                zoom=11
+            ),
+            margin=dict(t=0, b=0, l=0, r=0),
+            height=250,
+            showlegend=False
         )
         st.plotly_chart(fig_map_ind, use_container_width=True)
 
@@ -669,35 +669,30 @@ def mostrar_modulo_atribucion_cuenca(df_cuenca, q_afluente_ls, horas):
     
     st.dataframe(df_tabla, use_container_width=True, hide_index=True)
     
-    # Mapa General de Cuenca en el Bloque del Embalse
+    # Mapa General de Cuenca en el Bloque del Embalse (Nativo go.Scattermapbox)
     st.markdown("#### 🗺️ Mapa de Trazabilidad Espacial de la Cuenca Tona & Estaciones:")
-    df_mapa_cuenca = pd.DataFrame([
-        {
-            'lat': m['lat'],
-            'lon': m['lon'],
-            'nombre': m['nombre_completo'],
-            'tipo': m['tipo_sensor'],
-            'altitud': f"{m['altitud_msnm']:.0f} msnm",
-            'subsistema': m['subsistema_abastecimiento'],
-            'color': m['color']
-        }
-        for k, m in METADATA_ESTACIONES_AMB.items()
-    ])
-    fig_map_cuenca = px.scatter_mapbox(
-        df_mapa_cuenca,
-        lat='lat',
-        lon='lon',
-        hover_name='nombre',
-        hover_data={'tipo': True, 'altitud': True, 'subsistema': True, 'lat': False, 'lon': False},
-        color='nombre',
-        zoom=10,
-        height=340
-    )
-    fig_map_cuenca.update_traces(marker=dict(size=14))
+    fig_map_cuenca = go.Figure()
+    for est_id, m in METADATA_ESTACIONES_AMB.items():
+        fig_map_cuenca.add_trace(go.Scattermapbox(
+            lat=[m['lat']],
+            lon=[m['lon']],
+            mode='markers+text',
+            marker=dict(size=14, color=m['color']),
+            text=[m['nombre_completo'].split('(')[0].strip()],
+            textposition='top right',
+            name=m['nombre_completo'],
+            hoverinfo='text',
+            hovertext=f"<b>{m['nombre_completo']}</b><br>• Altitud: {m['altitud_msnm']:.0f} msnm<br>• Sensor: {m['tipo_sensor']}<br>• Subsistema: {m['subsistema_abastecimiento']}"
+        ))
     fig_map_cuenca.update_layout(
-        mapbox_style="open-street-map",
+        mapbox=dict(
+            style="open-street-map",
+            center=dict(lat=7.20, lon=-72.98),
+            zoom=9.8
+        ),
         margin=dict(t=10, b=10, l=10, r=10),
-        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
+        height=360,
+        showlegend=False
     )
     st.plotly_chart(fig_map_cuenca, use_container_width=True)
 
