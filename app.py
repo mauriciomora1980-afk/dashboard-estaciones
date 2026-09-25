@@ -143,7 +143,8 @@ umbrales = {
     "El_Pajal": {"amarilla": 12.3, "naranja": 15.1, "roja": 20.4},
     "Yerbabuena": {"amarilla": 10.9, "naranja": 20.0, "roja": 40.8},
     "La_Mariana": {"amarilla": 11.7, "naranja": 18.0, "roja": 35.0},
-    "Vegas_del_Quemado": {"amarilla": 27.2, "naranja": 36.8, "roja": 55.8}
+    "Vegas_del_Quemado": {"amarilla": 27.2, "naranja": 36.8, "roja": 55.8},
+    "Monsalve": {"amarilla": 10.9, "naranja": 20.0, "roja": 40.8, "es_referencia_paramo": True}
 }
 
 # ============================================================
@@ -271,15 +272,17 @@ def calcular_hidraulica_embalse(cota_calibrada: float, q_ptap_ls: float = 0.0):
     }
 
 def obtener_alerta(precipitacion, estacion):
-    if estacion == "Monsalve": return "AZUL", "🛠️ En Aprendizaje", "#3399FF", "0s"
     if estacion == "Embalse": return "EMBALSE", "🌊 Nivel de Embalse", "#00BFFF", "0s"
     if estacion not in umbrales: return "GRIS", "☁️ Sin umbrales definidos", "#CCCCCC", "0s"
     
     u = umbrales[estacion]
-    if precipitacion >= u["roja"]: return "ROJA", f"🚨 ROJA: Excede {u['roja']}mm", "#FF4B4B", "0.5s"
-    elif precipitacion >= u["naranja"]: return "NARANJA", f"⚠️ NARANJA: Excede {u['naranja']}mm", "#FF9933", "1s"
-    elif precipitacion >= u["amarilla"]: return "AMARILLA", f"🟡 AMARILLA: Excede {u['amarilla']}mm", "#FFFF00", "2s"
-    elif precipitacion > 0: return "VERDE", "✅ Lluvia Normal", "#00CC96", "0s"
+    es_paramo_ref = u.get("es_referencia_paramo", False)
+    sufijo_ref = " (Ref. Páramo)" if es_paramo_ref else ""
+    
+    if precipitacion >= u["roja"]: return "ROJA", f"🚨 ROJA{sufijo_ref}: Excede {u['roja']}mm", "#FF4B4B", "0.5s"
+    elif precipitacion >= u["naranja"]: return "NARANJA", f"⚠️ NARANJA{sufijo_ref}: Excede {u['naranja']}mm", "#FF9933", "1s"
+    elif precipitacion >= u["amarilla"]: return "AMARILLA", f"🟡 AMARILLA{sufijo_ref}: Excede {u['amarilla']}mm", "#FFFF00", "2s"
+    elif precipitacion > 0: return "VERDE", f"✅ Lluvia Normal{sufijo_ref}", "#00CC96", "0s"
     return "GRIS", "☁️ Sin lluvia", "#CCCCCC", "0s"
 
 # ============================================================
@@ -459,7 +462,7 @@ METADATA_ESTACIONES_AMB = {
         "peso_cuenca": 0.0,
         "lag_horas": "3.0 - 5.0 h",
         "microcuencas": "Cabecera Alta Río Suratá & Microcuenca Sisavita",
-        "descripcion": "Ubicada en la alta montaña del Páramo de Santurbán y Sisavita. Monitorea la cabecera del Río Suratá, eje hídrico norte del sistema metropolitano de abastecimiento.",
+        "descripcion": "Ubicada en la alta montaña del Páramo de Santurbán y Sisavita (3,550 msnm). Monitorea la cabecera del Río Suratá, eje hídrico norte del sistema metropolitano. *Umbrales provisionales de alerta calibrados por homología con Páramo Yerbabuena (P75: >10.9mm | P90: >20.0mm | P95: >40.8mm) mientras se consolida la serie histórica en BigQuery*.",
         "color": "#3399FF"
     }
 }
@@ -1075,9 +1078,9 @@ with tab_situacion:
                 """, unsafe_allow_html=True)
             
             c1, c2, c3, c4 = st.columns(4)
-            c1.metric("🌊 Cota Calibrada", f"{cota_actual:.2f} msnm", delta=f"{descenso_total_cm:+.1f} cm vs Rebose", help=f"Sensor OTT: {cota_raw:.2f} msnm | Offset calibrado: -{OFFSET_RADAR_EMBALSE*100:.0f} cm")
+            c1.metric("🌊 Cota Calibrada", f"{cota_actual:.2f} msnm", delta=f"{descenso_total_cm:+.1f} cm vs Rebose (885.75)", help=f"Sensor OTT: {cota_raw:.2f} msnm | Offset calibrado: -{OFFSET_RADAR_EMBALSE*100:.0f} cm")
             c2.metric("💧 Volumen Útil", f"{hidro['volumen_util_hm3']:.2f} hm³", delta=f"{hidro['porcentaje_util']:.1f}% útil")
-            c3.metric("📉 Descenso Total Acumulado", f"{abs(descenso_total_cm):.1f} cm", delta=f"~{vol_entregado_total_m3:,.0f} m³ a CRC", delta_color="inverse", help="Descenso total medido desde la cota de rebose 885.75 msnm")
+            c3.metric("📉 Descenso Total Acumulado", f"{abs(descenso_total_cm):.1f} cm", delta=f"{vol_entregado_total_m3:,.0f} m³ cedidos desde 885.75", delta_color="inverse", help="Volumen acumulado total cedido por el vaso desde que inició el descenso por debajo de la cota de rebose oficial (885.75 msnm)")
             if hidro["q_rebose_ls"] > 0:
                 c4.metric("🌊 Caudal Rebose MG", f"{hidro['q_rebose_m3_s']:.2f} m³/s", delta=f"{hidro['q_rebose_ls']:,.0f} L/s hacia Puente Tona")
             elif bal and bal["q_neto_ls"] > 0:
@@ -1089,12 +1092,12 @@ with tab_situacion:
             if bal:
                 st.markdown("---")
                 st.markdown("### ⚖️ Balance Hídrico Dinámico en Vivo (Extracción CRC Bosconia)")
-                st.caption(f"Descenso total de la maniobra y tasa neta reciente calculada con la telemetría de las últimas **{bal['horas']:.1f} horas**.")
+                st.caption(f"Descenso acumulado total de la maniobra ({vol_entregado_total_m3:,.0f} m³ desde cota 885.75 msnm) y tasa neta calibrada en las últimas **{bal['horas']:.1f} horas**.")
                 
                 bc1, bc2, bc3, bc4 = st.columns(4)
-                bc1.metric("📉 Descenso Total Maniobra", f"{abs(descenso_total_cm):.1f} cm", delta=f"{vol_entregado_total_m3:,.0f} m³ acumulados", delta_color="inverse", help="Descenso total desde que inició la descarga en 885.75 msnm")
+                bc1.metric("📉 Descenso Total Maniobra", f"{abs(descenso_total_cm):.1f} cm", delta=f"{vol_entregado_total_m3:,.0f} m³ acumulados", delta_color="inverse", help="Volumen total acumulado entregado por el embalse desde que inició la maniobra en la cota de rebose 885.75 msnm")
                 bc2.metric("⚡ Tasa Neta Reciente", f"{bal['q_neto_ls']:.0f} L/s", delta=f"{bal['vel_cm_dia']:+.1f} cm/día", delta_color="inverse", help=f"Velocidad neta de vaciado en las últimas {bal['horas']:.1f} horas")
-                bc3.metric(f"🚰 Volumen Ventana ({bal['horas']:.1f}h)", f"{abs(bal['delta_v_m3']):,.0f} m³", delta=f"{bal['delta_cota_cm']:+.1f} cm en ventana")
+                bc3.metric(f"🚰 Volumen Ventana ({bal['horas']:.1f}h)", f"{abs(bal['delta_v_m3']):,.0f} m³", delta=f"{bal['delta_cota_cm']:+.1f} cm en ventana", delta_color="inverse", help=f"Volumen neto cedido exclusivamente en el período de análisis seleccionado ({bal['horas']:.1f} horas)")
                 bc4.metric("⏳ Autonomía Real Dinámica", f"{bal['dias_autonomia']:.0f} Días" if bal['dias_autonomia'] else "N/A", help="Días restantes de agua continua hasta el Nivel Mínimo Técnico (841 msnm)")
                 
                 st.markdown(f"""
@@ -1104,12 +1107,13 @@ with tab_situacion:
                         <strong>Q_Salida_CRC_Bosconia</strong> = <strong>Q_Tasa_Neta_Vaciado ({bal['q_neto_ls']:.0f} L/s)</strong> + <strong>∑ Q_Afluentes_Cuenca_Tona (~{max(0, 400 - bal['q_neto_ls']):.0f} L/s)</strong>
                     </div>
                     <div style="margin-top: 8px;">
-                        <strong>🌊 ¿Por qué el embalse desciende a menor tasa (~{bal['q_neto_ls']:.0f} L/s) de lo que sale a Bosconia (~400 L/s)?</strong><br>
-                        El embalse no es un tanque cerrado estanco, sino un sistema dinámico regulador en balance de masas continuo:
+                        <strong>🌊 Interpretación de Volúmenes & Descenso del Embalse:</strong><br>
                         <ul style="margin: 4px 0 6px 18px; padding: 0;">
+                            <li><strong>📦 Volumen Acumulado Total de la Maniobra:</strong> <strong>{vol_entregado_total_m3:,.0f} m³</strong> (descenso total acumulado de <strong>{abs(descenso_total_cm):.1f} cm</strong> desde que el nivel bajó de la cota máxima de rebose de <strong>885.75 msnm</strong>).</li>
+                            <li><strong>⏱️ Volumen Cedido en la Ventana Seleccionada ({bal['horas']:.1f}h):</strong> <strong>{abs(bal['delta_v_m3']):,.0f} m³</strong> (descenso neto de <strong>{abs(bal['delta_cota_cm']):.1f} cm</strong> en este período de análisis).</li>
                             <li><strong>Entradas (Afluentes de Cuenca):</strong> Recarga continua del <strong>Río Tona</strong> y sus quebradas tributarias directas: <strong>Quebrada Ranás</strong> (desemboca en fondo cola), <strong>Quebrada el Gualilo</strong> (mitad del vaso), <strong>Quebrada La Reforma</strong> (cercana a la presa/radar) y <strong>Quebrada Los Monos</strong> (litoral derecho norte, frente a La Reforma) con un aporte sumado estimado en cola de <strong>~{max(0, 400 - bal['q_neto_ls']):.0f} L/s</strong>.</li>
                             <li><strong>Salida (Consumo PTAP):</strong> Conducción y entrega por gravedad hacia la válvula <strong>CRC Bosconia</strong> (fijada en <strong>~400 L/s</strong>).</li>
-                            <li><strong>Variación de Almacenamiento (ΔV/Δt):</strong> El vaso del embalse solo cede la diferencia neta (<strong>{bal['q_neto_ls']:.0f} L/s</strong>), acumulando un descenso real de <strong>{abs(descenso_total_cm):.1f} cm</strong> ({vol_entregado_total_m3:,.0f} m³ entregados a planta) desde el inicio de la descarga.</li>
+                            <li><strong>Variación Neta de Almacenamiento (ΔV/Δt):</strong> El vaso del embalse solo cede la diferencia neta (<strong>{bal['q_neto_ls']:.0f} L/s</strong>), garantizando una autonomía dinámica proyectada de <strong>{bal['dias_autonomia']:.0f} días</strong> a este régimen.</li>
                         </ul>
                     </div>
                 </div>
