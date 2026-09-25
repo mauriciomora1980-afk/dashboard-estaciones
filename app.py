@@ -388,17 +388,17 @@ METADATA_ESTACIONES_AMB = {
     "La_Mariana": {
         "nombre_completo": "Estación La Mariana",
         "tipo_sensor": "Estación Meteorológica Automática",
-        "cuenca_principal": "Parte Alta Cuenca Río Frío",
-        "subsistema_abastecimiento": "Alimentación a PTAP Florida (Abastece a Floridablanca)",
-        "zona": "Filo Divisorio / Cabecera Río Frío",
+        "cuenca_principal": "Parte Alta Cuenca Río Frío / Filo Divisorio Alto",
+        "subsistema_abastecimiento": "Alimentación a PTAP Florida (Abastece a Floridablanca) + Cabecera Golondrinas",
+        "zona": "Cresta Alta / Filo Divisorio Río Frío - Tona",
         "dms": "7°07'21.86\"N 73°00'25.27\"W",
         "lat": 7.122739,
         "lon": -73.007019,
-        "altitud_msnm": 2050.0,
+        "altitud_msnm": 2436.0,
         "peso_cuenca": 0.15,
         "lag_horas": "1.5 - 2.5 h",
-        "microcuencas": "Escorrentía Lateral & Flanco Oriental Pajal-Golondrinas",
-        "descripcion": "Monitorea la parte alta de la cuenca del Río Frío (fuente de abastecimiento de PTAP Florida para Floridablanca) y el filo divisorio oriental colindante con Golondrinas y El Pajal.",
+        "microcuencas": "Escorrentía Lateral Cresta & Flanco Oriental Pajal-Golondrinas",
+        "descripcion": "Ubicada en la cresta alta divisoria a 2,436 msnm. Monitorea la parte alta de la cuenca del Río Frío (fuente de PTAP Florida para Floridablanca) y el filo divisorio que drena por gravedad hacia la microcuenca Golondrinas y El Pajal (2,163 msnm).",
         "color": "#AB63FA"
     },
     "El_Pajal": {
@@ -410,11 +410,11 @@ METADATA_ESTACIONES_AMB = {
         "dms": "7°08'26.09\"N 72°59'59.10\"W",
         "lat": 7.140581,
         "lon": -72.999750,
-        "altitud_msnm": 2300.0,
+        "altitud_msnm": 2163.0,
         "peso_cuenca": 0.20,
         "lag_horas": "30 - 60 min",
         "microcuencas": "Qda. el Gualilo (mitad embalse) & Qda. La Reforma (cercana a presa)",
-        "descripcion": "Monitorea la microcuenca Golondrinas (Captación Golondrinas RQ30 hacia el Sistema Tona / PTAP La Flora y Morrorico). Los caudales remanentes de la captación y los afluentes de ladera sur (Qda. el Gualilo y Qda. La Reforma) drenan directamente al vaso del Embalse Tona.",
+        "descripcion": "Ubicada a 2,163 msnm en la ladera sur de Tona. Monitorea directamente la microcuenca Golondrinas (Captación Golondrinas RQ30 hacia el Sistema Tona / PTAP La Flora y Morrorico). Los caudales remanentes de la captación y los afluentes de ladera sur (Qda. el Gualilo y Qda. La Reforma) drenan directamente al vaso del Embalse Tona.",
         "color": "#FFA15A"
     },
     "Vegas_del_Quemado": {
@@ -426,11 +426,11 @@ METADATA_ESTACIONES_AMB = {
         "dms": "7°12'54.10\"N 73°00'46.10\"W",
         "lat": 7.215028,
         "lon": -73.012806,
-        "altitud_msnm": 2150.0,
+        "altitud_msnm": 1759.24,
         "peso_cuenca": 0.30,
         "lag_horas": "1.0 - 2.0 h",
         "microcuencas": "Qda. Los Monos (Litoral Derecho frente a Reforma) & Cabecera Arnania",
-        "descripcion": "Monitorea la microcuenca Arnania (Captación Arnania RQ30 hacia el Sistema Tona / PTAP La Flora y Morrorico). Los caudales remanentes de la captación y la ladera norte (Qda. Los Monos) drenan directamente al vaso del Embalse Tona.",
+        "descripcion": "Ubicada a 1,759.24 msnm. Monitorea la microcuenca Arnania (Captación Arnania RQ30 hacia el Sistema Tona / PTAP La Flora y Morrorico). Los caudales remanentes de la captación y la ladera norte (Qda. Los Monos) drenan directamente al vaso del Embalse Tona.",
         "color": "#00CC96"
     },
     "Yerbabuena": {
@@ -442,11 +442,11 @@ METADATA_ESTACIONES_AMB = {
         "dms": "7°11'44.99\"N 72°54'52.99\"W",
         "lat": 7.195831,
         "lon": -72.914719,
-        "altitud_msnm": 3250.0,
+        "altitud_msnm": 3400.25,
         "peso_cuenca": 0.35,
         "lag_horas": "2.0 - 3.5 h",
         "microcuencas": "Río Tona (Cauce Principal) & Quebrada Ranás (Entrada Fondo Cola)",
-        "descripcion": "Ubicada en la parte alta del Páramo de Tona. Monitorea la alta cuenca que alimenta la Captación/Campamento Carrizal (RQ30) hacia el Sistema Tona (PTAP La Flora y Morrorico), y cuyos caudales remanentes no derivados drenan y recargan directamente el vaso del Embalse Tona (PTAP Bosconia).",
+        "descripcion": "Ubicada en la alta cumbre del Páramo de Tona a 3,400.25 msnm. Monitorea la alta cuenca que alimenta la Captación/Campamento Carrizal (RQ30) hacia el Sistema Tona (PTAP La Flora y Morrorico), y cuyos caudales remanentes no derivados drenan y recargan directamente el vaso del Embalse Tona (PTAP Bosconia).",
         "color": "#005073"
     },
     "Monsalve": {
@@ -458,11 +458,11 @@ METADATA_ESTACIONES_AMB = {
         "dms": "7°26'30.50\"N 72°55'51.30\"W",
         "lat": 7.441806,
         "lon": -72.930917,
-        "altitud_msnm": 3550.0,
+        "altitud_msnm": 3339.79,
         "peso_cuenca": 0.0,
         "lag_horas": "3.0 - 5.0 h",
-        "microcuencas": "Cabecera Alta Río Suratá & Microcuenca Sisavita",
-        "descripcion": "Ubicada en la alta montaña del Páramo de Santurbán y Sisavita (3,550 msnm). Monitorea la cabecera del Río Suratá y el subsistema RAD Angelinos del eje norte. *Umbrales provisionales de alerta calibrados por homología con Páramo Yerbabuena mientras se consolida la serie histórica en BigQuery*.",
+        "microcuencas": "Cabecera Alta Río Suratá (Afluentes Vetas y Charta en alta montaña)",
+        "descripcion": "Ubicada en la alta montaña del Páramo de Santurbán y Sisavita (3,339.79 msnm). Monitorea la cabecera del Río Suratá (que recibe las aguas de los ríos Vetas y Charta en la parte alta antes de confluir con el Río Tona en Puente Tona) y el subsistema RAD Angelinos del eje norte.",
         "color": "#3399FF"
     }
 }
@@ -484,7 +484,7 @@ def obtener_precipitacion_cuenca_tona(fecha_inicio, fecha_fin):
             f_fin_dt = colombia_tz.localize(datetime.combine(fecha_fin, datetime.max.time()))
             f_fin_str = f_fin_dt.astimezone(utc_tz).strftime('%Y-%m-%d %H:%M:%S')
             
-        estaciones_cuenca = ['Yerbabuena', 'Vegas_del_Quemado', 'El_Pajal', 'La_Mariana']
+        estaciones_cuenca = ['Yerbabuena', 'Vegas_del_Quemado', 'El_Pajal', 'La_Mariana', 'Monsalve']
         estaciones_str = "', '".join(estaciones_cuenca)
         
         query = f"""
@@ -559,6 +559,7 @@ def calcular_atribucion_cuenca_tona(df_cuenca, q_afluente_ls):
     
     return {
         "df": df_atrib,
+        "mapa_precip": mapa_precip,
         "estado": estado_cuenca,
         "suma_precip_mm": suma_precip_pura,
         "estacion_dominante": est_dominante['nombre'],
@@ -579,7 +580,7 @@ def mostrar_ficha_geografica_estacion(nombre_estacion):
         <div style="background: rgba(0,80,115,0.05); padding: 14px 18px; border-radius: 10px; border-left: 5px solid {meta['color']}; font-size: 13px; line-height: 1.6;">
             <strong>🏞️ Cuenca Hidrológica:</strong> {meta['cuenca_principal']}<br>
             <strong>🏢 Subsistema / PTAP Abastecida:</strong> <span style="color: #005073; font-weight: 700;">{meta['subsistema_abastecimiento']}</span><br>
-            <strong>🏔️ Altitud Oficial:</strong> <strong>{meta['altitud_msnm']:,.1f} msnm</strong><br>
+            <strong>🏔️ Altitud Oficial:</strong> <strong>{meta['altitud_msnm']:,.2f} msnm</strong><br>
             <strong>📍 Coordenadas Sexagesimales (DMS):</strong> <code>{meta['dms']}</code><br>
             <strong>🌐 Coordenadas Decimales:</strong> <code>{meta['lat']:.6f}°N, {meta['lon']:.6f}°W</code><br>
             <strong>📡 Instrumentación Operativa:</strong> {meta['tipo_sensor']}<br>
@@ -607,6 +608,7 @@ def mostrar_ficha_geografica_estacion(nombre_estacion):
 def mostrar_modulo_atribucion_cuenca(df_cuenca, q_afluente_ls, horas):
     res = calcular_atribucion_cuenca_tona(df_cuenca, q_afluente_ls)
     df_atrib = res["df"]
+    mapa_precip = res["mapa_precip"]
     
     st.markdown("---")
     st.subheader("🛰️ Inteligencia de Cuenca: Trazabilidad & Atribución de Aportes Hídricos")
@@ -654,7 +656,7 @@ def mostrar_modulo_atribucion_cuenca(df_cuenca, q_afluente_ls, horas):
         fig_bar.update_layout(height=300, template='plotly_white', xaxis_title="Estación Meteorológica", yaxis_title="Lluvia Acumulada (mm)", showlegend=False, margin=dict(t=40, b=10, l=10, r=10))
         st.plotly_chart(fig_bar, use_container_width=True)
         
-    st.markdown("#### 📋 Matriz Hidrológica de Cuenca & Tiempos de Tránsito (Lag Time):")
+    st.markdown("#### 📋 Matriz Hidrológica de Cuenca Tona & Tiempos de Tránsito (Lag Time):")
     df_tabla = df_atrib[['nombre', 'zona', 'microcuencas', 'subsistema', 'precipitacion_mm', 'lag_horas', 'porcentaje_atribucion', 'caudal_estimado_ls']].copy()
     df_tabla.columns = ['Estación', 'Zona Cuenca', 'Microcuencas / Quebradas', 'Subsistema Abastecido', 'Lluvia (mm)', 'Retardo (Lag)', 'Aporte (%)', 'Q Estimado (L/s)']
     df_tabla['Lluvia (mm)'] = df_tabla['Lluvia (mm)'].apply(lambda x: f"{x:.1f} mm")
@@ -662,6 +664,24 @@ def mostrar_modulo_atribucion_cuenca(df_cuenca, q_afluente_ls, horas):
     df_tabla['Q Estimado (L/s)'] = df_tabla['Q Estimado (L/s)'].apply(lambda x: f"{x:,.0f} L/s")
     
     st.dataframe(df_tabla, use_container_width=True, hide_index=True)
+    
+    # Fila Separada de Monitoreo Eje Norte / Río Suratá (Monsalve)
+    st.markdown("#### ⛰️ Monitoreo Hidrometeorológico Eje Norte — Cuenca Alta Río Suratá (Independiente):")
+    st.caption("Monitoreo estratégico en el Páramo de Santurbán / Sisavita (3,339.79 msnm) para el subsistema RAD Angelinos. La cuenca del Río Suratá recibe los afluentes de los ríos Vetas y Charta en la parte alta antes de la confluencia en Puente Tona (no aporta a la cuenca regulada del Embalse Tona).")
+    
+    p_mons = mapa_precip.get('Monsalve', {'total': 0.0, 'max': 0.0})['total']
+    meta_mon = METADATA_ESTACIONES_AMB['Monsalve']
+    df_mon_tabla = pd.DataFrame([{
+        'Estación': meta_mon['nombre_completo'],
+        'Zona Cuenca': meta_mon['zona'],
+        'Microcuencas / Quebradas': meta_mon['microcuencas'],
+        'Subsistema Abastecido': meta_mon['subsistema_abastecimiento'],
+        'Lluvia (mm)': f"{p_mons:.1f} mm",
+        'Retardo (Lag)': meta_mon['lag_horas'],
+        'Aporte (%)': "0.0 % (Eje Norte)",
+        'Q Estimado (L/s)': "Cuenca Independiente (Río Suratá / Vetas / Charta)"
+    }])
+    st.dataframe(df_mon_tabla, use_container_width=True, hide_index=True)
     
     # Mapa General de Cuenca en el Bloque del Embalse (Nativo Streamlit st.map)
     st.markdown("#### 🗺️ Mapa de Trazabilidad Espacial de la Cuenca Tona & Estaciones:")
@@ -1080,7 +1100,7 @@ with tab_situacion:
             c1, c2, c3, c4 = st.columns(4)
             c1.metric("🌊 Cota Calibrada", f"{cota_actual:.2f} msnm", delta=f"{descenso_total_cm:+.1f} cm vs Rebose (885.75)", help=f"Sensor OTT: {cota_raw:.2f} msnm | Offset calibrado: -{OFFSET_RADAR_EMBALSE*100:.0f} cm")
             c2.metric("💧 Volumen Útil", f"{hidro['volumen_util_hm3']:.2f} hm³", delta=f"{hidro['porcentaje_util']:.1f}% útil")
-            c3.metric("📦 Consumo Total Bosconia", f"{vol_entregado_total_m3:,.0f} m³", delta=f"{abs(descenso_total_cm):.1f} cm acumulados (2 días)", delta_color="inverse", help="Total de metros cúbicos consumidos por PTAP Bosconia desde que se abrió la CRC en cota de rebose 885.75 msnm")
+            c3.metric("📦 Consumo Total Bosconia", f"{vol_entregado_total_m3:,.0f} m³", delta=f"{abs(descenso_total_cm):.1f} cm acumulados (3 días)", delta_color="inverse", help="Total de metros cúbicos consumidos por PTAP Bosconia desde que se abrió la CRC el martes a la 1:00 PM en cota de rebose 885.75 msnm")
             if hidro["q_rebose_ls"] > 0:
                 c4.metric("🌊 Caudal Rebose MG", f"{hidro['q_rebose_m3_s']:.2f} m³/s", delta=f"{hidro['q_rebose_ls']:,.0f} L/s hacia Puente Tona")
             elif bal and bal["q_neto_ls"] > 0:
@@ -1092,10 +1112,10 @@ with tab_situacion:
             if bal:
                 st.markdown("---")
                 st.markdown("### ⚖️ Balance Hídrico Dinámico en Vivo (Extracción CRC Bosconia)")
-                st.caption(f"Consumo acumulado total ({vol_entregado_total_m3:,.0f} m³ consumidos por Bosconia en 2 días de maniobra) y tasa neta calibrada en las últimas **{bal['horas']:.1f} horas**.")
+                st.caption(f"Consumo acumulado total ({vol_entregado_total_m3:,.0f} m³ consumidos por Bosconia en 3 días de maniobra / desde Martes 1:00 PM) y tasa neta calibrada en las últimas **{bal['horas']:.1f} horas**.")
                 
                 bc1, bc2, bc3, bc4 = st.columns(4)
-                bc1.metric("📦 Consumo Total Maniobra", f"{vol_entregado_total_m3:,.0f} m³", delta=f"{abs(descenso_total_cm):.1f} cm acumulados (2 días)", delta_color="inverse", help="Total de metros cúbicos consumidos por Bosconia desde que inició la maniobra en la cota de rebose 885.75 msnm")
+                bc1.metric("📦 Consumo Total Maniobra", f"{vol_entregado_total_m3:,.0f} m³", delta=f"{abs(descenso_total_cm):.1f} cm acumulados (3 días)", delta_color="inverse", help="Total de metros cúbicos consumidos por Bosconia desde que inició la maniobra el martes a la 1:00 PM en la cota de rebose 885.75 msnm")
                 bc2.metric("⚡ Tasa Neta Reciente", f"{bal['q_neto_ls']:.0f} L/s", delta=f"{bal['vel_cm_dia']:+.1f} cm/día", delta_color="inverse", help=f"Velocidad neta de vaciado en las últimas {bal['horas']:.1f} horas")
                 bc3.metric(f"🚰 Consumo Ventana ({bal['horas']:.1f}h)", f"{abs(bal['delta_v_m3']):,.0f} m³", delta=f"{bal['delta_cota_cm']:+.1f} cm en 24h", delta_color="inverse", help=f"Metros cúbicos cedidos exclusivamente en el período de análisis de las últimas {bal['horas']:.1f} horas")
                 bc4.metric("⏳ Autonomía Real Dinámica", f"{bal['dias_autonomia']:.0f} Días" if bal['dias_autonomia'] else "N/A", help="Días restantes de agua continua hasta el Nivel Mínimo Técnico (841 msnm)")
@@ -1109,9 +1129,9 @@ with tab_situacion:
                     <div style="margin-top: 8px;">
                         <strong>🌊 Interpretación de Volúmenes & Descenso del Embalse:</strong><br>
                         <ul style="margin: 4px 0 6px 18px; padding: 0;">
-                            <li><strong>📦 Consumo Total Acumulado por Bosconia (2 Días de Maniobra):</strong> <strong>{vol_entregado_total_m3:,.0f} m³</strong> (descenso acumulado total de <strong>{abs(descenso_total_cm):.1f} cm</strong> desde que se abrió la válvula CRC en la cota máxima de rebose de <strong>885.75 msnm</strong>).</li>
+                            <li><strong>📦 Consumo Total Acumulado por Bosconia (3 Días de Maniobra / Martes 1:00 PM):</strong> <strong>{vol_entregado_total_m3:,.0f} m³</strong> (descenso acumulado total de <strong>{abs(descenso_total_cm):.1f} cm</strong> desde que se abrió la válvula CRC en la cota máxima de rebose de <strong>885.75 msnm</strong>).</li>
                             <li><strong>⏱️ Consumo en la Ventana de Análisis Seleccionada ({bal['horas']:.1f}h):</strong> <strong>{abs(bal['delta_v_m3']):,.0f} m³</strong> (descenso neto de <strong>{abs(bal['delta_cota_cm']):.1f} cm</strong> en las últimas 24 horas).</li>
-                            <li><strong>Entradas (Sobrantes de Captaciones + Afluentes Directos):</strong> El Embalse Tona recibe la recarga continua de los <strong>sobrantes no derivados de las 3 captaciones con sensor RQ30 del Sistema Tona (Captación Carrizal en Río Tona, Captación Golondrinas y Captación Arnania)</strong>, más los 4 afluentes directos al vaso: <strong>Quebrada Ranás</strong> (desemboca en fondo cola), <strong>Quebrada el Gualilo</strong> (mitad del vaso), <strong>Quebrada La Reforma</strong> (cercana a la presa/radar) y <strong>Quebrada Los Monos</strong> (litoral derecho norte, frente a La Reforma) con un aporte sumado estimado en cola de <strong>~{max(0, 400 - bal['q_neto_ls']):.0f} L/s</strong>.</li>
+                            <li><strong>Entradas (Remanentes de Captaciones + Afluentes Directos):</strong> El Embalse Tona recibe la recarga continua de los <strong>caudales remanentes no derivados de las 3 captaciones con sensor RQ30 del Sistema Tona (Captación Carrizal en Río Tona, Captación Golondrinas y Captación Arnania)</strong>, más los 4 afluentes directos al vaso: <strong>Quebrada Ranás</strong> (desemboca en fondo cola), <strong>Quebrada el Gualilo</strong> (mitad del vaso), <strong>Quebrada La Reforma</strong> (cercana a la presa/radar) y <strong>Quebrada Los Monos</strong> (litoral derecho norte, frente a La Reforma) con un aporte sumado estimado en cola de <strong>~{max(0, 400 - bal['q_neto_ls']):.0f} L/s</strong>.</li>
                             <li><strong>Salida (Consumo PTAP):</strong> Conducción y entrega por gravedad hacia la válvula <strong>CRC Bosconia</strong> (fijada en <strong>~400 L/s</strong>).</li>
                             <li><strong>Variación Neta de Almacenamiento (ΔV/Δt):</strong> El vaso del embalse solo cede la diferencia neta (<strong>{bal['q_neto_ls']:.0f} L/s</strong>), garantizando una autonomía dinámica proyectada de <strong>{bal['dias_autonomia']:.0f} días</strong> a este régimen.</li>
                         </ul>
@@ -1507,3 +1527,4 @@ with st.sidebar.expander("📏 Extensómetros (EDV)"):
 # ============================================================
 # FIN DEL CÓDIGO — SISTEMA MIMAT-C26 (amb)
 # ============================================================
+
