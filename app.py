@@ -373,7 +373,7 @@ METADATA_ESTACIONES_AMB = {
         "nombre_completo": "Embalse Tona (Radar OTT)",
         "tipo_sensor": "Radar Hidrométrico OTT (Nivel Vaso)",
         "cuenca_principal": "Cuenca Regulada del Río Tona",
-        "subsistema_abastecimiento": "Alimentación a PTAP Bosconia (vía CRC Bosconia)",
+        "subsistema_abastecimiento": "Concebido para futura PTAP Los Angelinos | Respaldo activo a PTAP Bosconia (vía CRC)",
         "zona": "Presa / Vaso del Embalse",
         "dms": "7°09'12.96\"N 73°02'44.88\"W",
         "lat": 7.153600,
@@ -382,7 +382,7 @@ METADATA_ESTACIONES_AMB = {
         "peso_cuenca": 0.0,
         "lag_horas": "0 min (In Situ)",
         "microcuencas": "Vaso Principal de Almacenamiento Tona",
-        "descripcion": "Medición milimétrica continua del nivel del vaso para cálculo de balance de masas, tasa neta de vaciado y resiliencia útil hacia PTAP Bosconia.",
+        "descripcion": "Vaso regulador en cota 885.75 msnm. Aunque concebido originalmente para abastecer la futura PTAP Los Angelinos, actualmente opera como sistema de resiliencia hídrica entregando agua cruda por gravedad a PTAP Bosconia (vía válvula CRC Bosconia) ante los descensos de caudal del Río Suratá por estiaje.",
         "color": "#005073"
     },
     "La_Mariana": {
@@ -453,7 +453,7 @@ METADATA_ESTACIONES_AMB = {
         "nombre_completo": "Estación Monsalve",
         "tipo_sensor": "Estación Meteorológica Automática",
         "cuenca_principal": "Alta Cuenca / Zona Páramo del Río Suratá (Santurbán / Sisavita)",
-        "subsistema_abastecimiento": "RAD Angelinos (Cuenca Alta Río Suratá - Eje Norte)",
+        "subsistema_abastecimiento": "Monitoreo Cabecera Río Suratá (Fuente primaria PTAP Bosconia) & RAD Angelinos",
         "zona": "Páramo de Santurbán / Sisavita / Cachirí",
         "dms": "7°26'30.50\"N 72°55'51.30\"W",
         "lat": 7.441806,
@@ -462,7 +462,7 @@ METADATA_ESTACIONES_AMB = {
         "peso_cuenca": 0.0,
         "lag_horas": "3.0 - 5.0 h",
         "microcuencas": "Cabecera Alta Río Suratá (Afluentes Vetas y Charta en alta montaña)",
-        "descripcion": "Ubicada en la alta montaña del Páramo de Santurbán y Sisavita (3,339.79 msnm). Monitorea la cabecera del Río Suratá (que recibe las aguas de los ríos Vetas y Charta en la parte alta antes de confluir con el Río Tona en Puente Tona) y el subsistema RAD Angelinos del eje norte.",
+        "descripcion": "Ubicada en el Páramo de Santurbán (3,339.79 msnm). Monitorea la alta cuenca del Río Suratá (que recibe los ríos Vetas y Charta), fuente primaria habitual de PTAP Bosconia. Cuando el caudal del Suratá desciende por estiaje en esta cabecera, se activa la bifurcación del Embalse Tona (vía válvula CRC Bosconia a ~400 L/s) para suplir el déficit de Bosconia.",
         "color": "#3399FF"
     }
 }
@@ -504,6 +504,53 @@ def obtener_precipitacion_cuenca_tona(fecha_inicio, fecha_fin):
     except Exception as e:
         return pd.DataFrame()
 
+def analizar_vector_viento_mariana():
+    try:
+        df_mariana = get_last_reading("La_Mariana")
+        if not df_mariana.empty:
+            dir_v = float(df_mariana.iloc[0].get('direccion_viento', 0) or 0)
+            vel_v = float(df_mariana.iloc[0].get('velocidad_viento', 0) or 0)
+            
+            # Vector Geodésico La Mariana (2,436 msnm) -> Nacimiento Golondrinas / El Pajal (2,163 msnm): Rumbo NNE ~22°
+            # Viento favorable de procedencia (que empuja hacia el NNE): Sur / Suroeste (140° a 270°, óptimo 202°)
+            rad = (dir_v - 202.0) * np.pi / 180.0
+            componente_empuje = np.cos(rad) # +1.0 empuje máximo hacia Golondrinas, -1.0 alejamiento hacia Río Frío
+            
+            if 140.0 <= dir_v <= 270.0 and vel_v >= 1.0:
+                estado_vector = "EMPUJE_ACTIVO_GOLONDRINAS"
+                factor_peso = min(1.40, max(0.85, 1.0 + (componente_empuje * 0.40)))
+                desc_vector = f"🧭 <strong>Vector Viento Activo:</strong> <code>{dir_v:.0f}° ({vel_v:.1f} km/h)</code> procedente del <strong>Sur-Suroeste (SSW)</strong>.<br>💨 <strong>Empuje Orográfico Confirmado:</strong> Arrastre activo de nubosidad y lluvia desde la cresta de La Mariana (2,436 msnm) directamente hacia el <strong>Nacimiento de Golondrinas y El Pajal</strong> (Rumbo NNE 22°, descenso topográfico de -273 m en 2.14 km)."
+                badge_html = "<span class='badge-status' style='background: rgba(0,204,150,0.15); color: #00CC96; border: 1px solid #00CC96;'>💨 VECTOR: EMPUJE CONFIRMADO A GOLONDRINAS</span>"
+            elif (dir_v < 100.0 or dir_v > 300.0) and vel_v >= 3.5:
+                estado_vector = "DERIVA_RIO_FRIO"
+                factor_peso = 0.30
+                desc_vector = f"🍃 <strong>Vector Viento Opuesto:</strong> <code>{dir_v:.0f}° ({vel_v:.1f} km/h)</code> procedente del <strong>Norte/Noreste</strong>.<br>La masa nubosa drena preferentemente hacia la vertiente occidental del <strong>Río Frío (PTAP Florida)</strong>."
+                badge_html = "<span class='badge-status' style='background: rgba(171,99,250,0.15); color: #AB63FA; border: 1px solid #AB63FA;'>🍃 VECTOR: DERIVA HACIA RÍO FRÍO (FLORIDA)</span>"
+            else:
+                estado_vector = "REGIMEN_CONVECTIVO"
+                factor_peso = 1.0
+                desc_vector = f"🌬️ <strong>Vector Viento en Calma/Convectivo:</strong> <code>{dir_v:.0f}° ({vel_v:.1f} km/h)</code>.<br>Derrame orográfico natural por gravedad desde la cresta de cumbre (2,436 msnm) hacia la vaguada receptora del Nacimiento de Golondrinas (2,163 msnm)."
+                badge_html = "<span class='badge-status' style='background: rgba(0,80,115,0.15); color: #005073; border: 1px solid #005073;'>🌬️ RÉGIMEN OROGRÁFICO ESTÁNDAR</span>"
+                
+            return {
+                "dir": dir_v,
+                "vel": vel_v,
+                "estado": estado_vector,
+                "factor_peso": factor_peso,
+                "descripcion": desc_vector,
+                "badge": badge_html
+            }
+    except:
+        pass
+    return {
+        "dir": 0.0,
+        "vel": 0.0,
+        "estado": "REGIMEN_CONVECTIVO",
+        "factor_peso": 1.0,
+        "descripcion": "🌬️ Régimen orográfico estándar de alta montaña.",
+        "badge": "<span class='badge-status' style='background: rgba(0,80,115,0.15); color: #005073; border: 1px solid #005073;'>🌬️ RÉGIMEN OROGRÁFICO ESTÁNDAR</span>"
+    }
+
 def calcular_atribucion_cuenca_tona(df_cuenca, q_afluente_ls):
     registros = []
     suma_precip_pura = 0.0
@@ -517,12 +564,19 @@ def calcular_atribucion_cuenca_tona(df_cuenca, q_afluente_ls):
             p_max = float(r.get('precip_max_evento', 0.0) or 0.0)
             mapa_precip[est_id] = {'total': p_tot, 'max': p_max}
             
+    vec_viento = analizar_vector_viento_mariana()
+    
     for est_id in ['Yerbabuena', 'Vegas_del_Quemado', 'El_Pajal', 'La_Mariana']:
         meta = METADATA_ESTACIONES_AMB[est_id]
         p_info = mapa_precip.get(est_id, {'total': 0.0, 'max': 0.0})
         p_val = max(0.0, p_info['total'])
         suma_precip_pura += p_val
-        aporte_pond = p_val * meta['peso_cuenca']
+        
+        peso_efectivo = meta['peso_cuenca']
+        if est_id == 'La_Mariana':
+            peso_efectivo = meta['peso_cuenca'] * vec_viento['factor_peso']
+            
+        aporte_pond = p_val * peso_efectivo
         suma_ponderada += aporte_pond
         
         registros.append({
@@ -533,6 +587,7 @@ def calcular_atribucion_cuenca_tona(df_cuenca, q_afluente_ls):
             "subsistema": meta["subsistema_abastecimiento"],
             "altitud_msnm": meta["altitud_msnm"],
             "peso_cuenca": meta["peso_cuenca"],
+            "peso_efectivo": peso_efectivo,
             "lag_horas": meta["lag_horas"],
             "color": meta["color"],
             "precipitacion_mm": p_val,
@@ -560,6 +615,7 @@ def calcular_atribucion_cuenca_tona(df_cuenca, q_afluente_ls):
     return {
         "df": df_atrib,
         "mapa_precip": mapa_precip,
+        "vector_viento": vec_viento,
         "estado": estado_cuenca,
         "suma_precip_mm": suma_precip_pura,
         "estacion_dominante": est_dominante['nombre'],
@@ -609,6 +665,7 @@ def mostrar_modulo_atribucion_cuenca(df_cuenca, q_afluente_ls, horas):
     res = calcular_atribucion_cuenca_tona(df_cuenca, q_afluente_ls)
     df_atrib = res["df"]
     mapa_precip = res["mapa_precip"]
+    vec_viento = res.get("vector_viento", analizar_vector_viento_mariana())
     
     st.markdown("---")
     st.subheader("🛰️ Inteligencia de Cuenca: Trazabilidad & Atribución de Aportes Hídricos")
@@ -618,12 +675,19 @@ def mostrar_modulo_atribucion_cuenca(df_cuenca, q_afluente_ls, horas):
     icono = "🌧️" if res["estado"] == "LLUVIA ACTIVA" else "☀️"
     
     st.markdown(f"""
-    <div style="background: rgba(0,80,115,0.06); padding: 14px 18px; border-radius: 10px; border-left: 5px solid {color_border}; margin-bottom: 15px; font-size: 13.5px; line-height: 1.5;">
+    <div style="background: rgba(0,80,115,0.06); padding: 14px 18px; border-radius: 10px; border-left: 5px solid {color_border}; margin-bottom: 12px; font-size: 13.5px; line-height: 1.5;">
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; flex-wrap: wrap;">
             <strong style="color: #005073; font-size: 14px;">{icono} DIAGNÓSTICO INTELIGENTE DE RECARGA DE CUENCA:</strong>
             <span class="badge-status" style="background: rgba(0,80,115,0.15); color: #005073; border: 1px solid #005073;">ESTADO: {res['estado']}</span>
         </div>
         {res['diagnostico']}
+    </div>
+    <div style="background: rgba(171,99,250,0.06); padding: 12px 16px; border-radius: 10px; border-left: 5px solid #AB63FA; margin-bottom: 15px; font-size: 13px; line-height: 1.5;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; flex-wrap: wrap;">
+            <strong style="color: #6A1B9A; font-size: 13.5px;">🧭 VECTORIZACIÓN DE VIENTO EN VIVO (LA MARIANA 2,436 m ➔ NACIMIENTO GOLONDRINAS):</strong>
+            {vec_viento['badge']}
+        </div>
+        {vec_viento['descripcion']}
     </div>
     """, unsafe_allow_html=True)
     
@@ -666,8 +730,8 @@ def mostrar_modulo_atribucion_cuenca(df_cuenca, q_afluente_ls, horas):
     st.dataframe(df_tabla, use_container_width=True, hide_index=True)
     
     # Fila Separada de Monitoreo Eje Norte / Río Suratá (Monsalve)
-    st.markdown("#### ⛰️ Monitoreo Hidrometeorológico Eje Norte — Cuenca Alta Río Suratá (Independiente):")
-    st.caption("Monitoreo estratégico en el Páramo de Santurbán / Sisavita (3,339.79 msnm) para el subsistema RAD Angelinos. La cuenca del Río Suratá recibe los afluentes de los ríos Vetas y Charta en la parte alta antes de la confluencia en Puente Tona (no aporta a la cuenca regulada del Embalse Tona).")
+    st.markdown("#### ⛰️ Monitoreo Hidrometeorológico Eje Norte — Cuenca Alta Río Suratá (Fuente Primaria PTAP Bosconia):")
+    st.caption("Monitoreo estratégico en el Páramo de Santurbán / Sisavita (3,339.79 msnm) en la cabecera del Río Suratá (afluentes Vetas y Charta). El Río Suratá es la fuente primaria habitual de captación de PTAP Bosconia. Cuando su caudal disminuye por estiaje, se activa la bifurcación del Embalse Tona (vía válvula CRC Bosconia a ~400 L/s) como sistema de resiliencia y respaldo hídrico, mientras entra en operación la futura PTAP Los Angelinos (para la cual fue concebido el embalse).")
     
     p_mons = mapa_precip.get('Monsalve', {'total': 0.0, 'max': 0.0})['total']
     meta_mon = METADATA_ESTACIONES_AMB['Monsalve']
@@ -679,7 +743,7 @@ def mostrar_modulo_atribucion_cuenca(df_cuenca, q_afluente_ls, horas):
         'Lluvia (mm)': f"{p_mons:.1f} mm",
         'Retardo (Lag)': meta_mon['lag_horas'],
         'Aporte (%)': "0.0 % (Eje Norte)",
-        'Q Estimado (L/s)': "Cuenca Independiente (Río Suratá / Vetas / Charta)"
+        'Q Estimado (L/s)': "Fuente Primaria Bosconia (Río Suratá)"
     }])
     st.dataframe(df_mon_tabla, use_container_width=True, hide_index=True)
     
