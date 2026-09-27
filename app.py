@@ -520,17 +520,22 @@ def analizar_vector_viento_mariana():
             if 140.0 <= dir_v <= 270.0 and vel_v >= 1.0:
                 estado_vector = "EMPUJE_ACTIVO_GOLONDRINAS"
                 factor_peso = min(1.40, max(0.85, 1.0 + (componente_empuje * 0.40)))
-                desc_vector = f"🧭 <strong>Vector Viento Activo:</strong> <code>{dir_v:.0f}° ({vel_v:.1f} km/h)</code> procedente del <strong>Sur-Suroeste (SSW)</strong>.<br>💨 <strong>Empuje Orográfico Confirmado:</strong> Arrastre activo de nubosidad y lluvia desde la cresta de La Mariana (2,436 msnm) directamente hacia el <strong>Nacimiento de Golondrinas y El Pajal</strong> (Rumbo NNE 22°, descenso topográfico de -273 m en 2.14 km)."
+                desc_vector = f"🧭 <strong>Vector Viento Activo:</strong> <code>{dir_v:.0f}° ({vel_v:.1f} km/h)</code> procedente del <strong>Sur-Suroeste (SSW)</strong>.<br>💨 <strong>Empuje Orográfico Confirmado:</strong> Arrastre activo de nubosidad y lluvia desde la cresta de La Mariana (2,436 msnm) directamente hacia el <strong>Nacimiento de Golondrinas y El Pajal</strong> (Rumbo NNE 22°, descenso topográfico de -273 m en 2.14 km). Factor de entrega: <strong>{factor_peso:.2f}x</strong>."
                 badge_html = "<span class='badge-status' style='background: rgba(0,204,150,0.15); color: #00CC96; border: 1px solid #00CC96;'>💨 VECTOR: EMPUJE CONFIRMADO A GOLONDRINAS</span>"
             elif (dir_v < 100.0 or dir_v > 300.0) and vel_v >= 3.5:
                 estado_vector = "DERIVA_RIO_FRIO"
                 factor_peso = 0.30
-                desc_vector = f"🍃 <strong>Vector Viento Opuesto:</strong> <code>{dir_v:.0f}° ({vel_v:.1f} km/h)</code> procedente del <strong>Norte/Noreste</strong>.<br>La masa nubosa drena preferentemente hacia la vertiente occidental del <strong>Río Frío (PTAP Florida)</strong>."
+                desc_vector = f"🍃 <strong>Vector Viento Opuesto:</strong> <code>{dir_v:.0f}° ({vel_v:.1f} km/h)</code> procedente del <strong>Norte/Noreste</strong>.<br>La masa nubosa drena preferentemente hacia la vertiente occidental del <strong>Río Frío (PTAP Florida)</strong>. Factor de entrega a Tona reducido a: <strong>{factor_peso:.2f}x</strong>."
                 badge_html = "<span class='badge-status' style='background: rgba(171,99,250,0.15); color: #AB63FA; border: 1px solid #AB63FA;'>🍃 VECTOR: DERIVA HACIA RÍO FRÍO (FLORIDA)</span>"
+            elif (dir_v < 100.0 or dir_v > 300.0) and vel_v >= 1.0:
+                estado_vector = "DERIVA_LEVE_RIO_FRIO"
+                factor_peso = max(0.40, 1.0 - ((vel_v / 3.5) * 0.60))
+                desc_vector = f"🍃 <strong>Brisa Leve del Norte:</strong> <code>{dir_v:.0f}° ({vel_v:.1f} km/h)</code>.<br>Transición orográfica: parte de la nubosidad deriva hacia el Río Frío (PTAP Florida) y el resto precipita en cumbre. Factor de entrega: <strong>{factor_peso:.2f}x</strong>."
+                badge_html = "<span class='badge-status' style='background: rgba(171,99,250,0.15); color: #AB63FA; border: 1px solid #AB63FA;'>🍃 VECTOR: BRISA LEVE RÍO FRÍO</span>"
             else:
                 estado_vector = "REGIMEN_CONVECTIVO"
                 factor_peso = 1.0
-                desc_vector = f"🌬️ <strong>Vector Viento en Calma/Convectivo:</strong> <code>{dir_v:.0f}° ({vel_v:.1f} km/h)</code>.<br>Derrame orográfico natural por gravedad desde la cresta de cumbre (2,436 msnm) hacia la vaguada receptora del Nacimiento de Golondrinas (2,163 msnm)."
+                desc_vector = f"🌬️ <strong>Vector Viento en Calma/Convectivo:</strong> <code>{dir_v:.0f}° ({vel_v:.1f} km/h)</code>.<br>Derrame orográfico natural por gravedad desde la cresta de cumbre (2,436 msnm) hacia la vaguada receptora del Nacimiento de Golondrinas (2,163 msnm). Factor de entrega: <strong>1.00x (15% base)</strong>."
                 badge_html = "<span class='badge-status' style='background: rgba(0,80,115,0.15); color: #005073; border: 1px solid #005073;'>🌬️ RÉGIMEN OROGRÁFICO ESTÁNDAR</span>"
                 
             return {
@@ -567,6 +572,8 @@ def calcular_atribucion_cuenca_tona(df_cuenca, q_afluente_ls):
             
     vec_viento = analizar_vector_viento_mariana()
     
+    # 1. Ponderación de precipitaciones por estación
+    datos_temp = []
     for est_id in ['Yerbabuena', 'Vegas_del_Quemado', 'El_Pajal', 'La_Mariana']:
         meta = METADATA_ESTACIONES_AMB[est_id]
         p_info = mapa_precip.get(est_id, {'total': 0.0, 'max': 0.0})
@@ -580,6 +587,48 @@ def calcular_atribucion_cuenca_tona(df_cuenca, q_afluente_ls):
         aporte_pond = p_val * peso_efectivo
         suma_ponderada += aporte_pond
         
+        datos_temp.append({
+            "est_id": est_id,
+            "meta": meta,
+            "p_val": p_val,
+            "p_info": p_info,
+            "peso_efectivo": peso_efectivo,
+            "aporte_pond": aporte_pond
+        })
+        
+    # 2. Modelo Hidrológico Dual: Flujo Base Geológico Continuo + Escorrentía por Lluvia
+    q_total = max(10.0, float(q_afluente_ls))
+    if suma_precip_pura > 0:
+        fraccion_escorrentia = min(0.65, max(0.15, (suma_precip_pura / 50.0) * 0.65))
+        fraccion_base = 1.0 - fraccion_escorrentia
+        estado_cuenca = "LLUVIA ACTIVA"
+    else:
+        fraccion_escorrentia = 0.0
+        fraccion_base = 1.0
+        estado_cuenca = "ESTIAJE BASE"
+        
+    q_base_total = q_total * fraccion_base
+    q_escorrentia_total = q_total * fraccion_escorrentia
+    
+    for d in datos_temp:
+        est_id = d["est_id"]
+        meta = d["meta"]
+        p_val = d["p_val"]
+        peso_base = meta["peso_cuenca"]
+        peso_efectivo = d["peso_efectivo"]
+        
+        # Caudal base proporcional al área de la cuenca
+        q_base_i = q_base_total * peso_base
+        
+        # Caudal de escorrentía proporcional a la lluvia efectiva con viento
+        if suma_ponderada > 0:
+            q_escorrentia_i = q_escorrentia_total * (d["aporte_pond"] / suma_ponderada)
+        else:
+            q_escorrentia_i = 0.0
+            
+        q_estacion_total = q_base_i + q_escorrentia_i
+        porcentaje_final = (q_estacion_total / q_total) * 100.0
+        
         registros.append({
             "id_estacion": est_id,
             "nombre": meta["nombre_completo"],
@@ -592,27 +641,21 @@ def calcular_atribucion_cuenca_tona(df_cuenca, q_afluente_ls):
             "lag_horas": meta["lag_horas"],
             "color": meta["color"],
             "precipitacion_mm": p_val,
-            "precip_max_mm": p_info['max'],
-            "aporte_ponderado": aporte_pond,
+            "precip_max_mm": d["p_info"]['max'],
+            "caudal_estimado_ls": q_estacion_total,
+            "porcentaje_atribucion": porcentaje_final,
             "lat": meta["lat"],
             "lon": meta["lon"]
         })
         
     df_atrib = pd.DataFrame(registros)
+    est_dominante = df_atrib.sort_values('porcentaje_atribucion', ascending=False).iloc[0]
     
-    if suma_ponderada > 0:
-        df_atrib['porcentaje_atribucion'] = (df_atrib['aporte_ponderado'] / suma_ponderada) * 100.0
-        estado_cuenca = "LLUVIA ACTIVA"
-        est_dominante = df_atrib.sort_values('porcentaje_atribucion', ascending=False).iloc[0]
-        mensaje_diagnostico = f"🌧️ <strong>Recarga Activa por Precipitación en Cuenca:</strong> El caudal afluente estimado (~{q_afluente_ls:,.0f} L/s) está originado principalmente en <strong>{est_dominante['nombre']}</strong> ({est_dominante['porcentaje_atribucion']:.1f}% de influencia con {est_dominante['precipitacion_mm']:.1f} mm acumulados), activando la escorrentía en <strong>{est_dominante['microcuencas']}</strong> ({est_dominante['subsistema']}) con un tiempo de tránsito (Lag) de <strong>{est_dominante['lag_horas']}</strong> hacia la cola del embalse."
+    if estado_cuenca == "LLUVIA ACTIVA":
+        mensaje_diagnostico = f"🌧️ <strong>Recarga Integrada por Lluvia & Flujo Base:</strong> Caudal afluente en cola (~{q_total:,.0f} L/s) compuesto por <strong>{q_base_total:,.0f} L/s de flujo base geológico</strong> permanente más <strong>{q_escorrentia_total:,.0f} L/s de escorrentía activa</strong> originada principalmente en <strong>{est_dominante['nombre']}</strong> ({est_dominante['porcentaje_atribucion']:.1f}% de aporte total con {est_dominante['precipitacion_mm']:.1f} mm acumulados), activando <strong>{est_dominante['microcuencas']}</strong> ({est_dominante['subsistema']}) con retardo (Lag) de <strong>{est_dominante['lag_horas']}</strong>."
     else:
-        df_atrib['porcentaje_atribucion'] = df_atrib['peso_cuenca'] * 100.0
-        estado_cuenca = "ESTIAJE BASE"
-        est_dominante = df_atrib.sort_values('peso_cuenca', ascending=False).iloc[0]
-        mensaje_diagnostico = f"☀️ <strong>Régimen de Estiaje / Flujo Base Subterráneo:</strong> Sin precipitaciones acumuladas en las estaciones durante esta ventana de tiempo. El caudal continuo de recarga en cola (~{q_afluente_ls:,.0f} L/s) proviene del rendimiento hidrogeológico base natural de las microcuencas (Río Tona cabecera, Las Ranas, Gualilo, La Reforma y Los Monos)."
+        mensaje_diagnostico = f"☀️ <strong>Régimen de Estiaje / Flujo Base Subterráneo:</strong> Sin precipitaciones acumuladas en cuenca. El caudal continuo de recarga en cola (~{q_total:,.0f} L/s) corresponde al 100% al rendimiento hidrogeológico base natural de las microcuencas (Río Tona cabecera 35%, Arnania 30%, Golondrinas/Gualilo 20% y Mariana 15%)."
         
-    df_atrib['caudal_estimado_ls'] = (df_atrib['porcentaje_atribucion'] / 100.0) * max(0.0, q_afluente_ls)
-    
     return {
         "df": df_atrib,
         "mapa_precip": mapa_precip,
@@ -1603,4 +1646,3 @@ with st.sidebar.expander("📏 Extensómetros (EDV)"):
 # ============================================================
 # FIN DEL CÓDIGO — SISTEMA MIMAT-C26 (amb)
 # ============================================================
-
