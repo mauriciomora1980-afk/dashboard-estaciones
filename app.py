@@ -138,6 +138,7 @@ AUTOR = "Ing. Mauricio Mora"
 VERSION = "MIMAT-C26 v2.6"
 SISTEMA = "Sistema Automatizado de Monitoreo MIMAT-C26 - amb"
 AGENTE_API_URL = "https://querybigqueryamb-ia-661926446380.us-central1.run.app"
+FECHA_INICIO_MANIOBRA_CRC = datetime(2026, 9, 22, 13, 0, 0, tzinfo=colombia_tz)
 
 umbrales = {
     "El_Pajal": {"amarilla": 12.3, "naranja": 15.1, "roja": 20.4},
@@ -1124,6 +1125,17 @@ with tab_situacion:
             hidro = calcular_hidraulica_embalse(cota_actual, q_ptap_ls=0.0)
             bal = calcular_balance_dinamico(df_hist)
             
+            # Cálculo Dinámico de Tiempo Transcurrido de Maniobra Válvula CRC Bosconia
+            ahora_col = datetime.now(colombia_tz)
+            horas_maniobra_crc = max(1.0, (ahora_col - FECHA_INICIO_MANIOBRA_CRC).total_seconds() / 3600.0)
+            dias_maniobra_crc = horas_maniobra_crc / 24.0
+            if dias_maniobra_crc >= 1.0:
+                txt_maniobra_corto = f"{dias_maniobra_crc:.1f} días"
+                txt_maniobra_largo = f"{dias_maniobra_crc:.1f} días ({horas_maniobra_crc:.0f}h)"
+            else:
+                txt_maniobra_corto = f"{horas_maniobra_crc:.1f}h"
+                txt_maniobra_largo = f"{horas_maniobra_crc:.1f} horas"
+
             # Descenso total acumulado desde inicio de maniobra en cota de rebose (885.75 msnm)
             descenso_total_cm = (cota_actual - NIVEL_REBOSE_EMBALSE) * 100.0
             vol_max_rebose_m3 = interpolar_volumen(NIVEL_REBOSE_EMBALSE) * 1_000_000.0
@@ -1156,7 +1168,7 @@ with tab_situacion:
                     <span style="font-size: 24px;">🟢</span>
                     <div>
                         <strong>ESTADO: OPERACIÓN NORMAL (EXTRACCIÓN ACTIVA HACIA CRC BOSCONIA)</strong><br>
-                        Cota calibrada en <strong>{cota_actual:.2f} msnm</strong>. Descenso total acumulado de <strong>{abs(descenso_total_cm):.1f} cm</strong> ({abs(hidro['excedente_rebose']):.2f} msnm bajo vertedero). Volumen acumulado entregado: <strong>{vol_entregado_total_m3:,.0f} m³</strong>. Capacidad útil al <strong>{hidro['porcentaje_util']:.1f}%</strong> ({hidro['volumen_util_hm3']:.2f} hm³).
+                        Cota calibrada en <strong>{cota_actual:.2f} msnm</strong>. Descenso total acumulado de <strong>{abs(descenso_total_cm):.1f} cm</strong> ({abs(hidro['excedente_rebose']):.2f} msnm bajo vertedero). Volumen acumulado entregado: <strong>{vol_entregado_total_m3:,.0f} m³</strong> en <strong>{txt_maniobra_largo}</strong>. Capacidad útil al <strong>{hidro['porcentaje_util']:.1f}%</strong> ({hidro['volumen_util_hm3']:.2f} hm³).
                     </div>
                 </div>
                 """, unsafe_allow_html=True)
@@ -1164,7 +1176,7 @@ with tab_situacion:
             c1, c2, c3, c4 = st.columns(4)
             c1.metric("🌊 Cota Calibrada", f"{cota_actual:.2f} msnm", delta=f"{descenso_total_cm:+.1f} cm vs Rebose (885.75)", help=f"Sensor OTT: {cota_raw:.2f} msnm | Offset calibrado: -{OFFSET_RADAR_EMBALSE*100:.0f} cm")
             c2.metric("💧 Volumen Útil", f"{hidro['volumen_util_hm3']:.2f} hm³", delta=f"{hidro['porcentaje_util']:.1f}% útil")
-            c3.metric("📦 Consumo Total Bosconia", f"{vol_entregado_total_m3:,.0f} m³", delta=f"{abs(descenso_total_cm):.1f} cm acumulados (3 días)", delta_color="inverse", help="Total de metros cúbicos consumidos por PTAP Bosconia desde que se abrió la CRC el martes a la 1:00 PM en cota de rebose 885.75 msnm")
+            c3.metric("📦 Consumo Total Bosconia", f"{vol_entregado_total_m3:,.0f} m³", delta=f"{abs(descenso_total_cm):.1f} cm acumulados ({txt_maniobra_corto})", delta_color="inverse", help=f"Total de metros cúbicos consumidos por PTAP Bosconia desde que se abrió la CRC el martes 22 de septiembre a la 1:00 PM ({txt_maniobra_largo}) en cota de rebose 885.75 msnm")
             if hidro["q_rebose_ls"] > 0:
                 c4.metric("🌊 Caudal Rebose MG", f"{hidro['q_rebose_m3_s']:.2f} m³/s", delta=f"{hidro['q_rebose_ls']:,.0f} L/s hacia Puente Tona")
             elif bal and bal["q_neto_ls"] > 0:
@@ -1176,10 +1188,10 @@ with tab_situacion:
             if bal:
                 st.markdown("---")
                 st.markdown("### ⚖️ Balance Hídrico Dinámico en Vivo (Extracción CRC Bosconia)")
-                st.caption(f"Consumo acumulado total ({vol_entregado_total_m3:,.0f} m³ consumidos por Bosconia en 3 días de maniobra / desde Martes 1:00 PM) y tasa neta calibrada en las últimas **{bal['horas']:.1f} horas**.")
+                st.caption(f"Consumo acumulado total ({vol_entregado_total_m3:,.0f} m³ consumidos por Bosconia en {txt_maniobra_largo} de maniobra / desde Martes 22 Sept 1:00 PM) y tasa neta calibrada en las últimas **{bal['horas']:.1f} horas**.")
                 
                 bc1, bc2, bc3, bc4 = st.columns(4)
-                bc1.metric("📦 Consumo Total Maniobra", f"{vol_entregado_total_m3:,.0f} m³", delta=f"{abs(descenso_total_cm):.1f} cm acumulados (3 días)", delta_color="inverse", help="Total de metros cúbicos consumidos por Bosconia desde que inició la maniobra el martes a la 1:00 PM en la cota de rebose 885.75 msnm")
+                bc1.metric("📦 Consumo Total Maniobra", f"{vol_entregado_total_m3:,.0f} m³", delta=f"{abs(descenso_total_cm):.1f} cm acumulados ({txt_maniobra_corto})", delta_color="inverse", help=f"Total de metros cúbicos consumidos por Bosconia desde que inició la maniobra el martes 22 de septiembre a la 1:00 PM ({txt_maniobra_largo}) en la cota de rebose 885.75 msnm")
                 bc2.metric("⚡ Tasa Neta Reciente", f"{bal['q_neto_ls']:.0f} L/s", delta=f"{bal['vel_cm_dia']:+.1f} cm/día", delta_color="inverse", help=f"Velocidad neta de vaciado en las últimas {bal['horas']:.1f} horas")
                 bc3.metric(f"🚰 Consumo Ventana ({bal['horas']:.1f}h)", f"{abs(bal['delta_v_m3']):,.0f} m³", delta=f"{bal['delta_cota_cm']:+.1f} cm en 24h", delta_color="inverse", help=f"Metros cúbicos cedidos exclusivamente en el período de análisis de las últimas {bal['horas']:.1f} horas")
                 bc4.metric("⏳ Autonomía Real Dinámica", f"{bal['dias_autonomia']:.0f} Días" if bal['dias_autonomia'] else "N/A", help="Días restantes de agua continua hasta el Nivel Mínimo Técnico (841 msnm)")
@@ -1193,7 +1205,7 @@ with tab_situacion:
                     <div style="margin-top: 8px;">
                         <strong>🌊 Interpretación de Volúmenes & Descenso del Embalse:</strong><br>
                         <ul style="margin: 4px 0 6px 18px; padding: 0;">
-                            <li><strong>📦 Consumo Total Acumulado por Bosconia (3 Días de Maniobra / Martes 1:00 PM):</strong> <strong>{vol_entregado_total_m3:,.0f} m³</strong> (descenso acumulado total de <strong>{abs(descenso_total_cm):.1f} cm</strong> desde que se abrió la válvula CRC en la cota máxima de rebose de <strong>885.75 msnm</strong>).</li>
+                            <li><strong>📦 Consumo Total Acumulado por Bosconia ({txt_maniobra_largo} de Maniobra / desde Martes 22 Sept 1:00 PM):</strong> <strong>{vol_entregado_total_m3:,.0f} m³</strong> (descenso acumulado total de <strong>{abs(descenso_total_cm):.1f} cm</strong> desde que se abrió la válvula CRC en la cota máxima de rebose de <strong>885.75 msnm</strong>).</li>
                             <li><strong>⏱️ Consumo en la Ventana de Análisis Seleccionada ({bal['horas']:.1f}h):</strong> <strong>{abs(bal['delta_v_m3']):,.0f} m³</strong> (descenso neto de <strong>{abs(bal['delta_cota_cm']):.1f} cm</strong> en las últimas 24 horas).</li>
                             <li><strong>Entradas (Remanentes de Captaciones + Afluentes Directos):</strong> El Embalse Tona recibe la recarga continua de los <strong>caudales remanentes no derivados de las 3 captaciones con sensor RQ30 del Sistema Tona (Captación Carrizal en Río Tona, Captación Golondrinas y Captación Arnania)</strong>, más los 4 afluentes directos al vaso: <strong>Quebrada Ranás</strong> (desemboca en fondo cola), <strong>Quebrada el Gualilo</strong> (mitad del vaso), <strong>Quebrada La Reforma</strong> (cercana a la presa/radar) y <strong>Quebrada Los Monos</strong> (litoral derecho norte, frente a La Reforma) con un aporte sumado estimado en cola de <strong>~{max(0, 400 - bal['q_neto_ls']):.0f} L/s</strong>.</li>
                             <li><strong>Salida (Consumo PTAP):</strong> Conducción y entrega por gravedad hacia la válvula <strong>CRC Bosconia</strong> (fijada en <strong>~400 L/s</strong>).</li>
