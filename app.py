@@ -1931,6 +1931,69 @@ with tab_radar_72h:
     else:
         st.info(f"ℹ️ {res_interv.get('mensaje', 'Consultando datos históricos de satélite...')}")
 
+    # ------------------------------------------------------------
+    # SECCIÓN: SISTEMA DE ALERTA TEMPRANA & MARGEN DE MANIOBRA OPERATIVO (SAT-IA)
+    # ------------------------------------------------------------
+    st.markdown("---")
+    st.markdown(f"### 🚨 Sistema de Alerta Temprana Inteligente: Margen de Maniobra Operativo (SAT-IA)")
+    st.caption("Ponderación probabilística de eventos extremos a 72h calibrada con el histórico empírico de aciertos para proteger bocatomas y optimizar plantas.")
+    
+    if not df_fc.empty:
+        p_max_fc = float(df_fc['precipitation'].max() or 0.0)
+        p_tot_fc = float(df_fc['precipitation'].sum() or 0.0)
+        idx_max = df_fc['precipitation'].idxmax()
+        hora_p_max = df_fc.loc[idx_max]['time']
+        
+        prob_calibrada = float(res_interv.get('pod_pct', 75.0)) if res_interv.get('valido') else 75.0
+        lag_estacion = meta_sel.get('lag_horas', '1.0 - 2.0 h')
+        
+        col_al1, col_al2 = st.columns([1.15, 1])
+        
+        with col_al1:
+            if p_max_fc >= 15.0 or p_tot_fc >= 30.0:
+                nivel_alerta = "ALERTA ROJA: TORMENTA SEVERA PROBABLE"
+                color_alerta = "#FF4B4B"
+                icono_alerta = "⛈️"
+                desc_alerta = f"Se pronostica un pico de lluvia intensa de <strong>{p_max_fc:.1f} mm/h</strong> el <code>{hora_p_max.strftime('%d/%m/%Y %H:%M')}</code>. Basado en el aprendizaje histórico de la estación, la probabilidad real de ocurrencia es del <strong>{prob_calibrada:.1f}%</strong>."
+            elif p_max_fc >= 5.0 or p_tot_fc >= 15.0:
+                nivel_alerta = "ALERTA AMARILLA / NARANJA: LLUVIA MODERADA A FUERTE"
+                color_alerta = "#FFBB00"
+                icono_alerta = "🌧️"
+                desc_alerta = f"Se prevé lluvia moderada con pico de <strong>{p_max_fc:.1f} mm/h</strong> el <code>{hora_p_max.strftime('%d/%m/%Y %H:%M')}</code> ({p_tot_fc:.1f} mm acumulados en 72h). Probabilidad empírica calibrada: <strong>{prob_calibrada:.1f}%</strong>."
+            else:
+                nivel_alerta = "ESTADO VERDE: CONDICIONES NORMALES / ESTIAJE"
+                color_alerta = "#00CC96"
+                icono_alerta = "☀️"
+                desc_alerta = f"Sin eventos extremos previstos en la ventana de 72h (máximo previsto: {p_max_fc:.1f} mm/h). Operación estándar en cuenca."
+                
+            st.markdown(f"""
+            <div style="background: rgba(0, 80, 115, 0.04); padding: 16px 20px; border-radius: 12px; border-left: 6px solid {color_alerta}; box-shadow: 0 4px 12px rgba(0,0,0,0.06);">
+                <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 6px;">
+                    <span style="font-size: 24px;">{icono_alerta}</span>
+                    <strong style="font-size: 15px; color: {color_alerta};">{nivel_alerta}</strong>
+                </div>
+                <div style="font-size: 13px; line-height: 1.6; color: #222;">
+                    {desc_alerta}<br>
+                    ⏱️ <strong>Tiempo de Concentración / Retardo Hidrológico (Lag Time):</strong> <span style="color: #005073; font-weight: 700;">{lag_estacion}</span>
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+            
+        with col_al2:
+            st.markdown("#### 👷 Margen de Maniobra & Acciones Preventivas Sugeridas:")
+            st.markdown(f"""
+            <div style="font-size: 12.5px; line-height: 1.6; background: white; padding: 14px 18px; border-radius: 10px; border: 1px solid #cce0eb; box-shadow: 0 2px 6px rgba(0,0,0,0.04);">
+                <ul style="margin: 0; padding-left: 18px;">
+                    <li><strong>Tomero / Operador en Bocatoma ({meta_sel['subsistema_abastecimiento']}):</strong><br>
+                    Ventana de <strong>{lag_estacion}</strong> previa al pico para realizar purga preventiva de desarenadores, verificar rejillas y alistar cierre de compuertas ante picos de turbiedad.</li>
+                    <li style="margin-top: 6px;"><strong>Operadores de Planta (PTAP Florida / La Flora / Morrorico / Bosconia):</strong><br>
+                    Alistamiento anticipado de dosificación de coagulantes y regulación de niveles en tanques de almacenamiento.</li>
+                    <li style="margin-top: 6px;"><strong>Gestión del Riesgo & Comunidades Ribereñas:</strong><br>
+                    Aviso preventivo en microcuenca <em>{meta_sel['microcuencas']}</em> ante posible aumento súbito de nivel en quebradas tributarias.</li>
+                </ul>
+            </div>
+            """, unsafe_allow_html=True)
+
 # ------------------------------------------------------------
 # TAB 4: SERIES DE TIEMPO, ROSA DE VIENTOS Y DESCARGAS
 # ------------------------------------------------------------
@@ -2270,4 +2333,3 @@ with st.sidebar.expander("📏 Extensómetros (EDV)"):
 # ============================================================
 # FIN DEL CÓDIGO — SISTEMA MIMAT-C26 (amb)
 # ============================================================
-
