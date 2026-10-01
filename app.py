@@ -1977,33 +1977,81 @@ with tab_radar_72h:
         idx_max = df_fc['precipitation'].idxmax()
         hora_p_max = df_fc.loc[idx_max]['time']
         
+        # ------------------------------------------------------------
+        # CAPA DE CALIBRACIÓN MOS (MODEL OUTPUT STATISTICS - MIMAT-C26)
+        # ------------------------------------------------------------
+        mes_actual = datetime.now().month
+        if mes_actual in [3, 4, 5]:
+            nombre_temporada = "1ª Temporada de Lluvias (Húmeda)"
+            tag_temporada = "🌧️ HÚMEDA I"
+        elif mes_actual in [6, 7, 8]:
+            nombre_temporada = "Veranillo / Transición Seca"
+            tag_temporada = "🌤️ TRANSICIÓN"
+        elif mes_actual in [9, 10, 11]:
+            nombre_temporada = "2ª Temporada de Lluvias (Húmeda Principal)"
+            tag_temporada = "⛈️ HÚMEDA II"
+        else:
+            nombre_temporada = "Temporada Seca Principal (Estiaje)"
+            tag_temporada = "☀️ SECA / ESTIAJE"
+            
         prob_calibrada = float(res_interv.get('pod_pct', 75.0)) if res_interv.get('valido') else 75.0
+        far_reciente = float(res_interv.get('far_pct', 25.0)) if res_interv.get('valido') else 25.0
+        csi_reciente = float(res_interv.get('csi_pct', 60.0)) if res_interv.get('valido') else 60.0
         lag_estacion = meta_sel.get('lag_horas', '1.0 - 2.0 h')
+        
+        # Coeficiente Continuo MOS (Model Output Statistics)
+        factor_mos = max(0.0, min(1.0, (prob_calibrada / 100.0) * (1.0 - (far_reciente / 100.0))))
+        p_tot_mos = p_tot_fc * factor_mos
+        p_max_mos = p_max_fc * factor_mos
         
         col_al1, col_al2 = st.columns([1.15, 1])
         
         with col_al1:
-            if p_max_fc >= 15.0 or p_tot_fc >= 30.0:
-                nivel_alerta = "ALERTA ROJA: TORMENTA SEVERA PROBABLE"
+            # FILTRO BAYESIANO DE CONFIABILIDAD EMPÍRICA (Resuelve contradicción con la interventoría)
+            es_evento_fuerte = (p_max_fc >= 15.0 or p_tot_fc >= 30.0)
+            es_evento_moderado = (p_max_fc >= 5.0 or p_tot_fc >= 15.0)
+            es_confiable = (prob_calibrada >= 50.0 and far_reciente <= 50.0)
+            es_baja_confianza = (prob_calibrada < 30.0 or far_reciente >= 70.0)
+            
+            if es_evento_fuerte and es_confiable:
+                nivel_alerta = "ALERTA ROJA OPERATIVA: TORMENTA SEVERA CONFIRMADA"
                 color_alerta = "#FF4B4B"
                 icono_alerta = "⛈️"
-                desc_alerta = f"Se pronostica un pico de lluvia intensa de <strong>{p_max_fc:.1f} mm/h</strong> el <code>{hora_p_max.strftime('%d/%m/%Y %H:%M')}</code>. Basado en el aprendizaje histórico de la estación, la probabilidad real de ocurrencia es del <strong>{prob_calibrada:.1f}%</strong>."
-            elif p_max_fc >= 5.0 or p_tot_fc >= 15.0:
-                nivel_alerta = "ALERTA AMARILLA / NARANJA: LLUVIA MODERADA A FUERTE"
+                desc_alerta = f"Se pronostica un pico de <strong>{p_max_fc:.1f} mm/h</strong> el <code>{hora_p_max.strftime('%d/%m/%Y %H:%M')}</code> ({p_tot_fc:.1f} mm en 72h).<br>🎯 <strong>Alta Confiabilidad MOS ({factor_mos*100:.0f}%):</strong> El modelo satelital registra un <strong>{prob_calibrada:.1f}% de acierto real (POD)</strong> en esta estación ({tag_temporada}). <strong>Se recomienda activar protocolo de maniobra preventiva.</strong>"
+                estado_operativo = "ACTIVAR_MANIOBRA"
+            elif es_evento_fuerte and es_baja_confianza:
+                nivel_alerta = "AVISO SATELITAL EN OBSERVACIÓN (NO VERIFICADO EN TERRENO)"
+                color_alerta = "#FF8000"
+                icono_alerta = "🟠"
+                desc_alerta = f"El satélite proyecta lluvia bruta de <strong>{p_max_fc:.1f} mm/h</strong> ({p_tot_fc:.1f} mm en 72h), pero la lluvia calibrada MOS es de solo <strong>{p_tot_mos:.1f} mm</strong>.<br>⚠️ <strong>Filtro de Confiabilidad Rodante ({horas_eval_interv}h):</strong> En esta microcuenca el modelo presenta baja habilidad de detección (<strong>POD: {prob_calibrada:.1f}% | Falsas Alarmas: {far_reciente:.1f}%</strong>) por bloqueo orográfico en {tag_temporada}.<br>🛡️ <strong>Criterio de Ingeniería:</strong> La alerta se mantiene en <em>observación pasiva</em>. <strong>NO escalar a Alerta Roja ni operar compuertas</strong> hasta que el pluviómetro físico (Pluvio²) confirme el primer pulso de lluvia."
+                estado_operativo = "OBSERVACION_PASIVA"
+            elif es_evento_moderado and es_confiable:
+                nivel_alerta = "ALERTA AMARILLA PREVENTIVA: LLUVIA MODERADA"
                 color_alerta = "#FFBB00"
                 icono_alerta = "🌧️"
-                desc_alerta = f"Se prevé lluvia moderada con pico de <strong>{p_max_fc:.1f} mm/h</strong> el <code>{hora_p_max.strftime('%d/%m/%Y %H:%M')}</code> ({p_tot_fc:.1f} mm acumulados en 72h). Probabilidad empírica calibrada: <strong>{prob_calibrada:.1f}%</strong>."
+                desc_alerta = f"Previsión de lluvia moderada con pico de <strong>{p_max_fc:.1f} mm/h</strong> el <code>{hora_p_max.strftime('%d/%m/%Y %H:%M')}</code> ({p_tot_fc:.1f} mm en 72h). Confiabilidad empírica aprendida: <strong>{prob_calibrada:.1f}%</strong>."
+                estado_operativo = "VIGILANCIA_ESTANDAR"
+            elif es_evento_moderado and es_baja_confianza:
+                nivel_alerta = "CONDICIÓN ESTÁNDAR (POSIBLE NUBOSIDAD ALTA / VIRGA)"
+                color_alerta = "#005073"
+                icono_alerta = "☁️"
+                desc_alerta = f"El modelo numérico muestra nubosidad con {p_tot_fc:.1f} mm brutos, pero la auditoría rodante indica alto sesgo eólico / virga (POD {prob_calibrada:.1f}%). Sin impacto operativo previsto."
+                estado_operativo = "NORMAL"
             else:
                 nivel_alerta = "ESTADO VERDE: CONDICIONES NORMALES / ESTIAJE"
                 color_alerta = "#00CC96"
                 icono_alerta = "☀️"
                 desc_alerta = f"Sin eventos extremos previstos en la ventana de 72h (máximo previsto: {p_max_fc:.1f} mm/h). Operación estándar en cuenca."
+                estado_operativo = "NORMAL"
                 
             st.markdown(f"""
             <div style="background: rgba(0, 80, 115, 0.04); padding: 16px 20px; border-radius: 12px; border-left: 6px solid {color_alerta}; box-shadow: 0 4px 12px rgba(0,0,0,0.06);">
-                <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 6px;">
-                    <span style="font-size: 24px;">{icono_alerta}</span>
-                    <strong style="font-size: 15px; color: {color_alerta};">{nivel_alerta}</strong>
+                <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px;">
+                    <div style="display: flex; align-items: center; gap: 10px;">
+                        <span style="font-size: 24px;">{icono_alerta}</span>
+                        <strong style="font-size: 15px; color: {color_alerta};">{nivel_alerta}</strong>
+                    </div>
+                    <span class="badge-status" style="background: rgba(0,80,115,0.15); color: #005073; border: 1px solid #005073;">{tag_temporada}</span>
                 </div>
                 <div style="font-size: 13px; line-height: 1.6; color: #222;">
                     {desc_alerta}<br>
@@ -2014,7 +2062,18 @@ with tab_radar_72h:
             
         with col_al2:
             st.markdown("#### 👷 Margen de Maniobra & Acciones Preventivas Sugeridas:")
-            if seleccion == "Embalse":
+            if estado_operativo == "OBSERVACION_PASIVA":
+                st.markdown(f"""
+                <div style="font-size: 12.5px; line-height: 1.6; background: #FFF8F0; padding: 14px 18px; border-radius: 10px; border: 1px solid #FFD0A8; box-shadow: 0 2px 6px rgba(0,0,0,0.04);">
+                    <strong style="color: #D96B00; font-size: 13px;">🛡️ Protocolo Preventivo Anti-Falsa Alarma (Cero Fatiga Operativa):</strong>
+                    <ul style="margin: 6px 0 0 0; padding-left: 18px;">
+                        <li><strong>Tomero ({meta_sel['subsistema_abastecimiento']}):</strong> Mantener operación normal. Estar atento al reporte de telemetría in situ. <strong>No realizar purgas innecesarias</strong> ni suspender captación.</li>
+                        <li><strong>Operadores de Planta (PTAP):</strong> Mantener dosificación química base sin alteración.</li>
+                        <li><strong>Condición de Disparo:</strong> Solo si el pluviómetro físico Pluvio² registra un pulso real ($P \ge 1.0\text{ mm}$), el sistema eleva a Alerta Operativa con ventana de <strong>{lag_estacion}</strong>.</li>
+                    </ul>
+                </div>
+                """, unsafe_allow_html=True)
+            elif seleccion == "Embalse":
                 vol_espejo_fc = p_tot_fc * 462.0
                 st.markdown(f"""
                 <div style="font-size: 12.5px; line-height: 1.6; background: white; padding: 14px 18px; border-radius: 10px; border: 1px solid #cce0eb; box-shadow: 0 2px 6px rgba(0,0,0,0.04);">
