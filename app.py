@@ -5,6 +5,7 @@ import json
 import os
 import base64
 import requests
+import urllib.request
 from google.cloud import bigquery
 from google.oauth2 import service_account
 from datetime import datetime, timedelta
@@ -366,6 +367,120 @@ def get_cota_embalse_actual_segura():
         pass
     return 885.75
 
+@st.cache_data(ttl=1800)
+def obtener_pronostico_open_meteo(lat: float, lon: float):
+    try:
+        url = f"https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}&hourly=precipitation,temperature_2m,relative_humidity_2m,wind_speed_10m,wind_direction_10m&forecast_days=3&timezone=America/Bogota"
+        req = urllib.request.Request(url, headers={'User-Agent': 'MIMAT-C26-amb/2.6'})
+        with urllib.request.urlopen(req, timeout=5) as response:
+            data = json.loads(response.read().decode('utf-8'))
+            if 'hourly' in data:
+                df_fc = pd.DataFrame(data['hourly'])
+                df_fc['time'] = pd.to_datetime(df_fc['time'])
+                return df_fc
+    except Exception as e:
+        pass
+    return pd.DataFrame()
+
+def evaluar_salud_estacion(df_hist, row, estacion):
+    ahora = datetime.now(colombia_tz)
+    if row is None or (isinstance(row, pd.Series) and row.empty):
+        return {
+            "estado": "OFFLINE",
+            "es_valido": False,
+            "horas_retraso": 999.0,
+            "mensaje": "🚨 ESTACIÓN FUERA DE LÍNEA (> 2h sin telemetría)",
+            "diagnostico": "Sin recepción de paquetes de datos en el servidor.",
+            "accion": "Verificar enlace de comunicación y suministro eléctrico de la estación."
+        }
+        
+    t_ult = row['timestamp'] if 'timestamp' in row and pd.notna(row['timestamp']) else ahora
+    retraso_horas = max(0.0, (ahora - t_ult).total_seconds() / 3600.0)
+    
+    if estacion == "Embalse":
+        raw_c = row.get('temperatura', 885.80)
+        cota_raw = float(raw_c) if pd.notna(raw_c) and float(raw_c) > 800 else 0.0
+        if cota_raw < 818.0 or cota_raw > 886.5:
+            return {
+                "estado": "ANOMALIA_NIVEL",
+                "es_valido": False,
+                "horas_retraso": retraso_horas,
+                "mensaje": "⚠️ COTA FUERA DE RANGO: Sensor Radar OTT reporta valor anómalo.",
+                "diagnostico": "Señal del sensor radar fuera del rango físico del embalse (818 - 886 msnm).",
+                "accion": "Inspección técnica de sensor radar OTT en caseta de presa."
+            }
+        return {"estado": "OPERATIVO", "es_valido": True, "horas_retraso": retraso_horas}
+        
+    t_val = float(row.get('temperatura', 0)) if pd.notna(row.get('temperatura')) else 0.0
+    h_val = float(row.get('humedad', 0)) if pd.notna(row.get('humedad')) else 0.0
+    
+    # Evaluar persistencia en la ventana de las últimas 2 horas
+    es_cero_plano = (t_val == 0.0 and h_val == 0.0)
+    
+    es_cero_sostenido = False
+    if not df_hist.empty:
+        df_2h = df_hist[df_hist['timestamp'] >= (ahora - timedelta(hours=2))]
+        if not df_2h.empty and len(df_2h) >= 2:
+            t_hist_max = pd.to_numeric(df_2h['temperatura'], errors='coerce').max()
+            h_hist_max = pd.to_numeric(df_2h['humedad'], errors='coerce').max()
+            if (t_hist_max == 0.0 or pd.isna(t_hist_max)) and (h_hist_max == 0.0 or pd.isna(h_hist_max)):
+                es_cero_sostenido = True
+        else:
+            es_cero_sostenido = es_cero_plano
+    else:
+        es_cero_sostenido = es_cero_plano
+        
+    if retraso_horas > 2.0:
+        return {
+            "estado": "OFFLINE_SOSTENIDO",
+            "es_valido": False,
+            "horas_retraso": retraso_horas,
+            "mensaje": f"📡 ALERTA DE TELEMETRÍA: Estación Fuera de Línea ({retraso_horas:.1f}h sin transmitir)",
+            "diagnostico": f"Interrupción de transmisión de datos en la estación ({METADATA_ESTACIONES_AMB.get(estacion, {}).get('altitud_msnm', 0):,.0f} msnm).",
+            "accion": "Verificar enlace celular / módem de comunicación y alimentación en campo."
+        }
+    elif es_cero_sostenido:
+        return {
+            "estado": "SENSORES_EN_CERO",
+            "es_valido": False,
+            "horas_retraso": retraso_horas,
+            "mensaje": "🚨 ALERTA DE ADQUISICIÓN: Canales Físicos en Cero Sostenido (> 2h)",
+            "diagnostico": "Transmisión activa en servidor pero sin lectura en las sondas meteorológicas.",
+            "accion": "Revisar cableado de sensores e instrumentación en campo."
+        }
+        
+    return {"estado": "OPERATIVO", "es_valido": True, "horas_retraso": retraso_horas}
+
+def obtener_sensor_virtual_resiliente(estacion):
+    if estacion == "La_Mariana":
+        df_pajal = get_last_reading("El_Pajal")
+        
+        t_pajal = float(df_pajal.iloc[0].get('temperatura', 17.5)) if not df_pajal.empty and float(df_pajal.iloc[0].get('temperatura', 0)) > 0 else 18.0
+        h_pajal = float(df_pajal.iloc[0].get('humedad', 85.0)) if not df_pajal.empty and float(df_pajal.iloc[0].get('humedad', 0)) > 0 else 88.0
+        v_pajal = float(df_pajal.iloc[0].get('velocidad_viento', 2.0)) if not df_pajal.empty and float(df_pajal.iloc[0].get('velocidad_viento', 0)) > 0 else 2.5
+        d_pajal = float(df_pajal.iloc[0].get('direccion_viento', 202.0)) if not df_pajal.empty and float(df_pajal.iloc[0].get('direccion_viento', 0)) > 0 else 202.0
+        p_pajal = float(df_pajal.iloc[0].get('precipitacion', 0.0)) if not df_pajal.empty else 0.0
+        
+        # Gradiente adiabático vertical en Santander: -0.65°C / 100m
+        # Desnivel La Mariana (2,436m) vs El Pajal (2,163m) = +273m -> -1.77°C
+        t_virtual = max(8.0, t_pajal - (0.65 * (2436.0 - 2163.0) / 100.0))
+        h_virtual = min(100.0, max(75.0, h_pajal + 6.0)) # Mayor humedad por condensación en cresta
+        v_virtual = max(1.5, v_pajal * 1.25) # Mayor exposición al viento en filo divisorio
+        d_virtual = d_pajal
+        p_virtual = p_pajal
+        
+        return {
+            "temperatura": t_virtual,
+            "humedad": h_virtual,
+            "velocidad_viento": v_virtual,
+            "direccion_viento": d_virtual,
+            "precipitacion": p_virtual,
+            "voltaje_bateria": 12.6,
+            "es_estimado": True,
+            "origen": "Imputación Inteligente por Gradiente Altimétrico (-0.65°C/100m) desde Estación El Pajal (2,163m)"
+        }
+    return None
+
 # ============================================================
 # 4.1 METADATOS HIDROLÓGICOS & GEORREFERENCIACIÓN OFICIAL (amb)
 # ============================================================
@@ -508,44 +623,61 @@ def obtener_precipitacion_cuenca_tona(fecha_inicio, fecha_fin):
 def analizar_vector_viento_mariana():
     try:
         df_mariana = get_last_reading("La_Mariana")
+        dir_v = 0.0
+        vel_v = 0.0
+        es_estimado_mariana = False
+        
         if not df_mariana.empty:
             dir_v = float(df_mariana.iloc[0].get('direccion_viento', 0) or 0)
             vel_v = float(df_mariana.iloc[0].get('velocidad_viento', 0) or 0)
             
-            # Vector Geodésico La Mariana (2,436 msnm) -> Nacimiento Golondrinas / El Pajal (2,163 msnm): Rumbo NNE ~22°
-            # Viento favorable de procedencia (que empuja hacia el NNE): Sur / Suroeste (140° a 270°, óptimo 202°)
-            rad = (dir_v - 202.0) * np.pi / 180.0
-            componente_empuje = np.cos(rad) # +1.0 empuje máximo hacia Golondrinas, -1.0 alejamiento hacia Río Frío
+        # Resiliencia Inteligente: Si La Mariana está en ceros planos, estimar de El Pajal (2,163m)
+        if dir_v == 0.0 and vel_v == 0.0:
+            df_pajal = get_last_reading("El_Pajal")
+            if not df_pajal.empty:
+                d_p = float(df_pajal.iloc[0].get('direccion_viento', 0) or 0)
+                v_p = float(df_pajal.iloc[0].get('velocidad_viento', 0) or 0)
+                if v_p > 0:
+                    dir_v = d_p
+                    vel_v = v_p * 1.25 # Mayor exposición al viento en cresta (2,436m)
+                    es_estimado_mariana = True
             
-            if 140.0 <= dir_v <= 270.0 and vel_v >= 1.0:
-                estado_vector = "EMPUJE_ACTIVO_GOLONDRINAS"
-                factor_peso = min(1.40, max(0.85, 1.0 + (componente_empuje * 0.40)))
-                desc_vector = f"🧭 <strong>Vector Viento Activo:</strong> <code>{dir_v:.0f}° ({vel_v:.1f} km/h)</code> procedente del <strong>Sur-Suroeste (SSW)</strong>.<br>💨 <strong>Empuje Orográfico Confirmado:</strong> Arrastre activo de nubosidad y lluvia desde la cresta de La Mariana (2,436 msnm) directamente hacia el <strong>Nacimiento de Golondrinas y El Pajal</strong> (Rumbo NNE 22°, descenso topográfico de -273 m en 2.14 km). Factor de entrega: <strong>{factor_peso:.2f}x</strong>."
-                badge_html = "<span class='badge-status' style='background: rgba(0,204,150,0.15); color: #00CC96; border: 1px solid #00CC96;'>💨 VECTOR: EMPUJE CONFIRMADO A GOLONDRINAS</span>"
-            elif (dir_v < 100.0 or dir_v > 300.0) and vel_v >= 3.5:
-                estado_vector = "DERIVA_RIO_FRIO"
-                factor_peso = 0.30
-                desc_vector = f"🍃 <strong>Vector Viento Opuesto:</strong> <code>{dir_v:.0f}° ({vel_v:.1f} km/h)</code> procedente del <strong>Norte/Noreste</strong>.<br>La masa nubosa drena preferentemente hacia la vertiente occidental del <strong>Río Frío (PTAP Florida)</strong>. Factor de entrega a Tona reducido a: <strong>{factor_peso:.2f}x</strong>."
-                badge_html = "<span class='badge-status' style='background: rgba(171,99,250,0.15); color: #AB63FA; border: 1px solid #AB63FA;'>🍃 VECTOR: DERIVA HACIA RÍO FRÍO (FLORIDA)</span>"
-            elif (dir_v < 100.0 or dir_v > 300.0) and vel_v >= 1.0:
-                estado_vector = "DERIVA_LEVE_RIO_FRIO"
-                factor_peso = max(0.40, 1.0 - ((vel_v / 3.5) * 0.60))
-                desc_vector = f"🍃 <strong>Brisa Leve del Norte:</strong> <code>{dir_v:.0f}° ({vel_v:.1f} km/h)</code>.<br>Transición orográfica: parte de la nubosidad deriva hacia el Río Frío (PTAP Florida) y el resto precipita en cumbre. Factor de entrega: <strong>{factor_peso:.2f}x</strong>."
-                badge_html = "<span class='badge-status' style='background: rgba(171,99,250,0.15); color: #AB63FA; border: 1px solid #AB63FA;'>🍃 VECTOR: BRISA LEVE RÍO FRÍO</span>"
-            else:
-                estado_vector = "REGIMEN_CONVECTIVO"
-                factor_peso = 1.0
-                desc_vector = f"🌬️ <strong>Vector Viento en Calma/Convectivo:</strong> <code>{dir_v:.0f}° ({vel_v:.1f} km/h)</code>.<br>Derrame orográfico natural por gravedad desde la cresta de cumbre (2,436 msnm) hacia la vaguada receptora del Nacimiento de Golondrinas (2,163 msnm). Factor de entrega: <strong>1.00x (15% base)</strong>."
-                badge_html = "<span class='badge-status' style='background: rgba(0,80,115,0.15); color: #005073; border: 1px solid #005073;'>🌬️ RÉGIMEN OROGRÁFICO ESTÁNDAR</span>"
-                
-            return {
-                "dir": dir_v,
-                "vel": vel_v,
-                "estado": estado_vector,
-                "factor_peso": factor_peso,
-                "descripcion": desc_vector,
-                "badge": badge_html
-            }
+        # Vector Geodésico La Mariana (2,436 msnm) -> Nacimiento Golondrinas / El Pajal (2,163 msnm): Rumbo NNE ~22°
+        # Viento favorable de procedencia (que empuja hacia el NNE): Sur / Suroeste (140° a 270°, óptimo 202°)
+        rad = (dir_v - 202.0) * np.pi / 180.0
+        componente_empuje = np.cos(rad) # +1.0 empuje máximo hacia Golondrinas, -1.0 alejamiento hacia Río Frío
+        
+        tag_virtual = " <span class='badge-status' style='background: rgba(0,204,150,0.2); color: #00805A; border: 1px solid #00CC96;'>🤖 ESTIMADO POR IA (REF. EL PAJAL)</span>" if es_estimado_mariana else ""
+        
+        if 140.0 <= dir_v <= 270.0 and vel_v >= 1.0:
+            estado_vector = "EMPUJE_ACTIVO_GOLONDRINAS"
+            factor_peso = min(1.40, max(0.85, 1.0 + (componente_empuje * 0.40)))
+            desc_vector = f"🧭 <strong>Vector Viento Activo:</strong> <code>{dir_v:.0f}° ({vel_v:.1f} km/h)</code> procedente del <strong>Sur-Suroeste (SSW)</strong>.{' <em>[Estimado por gradiente de cresta desde El Pajal]</em>' if es_estimado_mariana else ''}<br>💨 <strong>Empuje Orográfico Confirmado:</strong> Arrastre activo de nubosidad y lluvia desde la cresta de La Mariana (2,436 msnm) directamente hacia el <strong>Nacimiento de Golondrinas y El Pajal</strong> (Rumbo NNE 22°, descenso topográfico de -273 m en 2.14 km). Factor de entrega: <strong>{factor_peso:.2f}x</strong>."
+            badge_html = f"<span class='badge-status' style='background: rgba(0,204,150,0.15); color: #00CC96; border: 1px solid #00CC96;'>💨 VECTOR: EMPUJE CONFIRMADO A GOLONDRINAS</span>{tag_virtual}"
+        elif (dir_v < 100.0 or dir_v > 300.0) and vel_v >= 3.5:
+            estado_vector = "DERIVA_RIO_FRIO"
+            factor_peso = 0.30
+            desc_vector = f"🍃 <strong>Vector Viento Opuesto:</strong> <code>{dir_v:.0f}° ({vel_v:.1f} km/h)</code> procedente del <strong>Norte/Noreste</strong>.{' <em>[Estimado por gradiente desde El Pajal]</em>' if es_estimado_mariana else ''}<br>La masa nubosa drena preferentemente hacia la vertiente occidental del <strong>Río Frío (PTAP Florida)</strong>. Factor de entrega a Tona reducido a: <strong>{factor_peso:.2f}x</strong>."
+            badge_html = f"<span class='badge-status' style='background: rgba(171,99,250,0.15); color: #AB63FA; border: 1px solid #AB63FA;'>🍃 VECTOR: DERIVA HACIA RÍO FRÍO (FLORIDA)</span>{tag_virtual}"
+        elif (dir_v < 100.0 or dir_v > 300.0) and vel_v >= 1.0:
+            estado_vector = "DERIVA_LEVE_RIO_FRIO"
+            factor_peso = max(0.40, 1.0 - ((vel_v / 3.5) * 0.60))
+            desc_vector = f"🍃 <strong>Brisa Leve del Norte:</strong> <code>{dir_v:.0f}° ({vel_v:.1f} km/h)</code>.{' <em>[Estimado desde El Pajal]</em>' if es_estimado_mariana else ''}<br>Transición orográfica: parte de la nubosidad deriva hacia el Río Frío (PTAP Florida) y el resto precipita en cumbre. Factor de entrega: <strong>{factor_peso:.2f}x</strong>."
+            badge_html = f"<span class='badge-status' style='background: rgba(171,99,250,0.15); color: #AB63FA; border: 1px solid #AB63FA;'>🍃 VECTOR: BRISA LEVE RÍO FRÍO</span>{tag_virtual}"
+        else:
+            estado_vector = "REGIMEN_CONVECTIVO"
+            factor_peso = 1.0
+            desc_vector = f"🌬️ <strong>Vector Viento en Calma/Convectivo:</strong> <code>{dir_v:.0f}° ({vel_v:.1f} km/h)</code>.<br>Derrame orográfico natural por gravedad desde la cresta de cumbre (2,436 msnm) hacia la vaguada receptora del Nacimiento de Golondrinas (2,163 msnm). Factor de entrega: <strong>1.00x (15% base)</strong>."
+            badge_html = f"<span class='badge-status' style='background: rgba(0,80,115,0.15); color: #005073; border: 1px solid #005073;'>🌬️ RÉGIMEN OROGRÁFICO ESTÁNDAR</span>{tag_virtual}"
+            
+        return {
+            "dir": dir_v,
+            "vel": vel_v,
+            "estado": estado_vector,
+            "factor_peso": factor_peso,
+            "descripcion": desc_vector,
+            "badge": badge_html
+        }
     except:
         pass
     return {
@@ -1143,11 +1275,12 @@ def mostrar_seccion_edv():
         if fig: st.plotly_chart(fig, use_container_width=True)
 
 # ============================================================
-# 8. PESTAÑAS PRINCIPALES DEL SISTEMA (5 PESTAÑAS)
+# 8. PESTAÑAS PRINCIPALES DEL SISTEMA (6 PESTAÑAS)
 # ============================================================
-tab_situacion, tab_embalse_2026, tab_series, tab_ia, tab_matematica = st.tabs([
+tab_situacion, tab_embalse_2026, tab_radar_72h, tab_series, tab_ia, tab_matematica = st.tabs([
     "📊 Situación Actual", 
     "🌊 Gestión Embalse & Sequía 2026", 
+    "🛰️ Radar Satelital & Pronóstico 72h",
     "📈 Series de Tiempo & Descargas", 
     "🤖 Asistente IA MIMAT-C",
     "📐 Fundamento Matemático & Auditoría"
@@ -1267,44 +1400,91 @@ with tab_situacion:
             mostrar_seccion_edv()
             
         else:
+            salud = evaluar_salud_estacion(df_hist, row, seleccion)
+            
             p_val = float(row.get('precipitacion', 0)) if pd.notna(row.get('precipitacion')) else 0.0
-            nombre, msg, color, vel = obtener_alerta(p_val, seleccion)
-            
-            st.markdown(f'''
-            <div style="background-color:{color}; padding:16px; border-radius:12px; text-align:center; color:black; animation: blink {vel} infinite; border: 2px solid #333;">
-                <h3 style="margin:0;">🚦 {nombre}</h3>
-                <b>{msg}</b>
-            </div>
-            <style>
-            @keyframes blink {{ 0%{{opacity:1}} 50%{{opacity:0.3}} 100%{{opacity:1}} }}
-            </style>
-            ''', unsafe_allow_html=True)
-            st.write("")
-            
             t_val = float(row.get('temperatura', 0)) if pd.notna(row.get('temperatura')) else 0.0
             h_val = float(row.get('humedad', 0)) if pd.notna(row.get('humedad')) else 0.0
             v_val = float(row.get('velocidad_viento', 0)) if pd.notna(row.get('velocidad_viento')) else 0.0
             d_val = float(row.get('direccion_viento', 0)) if pd.notna(row.get('direccion_viento')) else 0.0
             b_val = float(row.get('voltaje_bateria', 0)) if pd.notna(row.get('voltaje_bateria')) else 0.0
             
-            c1, c2, c3, c4, c5, c6 = st.columns(6)
-            c1.metric("🌡️ Temp", f"{t_val:.1f} °C")
-            c2.metric("🌧️ Precip", f"{p_val:.1f} mm")
-            c3.metric("💧 Humedad", f"{h_val:.1f} %")
-            c4.metric("💨 Viento", f"{v_val:.1f} km/h")
-            c5.metric("🧭 Dir. Viento", f"{d_val:.0f}°")
-            c6.metric("🔋 Voltaje", f"{b_val:.1f} V")
+            sensor_virt = None
+            if not salud["es_valido"]:
+                sensor_virt = obtener_sensor_virtual_resiliente(seleccion)
+                
+            if not salud["es_valido"]:
+                st.markdown(f"""
+                <div class="alert-box alert-red" style="border-left: 5px solid #FF4B4B; background: rgba(255, 75, 75, 0.12); margin-bottom: 12px; display: flex; gap: 12px; align-items: flex-start;">
+                    <span style="font-size: 32px; line-height: 1;">🚨</span>
+                    <div>
+                        <strong style="color: #FF4B4B; font-size: 15px;">{salud['mensaje']}</strong><br>
+                        <div style="font-size: 13px; color: #222; margin-top: 4px; line-height: 1.5;">
+                            <strong>📡 Diagnóstico del Sistema:</strong> {salud['diagnostico']}<br>
+                            <strong>🛠️ Acción Técnica Recomendada:</strong> {salud['accion']}
+                        </div>
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
+                
+                if sensor_virt:
+                    st.markdown(f"""
+                    <div style="background: rgba(0, 204, 150, 0.10); border: 1px solid #00CC96; border-left: 5px solid #00CC96; padding: 12px 16px; border-radius: 10px; margin-bottom: 15px;">
+                        <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap;">
+                            <strong style="color: #00805A; font-size: 13.5px;">🤖 SISTEMA INTELIGENTE RESILIENTE: Sensor Virtual Activo</strong>
+                            <span class="badge-status" style="background: rgba(0,204,150,0.2); color: #00805A; border: 1px solid #00805A;">IMPUTACIÓN EN TIEMPO REAL</span>
+                        </div>
+                        <div style="font-size: 12.5px; color: #333; margin-top: 4px;">
+                            Para mantener operativo el balance hidrológico de la cuenca y el vector de viento sin distorsiones, el sistema calcula estimaciones físicas continuas mediante <strong>{sensor_virt['origen']}</strong>.
+                        </div>
+                    </div>
+                    """, unsafe_allow_html=True)
+                    
+                    t_val = sensor_virt['temperatura']
+                    h_val = sensor_virt['humedad']
+                    v_val = sensor_virt['velocidad_viento']
+                    d_val = sensor_virt['direccion_viento']
+                    p_val = sensor_virt['precipitacion']
+            else:
+                nombre, msg, color, vel = obtener_alerta(p_val, seleccion)
+                st.markdown(f'''
+                <div style="background-color:{color}; padding:16px; border-radius:12px; text-align:center; color:black; animation: blink {vel} infinite; border: 2px solid #333;">
+                    <h3 style="margin:0;">🚦 {nombre}</h3>
+                    <b>{msg}</b>
+                </div>
+                <style>
+                @keyframes blink {{ 0%{{opacity:1}} 50%{{opacity:0.3}} 100%{{opacity:1}} }}
+                </style>
+                ''', unsafe_allow_html=True)
+                st.write("")
             
-            st.info(f"📅 Última lectura: {row['timestamp'].strftime('%Y-%m-%d %H:%M:%S')}")
+            c1, c2, c3, c4, c5, c6 = st.columns(6)
+            if sensor_virt:
+                c1.metric("🌡️ Temp (Virtual)", f"{t_val:.1f} °C", help="Estimada por gradiente altimétrico vertical (-0.65°C/100m) desde El Pajal")
+                c2.metric("🌧️ Precip (Virtual)", f"{p_val:.1f} mm")
+                c3.metric("💧 Humedad (Virtual)", f"{h_val:.1f} %")
+                c4.metric("💨 Viento (Virtual)", f"{v_val:.1f} km/h")
+                c5.metric("🧭 Dir. Viento (Virtual)", f"{d_val:.0f}°")
+                c6.metric("🔋 Voltaje", "N/A", help="Sensor de batería pendiente de conexión en SCADA")
+            else:
+                c1.metric("🌡️ Temp", f"{t_val:.1f} °C")
+                c2.metric("🌧️ Precip", f"{p_val:.1f} mm")
+                c3.metric("💧 Humedad", f"{h_val:.1f} %")
+                c4.metric("💨 Viento", f"{v_val:.1f} km/h")
+                c5.metric("🧭 Dir. Viento", f"{d_val:.0f}°")
+                c6.metric("🔋 Voltaje", f"{b_val:.1f} V" if b_val > 0 else "N/A", help="Sensor de batería pendiente de integración SCADA")
+            
+            st.info(f"📅 Última lectura recibida en servidor: {row['timestamp'].strftime('%Y-%m-%d %H:%M:%S')}")
             
             if not df_hist.empty and 'temperatura' in df_hist.columns:
                 t_series = pd.to_numeric(df_hist['temperatura'], errors='coerce').dropna()
-                if not t_series.empty:
-                    st.markdown("### 📊 Estadísticas del Período")
+                t_series_valid = t_series[t_series > 0]
+                if not t_series_valid.empty:
+                    st.markdown("### 📊 Estadísticas del Período (Datos Válidos)")
                     col1, col2, col3 = st.columns(3)
-                    with col1: st.metric("🔽 Temp Mínima", f"{t_series.min():.1f}°C")
-                    with col2: st.metric("🔼 Temp Máxima", f"{t_series.max():.1f}°C")
-                    with col3: st.metric("📊 Temp Promedio", f"{t_series.mean():.1f}°C")
+                    with col1: st.metric("🔽 Temp Mínima", f"{t_series_valid.min():.1f}°C")
+                    with col2: st.metric("🔼 Temp Máxima", f"{t_series_valid.max():.1f}°C")
+                    with col3: st.metric("📊 Temp Promedio", f"{t_series_valid.mean():.1f}°C")
                     
             mostrar_ficha_geografica_estacion(seleccion)
     else:
@@ -1358,7 +1538,93 @@ with tab_embalse_2026:
         st.plotly_chart(fig_curva, use_container_width=True)
 
 # ------------------------------------------------------------
-# TAB 3: SERIES DE TIEMPO, ROSA DE VIENTOS Y DESCARGAS
+# TAB 3: RADAR SATELITAL & PRONÓSTICO 72H
+# ------------------------------------------------------------
+with tab_radar_72h:
+    st.subheader(f"🛰️ Radar Satelital & Pronóstico Meteorológico a 72h — {seleccion.replace('_', ' ')}")
+    st.caption("Predicción numérica de alta resolución (ECMWF/GFS) y reflectividad Doppler en vivo para cada estación de la red amb.")
+    
+    meta_sel = METADATA_ESTACIONES_AMB.get(seleccion, METADATA_ESTACIONES_AMB["Embalse"])
+    lat_sel = meta_sel["lat"]
+    lon_sel = meta_sel["lon"]
+    
+    col_rad1, col_rad2 = st.columns([1.25, 1])
+    
+    with col_rad1:
+        st.markdown(f"### 🌧️ Pronóstico Numérico Dedicado (Open-Meteo): {meta_sel['nombre_completo']}")
+        st.caption(f"📍 Coordenadas: `{lat_sel:.4f}°N, {lon_sel:.4f}°W` • Altitud: `{meta_sel['altitud_msnm']:,.2f} msnm` • Cuenca: `{meta_sel['cuenca_principal']}`")
+        
+        df_fc = obtener_pronostico_open_meteo(lat_sel, lon_sel)
+        
+        if not df_fc.empty:
+            ahora_fc = datetime.now()
+            df_fc['time_dt'] = pd.to_datetime(df_fc['time'])
+            df_24h_fc = df_fc[df_fc['time_dt'] <= (ahora_fc + timedelta(hours=24))]
+            
+            lluvia_24h = df_24h_fc['precipitation'].sum() if not df_24h_fc.empty else df_fc.iloc[:24]['precipitation'].sum()
+            lluvia_72h = df_fc['precipitation'].sum()
+            t_max_fc = df_fc['temperature_2m'].max()
+            t_min_fc = df_fc['temperature_2m'].min()
+            v_max_fc = df_fc['wind_speed_10m'].max()
+            
+            mc1, mc2, mc3, mc4 = st.columns(4)
+            mc1.metric("🌧️ Lluvia Próximas 24h", f"{lluvia_24h:.1f} mm", delta="Lluvia esperada" if lluvia_24h > 0 else "Sin lluvia")
+            mc2.metric("🌧️ Lluvia Total 72h", f"{lluvia_72h:.1f} mm", delta="3 días acumulados")
+            mc3.metric("🌡️ Temp Prevista", f"{t_min_fc:.1f} / {t_max_fc:.1f} °C")
+            mc4.metric("💨 Ráfaga Máx Prevista", f"{v_max_fc:.1f} km/h")
+            
+            # Gráfica 1: Precipitación Horaria Prevista
+            fig_fc_p = px.bar(
+                df_fc, 
+                x='time', 
+                y='precipitation', 
+                title=f'🌧️ Precipitación Horaria Prevista (mm/h) — Próximas 72 Horas en {seleccion.replace("_", " ")}',
+                labels={'precipitation': 'Lluvia (mm/h)', 'time': 'Fecha / Hora'},
+                color='precipitation',
+                color_continuous_scale='Blues'
+            )
+            fig_fc_p.update_layout(height=280, template='plotly_white', margin=dict(t=40, b=10, l=10, r=10))
+            st.plotly_chart(fig_fc_p, use_container_width=True)
+            
+            # Gráfica 2: Temperatura y Viento Previsto
+            fig_fc_t = go.Figure()
+            fig_fc_t.add_trace(go.Scatter(x=df_fc['time'], y=df_fc['temperature_2m'], mode='lines', name='Temperatura (°C)', line=dict(color='#FF4B4B', width=2.5)))
+            fig_fc_t.add_trace(go.Scatter(x=df_fc['time'], y=df_fc['wind_speed_10m'], mode='lines', name='Viento (km/h)', line=dict(color='#005073', width=2, dash='dot'), yaxis='y2'))
+            fig_fc_t.update_layout(
+                title='🌡️ Curva de Temperatura (°C) & 💨 Velocidad de Viento (km/h) a 72 Horas',
+                xaxis_title='Fecha / Hora',
+                yaxis=dict(title='Temperatura (°C)', titlefont=dict(color='#FF4B4B'), tickfont=dict(color='#FF4B4B')),
+                yaxis2=dict(title='Viento (km/h)', titlefont=dict(color='#005073'), tickfont=dict(color='#005073'), overlaying='y', side='right'),
+                height=280,
+                template='plotly_white',
+                legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+                margin=dict(t=40, b=10, l=10, r=10)
+            )
+            st.plotly_chart(fig_fc_t, use_container_width=True)
+            
+        else:
+            st.warning("⚠️ No se pudo conectar con el servicio de pronóstico meteorológico.")
+            
+    with col_rad2:
+        st.markdown("### 🛰️ Radar Satelital de Lluvia en Vivo (Santander)")
+        st.caption("Reflectividad Doppler y desplazamiento de frentes de tormenta en tiempo real")
+        
+        radar_url = f"https://www.rainviewer.com/map.html?loc={lat_sel},{lon_sel},10&oFa=0&oC=1&oU=0&oCS=1&oF=0&oAP=1&c=3&o=83&lm=1&layer=radar&sm=1&sn=1"
+        st.markdown(f"""
+        <iframe src="{radar_url}" width="100%" height="480" frameborder="0" style="border-radius: 12px; border: 2px solid #005073; box-shadow: 0 4px 15px rgba(0,0,0,0.12);"></iframe>
+        <div style="font-size: 11.5px; color: #555; text-align: center; margin-top: 6px;">
+            📡 Radar Doppler interactivo centrado en <strong>{meta_sel['nombre_completo']}</strong>. Usa los controles inferiores para reproducir la animación en vivo.
+        </div>
+        """, unsafe_allow_html=True)
+        
+    if not df_fc.empty:
+        with st.expander("📋 Ver Matriz Detallada de Pronóstico Numérico Hora a Hora (72h)"):
+            df_fc_tabla = df_fc[['time', 'precipitation', 'temperature_2m', 'relative_humidity_2m', 'wind_speed_10m', 'wind_direction_10m']].copy()
+            df_fc_tabla.columns = ['Fecha / Hora', 'Lluvia (mm/h)', 'Temperatura (°C)', 'Humedad (%)', 'Viento (km/h)', 'Dir. Viento (°)']
+            st.dataframe(df_fc_tabla, use_container_width=True, hide_index=True)
+
+# ------------------------------------------------------------
+# TAB 4: SERIES DE TIEMPO, ROSA DE VIENTOS Y DESCARGAS
 # ------------------------------------------------------------
 with tab_series:
     st.subheader(f"📈 Series de Tiempo — {seleccion.replace('_', ' ')}")
