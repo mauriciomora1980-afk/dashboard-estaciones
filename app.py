@@ -12,6 +12,7 @@ from datetime import datetime, timedelta
 from pytz import timezone
 import plotly.express as px
 import plotly.graph_objects as go
+from plotly.subplots import make_subplots
 from io import BytesIO
 import openpyxl
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
@@ -368,11 +369,11 @@ def get_cota_embalse_actual_segura():
     return 885.75
 
 @st.cache_data(ttl=1800)
-def obtener_pronostico_open_meteo(lat: float, lon: float):
+def obtener_pronostico_open_meteo(lat: float, lon: float, past_days: int = 7, forecast_days: int = 3):
     try:
-        url = f"https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}&hourly=precipitation,temperature_2m,relative_humidity_2m,wind_speed_10m,wind_direction_10m&forecast_days=3&timezone=America/Bogota"
+        url = f"https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}&hourly=precipitation,temperature_2m,relative_humidity_2m,wind_speed_10m,wind_direction_10m&past_days={past_days}&forecast_days={forecast_days}&timezone=America/Bogota"
         req = urllib.request.Request(url, headers={'User-Agent': 'MIMAT-C26-amb/2.6'})
-        with urllib.request.urlopen(req, timeout=5) as response:
+        with urllib.request.urlopen(req, timeout=8) as response:
             data = json.loads(response.read().decode('utf-8'))
             if 'hourly' in data:
                 df_fc = pd.DataFrame(data['hourly'])
@@ -381,6 +382,122 @@ def obtener_pronostico_open_meteo(lat: float, lon: float):
     except Exception as e:
         pass
     return pd.DataFrame()
+
+def calcular_interventoria_satelital_vs_terreno(df_hist, lat, lon, horas_eval=72, umbral_mm=0.1):
+    """
+    Módulo de Interventoría & Validación Ex-Post (Skill Scores WMO / NOAA)
+    Contrasta la telemetría horaria del pluviómetro físico (Pluvio² / balancín)
+    contra las predicciones / reflectividad del modelo satelital (Open-Meteo).
+    """
+    dias_past = max(1, int(np.ceil(horas_eval / 24.0)))
+    df_sat_full = obtener_pronostico_open_meteo(lat, lon, past_days=dias_past, forecast_days=1)
+    
+    if df_sat_full.empty:
+        return {"valido": False, "mensaje": "No se pudo obtener datos satelitales históricos para la estación."}
+        
+    ahora_local = datetime.now(colombia_tz)
+    limite_pasado = ahora_local - timedelta(hours=horas_eval)
+    
+    df_sat = df_sat_full.copy()
+    if df_sat['time'].dt.tz is None:
+        df_sat['time_dt'] = df_sat['time'].dt.tz_localize(colombia_tz)
+    else:
+        df_sat['time_dt'] = df_sat['time'].dt.tz_convert(colombia_tz)
+        
+    df_sat_eval = df_sat[(df_sat['time_dt'] >= limite_pasado) & (df_sat['time_dt'] <= ahora_local)].copy()
+    
+    if df_sat_eval.empty:
+        return {"valido": False, "mensaje": "Sin registros satelitales en la ventana seleccionada."}
+        
+    df_sat_eval['time_bin'] = df_sat_eval['time_dt'].dt.floor('h')
+    df_sat_hourly = df_sat_eval.groupby('time_bin')['precipitation'].max().reset_index()
+    df_sat_hourly.rename(columns={'precipitation': 'precip_sat_mm'}, inplace=True)
+    
+    # Procesar telemetría física de terreno
+    if df_hist.empty or 'precipitacion' not in df_hist.columns:
+        df_obs_hourly = pd.DataFrame(columns=['time_bin', 'precip_obs_mm'])
+    else:
+        df_h = df_hist.copy()
+        if 'timestamp' in df_h.columns:
+            if df_h['timestamp'].dt.tz is None:
+                df_h['t_local'] = df_h['timestamp'].dt.tz_localize(colombia_tz)
+            else:
+                df_h['t_local'] = df_h['timestamp'].dt.tz_convert(colombia_tz)
+                
+            df_h_eval = df_h[(df_h['t_local'] >= limite_pasado) & (df_h['t_local'] <= ahora_local)].copy()
+            df_h_eval['time_bin'] = df_h_eval['t_local'].dt.floor('h')
+            df_h_eval['precip_val'] = pd.to_numeric(df_h_eval['precipitacion'], errors='coerce').fillna(0.0)
+            df_obs_hourly = df_h_eval.groupby('time_bin')['precip_val'].sum().reset_index()
+            df_obs_hourly.rename(columns={'precip_val': 'precip_obs_mm'}, inplace=True)
+        else:
+            df_obs_hourly = pd.DataFrame(columns=['time_bin', 'precip_obs_mm'])
+            
+    # Unir ambas series temporales hora a hora
+    df_merged = pd.merge(df_sat_hourly, df_obs_hourly, on='time_bin', how='left')
+    df_merged['precip_obs_mm'] = df_merged['precip_obs_mm'].fillna(0.0)
+    df_merged['precip_sat_mm'] = df_merged['precip_sat_mm'].fillna(0.0)
+    df_merged.sort_values('time_bin', inplace=True)
+    
+    # Conteo de la Matriz de Contingencia 2x2
+    s_rain = df_merged['precip_sat_mm'] >= umbral_mm
+    o_rain = df_merged['precip_obs_mm'] >= umbral_mm
+    
+    hits = int((s_rain & o_rain).sum())              # A: Acierto de Tormenta
+    false_alarms = int((s_rain & ~o_rain).sum())      # B: Falsa Alarma Satelital
+    misses = int((~s_rain & o_rain).sum())            # C: Omisión (Llovió en tierra no vista por satélite)
+    correct_neg = int((~s_rain & ~o_rain).sum())      # D: Acierto de Tiempo Seco
+    total_horas = len(df_merged)
+    
+    # 1. Exactitud Global (% Coincidencia)
+    accuracy_pct = ((hits + correct_neg) / total_horas * 100.0) if total_horas > 0 else 100.0
+    
+    # 2. Probability of Detection (POD) = A / (A + C)
+    total_eventos_reales = hits + misses
+    pod_pct = (hits / total_eventos_reales * 100.0) if total_eventos_reales > 0 else (100.0 if false_alarms == 0 else 0.0)
+    
+    # 3. False Alarm Ratio (FAR) = B / (A + B)
+    total_predicciones_lluvia = hits + false_alarms
+    far_pct = (false_alarms / total_predicciones_lluvia * 100.0) if total_predicciones_lluvia > 0 else 0.0
+    
+    # 4. Critical Success Index (CSI / Threat Score) = A / (A + B + C)
+    denominador_csi = hits + false_alarms + misses
+    csi_pct = (hits / denominador_csi * 100.0) if denominador_csi > 0 else (100.0 if correct_neg > 0 else 0.0)
+    
+    # 5. Errores Cuantitativos de Precipitación
+    diff = df_merged['precip_sat_mm'] - df_merged['precip_obs_mm']
+    mae_mm = float(np.abs(diff).mean()) if total_horas > 0 else 0.0
+    rmse_mm = float(np.sqrt((diff ** 2).mean())) if total_horas > 0 else 0.0
+    
+    lluvia_tot_obs = float(df_merged['precip_obs_mm'].sum())
+    lluvia_tot_sat = float(df_merged['precip_sat_mm'].sum())
+    
+    if total_horas >= 3 and (df_merged['precip_sat_mm'].std() > 0 or df_merged['precip_obs_mm'].std() > 0):
+        corr_val = np.corrcoef(df_merged['precip_sat_mm'], df_merged['precip_obs_mm'])[0, 1]
+        corr_pearson = float(corr_val) if not np.isnan(corr_val) else (1.0 if abs(lluvia_tot_obs - lluvia_tot_sat) < 0.1 else 0.0)
+    else:
+        corr_pearson = 1.0 if hits > 0 or (lluvia_tot_obs == 0 and lluvia_tot_sat == 0) else 0.0
+        
+    return {
+        "valido": True,
+        "df_comparativo": df_merged,
+        "hits": hits,
+        "false_alarms": false_alarms,
+        "misses": misses,
+        "correct_neg": correct_neg,
+        "total_horas": total_horas,
+        "total_eventos_reales": total_eventos_reales,
+        "total_predicciones_lluvia": total_predicciones_lluvia,
+        "accuracy_pct": accuracy_pct,
+        "pod_pct": pod_pct,
+        "far_pct": far_pct,
+        "csi_pct": csi_pct,
+        "mae_mm": mae_mm,
+        "rmse_mm": rmse_mm,
+        "corr_pearson": corr_pearson,
+        "lluvia_tot_obs": lluvia_tot_obs,
+        "lluvia_tot_sat": lluvia_tot_sat,
+        "umbral_mm": umbral_mm
+    }
 
 def evaluar_salud_estacion(df_hist, row, estacion):
     ahora = datetime.now(colombia_tz)
@@ -459,16 +576,29 @@ def obtener_sensor_virtual_resiliente(estacion):
         h_pajal = float(df_pajal.iloc[0].get('humedad', 85.0)) if not df_pajal.empty and float(df_pajal.iloc[0].get('humedad', 0)) > 0 else 88.0
         v_pajal = float(df_pajal.iloc[0].get('velocidad_viento', 2.0)) if not df_pajal.empty and float(df_pajal.iloc[0].get('velocidad_viento', 0)) > 0 else 2.5
         d_pajal = float(df_pajal.iloc[0].get('direccion_viento', 202.0)) if not df_pajal.empty and float(df_pajal.iloc[0].get('direccion_viento', 0)) > 0 else 202.0
-        p_pajal = float(df_pajal.iloc[0].get('precipitacion', 0.0)) if not df_pajal.empty else 0.0
         
-        # Gradiente adiabático vertical en Santander: -0.65°C / 100m
+        # 1. Temperatura y Humedad por Gradiente Altimétrico Vertical (-0.65°C / 100m)
         # Desnivel La Mariana (2,436m) vs El Pajal (2,163m) = +273m -> -1.77°C
         t_virtual = max(8.0, t_pajal - (0.65 * (2436.0 - 2163.0) / 100.0))
         h_virtual = min(100.0, max(75.0, h_pajal + 6.0)) # Mayor humedad por condensación en cresta
         v_virtual = max(1.5, v_pajal * 1.25) # Mayor exposición al viento en filo divisorio
         d_virtual = d_pajal
-        p_virtual = p_pajal
         
+        # 2. Precipitación Satelital Dedicada (Cruce con Radar / Open-Meteo para evitar falsas lluvias de vecinos)
+        p_virtual = 0.0
+        meta_mar = METADATA_ESTACIONES_AMB.get("La_Mariana", {})
+        lat_mar = meta_mar.get("lat", 7.122739)
+        lon_mar = meta_mar.get("lon", -73.007019)
+        
+        df_fc_mar = obtener_pronostico_open_meteo(lat_mar, lon_mar)
+        if not df_fc_mar.empty:
+            p_sat = float(df_fc_mar.iloc[0].get('precipitation', 0.0) or 0.0)
+            p_virtual = p_sat
+            origen_lluvia = f"Radar Satelital en La Mariana ({p_virtual:.1f} mm)"
+        else:
+            p_virtual = 0.0
+            origen_lluvia = "Validación satelital (0.0 mm)"
+            
         return {
             "temperatura": t_virtual,
             "humedad": h_virtual,
@@ -477,7 +607,7 @@ def obtener_sensor_virtual_resiliente(estacion):
             "precipitacion": p_virtual,
             "voltaje_bateria": 12.6,
             "es_estimado": True,
-            "origen": "Imputación Inteligente por Gradiente Altimétrico (-0.65°C/100m) desde Estación El Pajal (2,163m)"
+            "origen": f"Gradiente Altimétrico (-0.65°C/100m) desde El Pajal + {origen_lluvia}"
         }
     return None
 
@@ -1554,11 +1684,12 @@ with tab_radar_72h:
         st.markdown(f"### 🌧️ Pronóstico Numérico Dedicado (Open-Meteo): {meta_sel['nombre_completo']}")
         st.caption(f"📍 Coordenadas: `{lat_sel:.4f}°N, {lon_sel:.4f}°W` • Altitud: `{meta_sel['altitud_msnm']:,.2f} msnm` • Cuenca: `{meta_sel['cuenca_principal']}`")
         
-        df_fc = obtener_pronostico_open_meteo(lat_sel, lon_sel)
+        df_fc_all = obtener_pronostico_open_meteo(lat_sel, lon_sel, past_days=7, forecast_days=3)
         
-        if not df_fc.empty:
+        if not df_fc_all.empty:
             ahora_fc = datetime.now()
-            df_fc['time_dt'] = pd.to_datetime(df_fc['time'])
+            df_fc_all['time_dt'] = pd.to_datetime(df_fc_all['time'])
+            df_fc = df_fc_all[df_fc_all['time_dt'] >= (ahora_fc - timedelta(hours=1))].head(72).copy()
             df_24h_fc = df_fc[df_fc['time_dt'] <= (ahora_fc + timedelta(hours=24))]
             
             lluvia_24h = df_24h_fc['precipitation'].sum() if not df_24h_fc.empty else df_fc.iloc[:24]['precipitation'].sum()
@@ -1586,20 +1717,21 @@ with tab_radar_72h:
             fig_fc_p.update_layout(height=280, template='plotly_white', margin=dict(t=40, b=10, l=10, r=10))
             st.plotly_chart(fig_fc_p, use_container_width=True)
             
-            # Gráfica 2: Temperatura y Viento Previsto
-            fig_fc_t = go.Figure()
-            fig_fc_t.add_trace(go.Scatter(x=df_fc['time'], y=df_fc['temperature_2m'], mode='lines', name='Temperatura (°C)', line=dict(color='#FF4B4B', width=2.5)))
-            fig_fc_t.add_trace(go.Scatter(x=df_fc['time'], y=df_fc['wind_speed_10m'], mode='lines', name='Viento (km/h)', line=dict(color='#005073', width=2, dash='dot'), yaxis='y2'))
+            # Gráfica 2: Temperatura y Viento Previsto (Doble Eje Y compatible)
+            fig_fc_t = make_subplots(specs=[[{"secondary_y": True}]])
+            fig_fc_t.add_trace(go.Scatter(x=df_fc['time'], y=df_fc['temperature_2m'], mode='lines', name='Temperatura (°C)', line=dict(color='#FF4B4B', width=2.5)), secondary_y=False)
+            fig_fc_t.add_trace(go.Scatter(x=df_fc['time'], y=df_fc['wind_speed_10m'], mode='lines', name='Viento (km/h)', line=dict(color='#005073', width=2, dash='dot')), secondary_y=True)
+            
             fig_fc_t.update_layout(
                 title='🌡️ Curva de Temperatura (°C) & 💨 Velocidad de Viento (km/h) a 72 Horas',
                 xaxis_title='Fecha / Hora',
-                yaxis=dict(title='Temperatura (°C)', titlefont=dict(color='#FF4B4B'), tickfont=dict(color='#FF4B4B')),
-                yaxis2=dict(title='Viento (km/h)', titlefont=dict(color='#005073'), tickfont=dict(color='#005073'), overlaying='y', side='right'),
                 height=280,
                 template='plotly_white',
                 legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
                 margin=dict(t=40, b=10, l=10, r=10)
             )
+            fig_fc_t.update_yaxes(title_text="Temperatura (°C)", secondary_y=False)
+            fig_fc_t.update_yaxes(title_text="Viento (km/h)", secondary_y=True)
             st.plotly_chart(fig_fc_t, use_container_width=True)
             
         else:
@@ -1617,11 +1749,187 @@ with tab_radar_72h:
         </div>
         """, unsafe_allow_html=True)
         
-    if not df_fc.empty:
+    if not df_fc_all.empty:
         with st.expander("📋 Ver Matriz Detallada de Pronóstico Numérico Hora a Hora (72h)"):
             df_fc_tabla = df_fc[['time', 'precipitation', 'temperature_2m', 'relative_humidity_2m', 'wind_speed_10m', 'wind_direction_10m']].copy()
             df_fc_tabla.columns = ['Fecha / Hora', 'Lluvia (mm/h)', 'Temperatura (°C)', 'Humedad (%)', 'Viento (km/h)', 'Dir. Viento (°)']
             st.dataframe(df_fc_tabla, use_container_width=True, hide_index=True)
+
+    # ------------------------------------------------------------
+    # SECCIÓN: INTERVENTORÍA EX-POST DE COINCIDENCIA SATELITAL VS PLUVIÓMETRO
+    # ------------------------------------------------------------
+    st.markdown("---")
+    st.markdown(f"### 🔬 Interventoría & Validación Ex-Post: Satélite vs. Pluviómetro Físico ({seleccion.replace('_', ' ')})")
+    st.caption("Auditoría retrospectiva de exactitud hidrometeorológica: Contraste hora a hora entre el pronóstico satelital numérico y la medición física real registrada en el pluviómetro de terreno (Pluvio² / balancín).")
+    
+    col_int_opt1, col_int_opt2 = st.columns([1, 1])
+    with col_int_opt1:
+        horas_eval_interv = st.selectbox(
+            "⏱️ Ventana Histórica a Auditar:",
+            [24, 48, 72, 168],
+            index=2,
+            format_func=lambda h: f"Últimas {h} Horas ({h//24} Días)" if h >= 24 else f"Últimas {h} Horas",
+            help="Período retrospectivo para contrastar la serie temporal de lluvia satelital contra la telemetría en BigQuery."
+        )
+    with col_int_opt2:
+        umbral_lluvia_interv = st.slider(
+            "🌧️ Umbral de Detección de Lluvia (mm/h):",
+            min_value=0.05,
+            max_value=1.0,
+            value=0.10,
+            step=0.05,
+            help="Intensidad mínima horaria para clasificar un intervalo como evento activo de lluvia (Estándar OMM / WMO = 0.1 mm/h)."
+        )
+        
+    res_interv = calcular_interventoria_satelital_vs_terreno(
+        df_hist=df_hist,
+        lat=lat_sel,
+        lon=lon_sel,
+        horas_eval=horas_eval_interv,
+        umbral_mm=umbral_lluvia_interv
+    )
+    
+    if res_interv.get("valido"):
+        # 1. Tarjetas Superiores de Métricas de Calibración
+        k1, k2, k3, k4 = st.columns(4)
+        k1.metric(
+            "🎯 Coincidencia Global",
+            f"{res_interv['accuracy_pct']:.1f}%",
+            delta=f"{res_interv['hits'] + res_interv['correct_neg']} de {res_interv['total_horas']}h concordantes",
+            help="Exactitud global del modelo satelital considerando tanto horas con lluvia como horas de tiempo seco."
+        )
+        k2.metric(
+            "🌧️ Tasa Detección (POD)",
+            f"{res_interv['pod_pct']:.1f}%",
+            delta=f"{res_interv['hits']} aciertos / {res_interv['total_eventos_reales']} eventos reales",
+            help="Probability of Detection (Hit Rate): Porcentaje de eventos de lluvia reales en terreno que el satélite anticipó exitosamente."
+        )
+        k3.metric(
+            "🚫 Tasa Falsa Alarma (FAR)",
+            f"{res_interv['far_pct']:.1f}%",
+            delta=f"{res_interv['false_alarms']} falsas alarmas" if res_interv['false_alarms'] > 0 else "0 falsas alarmas",
+            delta_color="inverse",
+            help="False Alarm Ratio: Porcentaje de alertas satelitales que no generaron precipitación en el pluviómetro de suelo (ej. nubes altas o virga)."
+        )
+        k4.metric(
+            "🏆 Threat Score (CSI)",
+            f"{res_interv['csi_pct']:.1f}%",
+            delta="Skill Score OMM/WMO",
+            help="Critical Success Index (CSI): Índice de calidad hidrológica que penaliza tanto las falsas alarmas como las omisiones."
+        )
+        
+        # 2. Matriz de Confusión 2x2 y Errores Cuantitativos
+        c_mat, c_err = st.columns([1.1, 1.2])
+        
+        with c_mat:
+            st.markdown("#### 📋 Matriz de Contingencia 2×2 (Eventos Horarios)")
+            st.markdown(f"""
+            <table style="width: 100%; border-collapse: collapse; text-align: center; font-size: 13px; background: white; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.08);">
+                <thead>
+                    <tr style="background: #005073; color: white;">
+                        <th style="padding: 8px; border: 1px solid #cce0eb;" rowspan="2">Satélite / Radar</th>
+                        <th style="padding: 8px; border: 1px solid #cce0eb;" colspan="2">Pluviómetro Físico (Terreno)</th>
+                    </tr>
+                    <tr style="background: #0A192F; color: #64FFDA;">
+                        <th style="padding: 6px; border: 1px solid #cce0eb;">🌧️ Con Lluvia (≥{umbral_lluvia_interv} mm)</th>
+                        <th style="padding: 6px; border: 1px solid #cce0eb;">☀️ Tiempo Seco (<{umbral_lluvia_interv} mm)</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td style="font-weight: 700; background: #F0F4F8; padding: 8px; border: 1px solid #cce0eb;">🌧️ Pronosticó Lluvia</td>
+                        <td style="background: rgba(0, 204, 150, 0.2); font-weight: 800; color: #00805A; padding: 8px; border: 1px solid #cce0eb;">
+                            ✅ ACIERTO (Hits)<br><span style="font-size: 16px;">{res_interv['hits']} h</span>
+                        </td>
+                        <td style="background: rgba(255, 128, 0, 0.18); font-weight: 700; color: #D96B00; padding: 8px; border: 1px solid #cce0eb;">
+                            ⚠️ FALSA ALARMA<br><span style="font-size: 16px;">{res_interv['false_alarms']} h</span>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td style="font-weight: 700; background: #F0F4F8; padding: 8px; border: 1px solid #cce0eb;">☀️ Pronosticó Seco</td>
+                        <td style="background: rgba(255, 75, 75, 0.18); font-weight: 700; color: #CC0000; padding: 8px; border: 1px solid #cce0eb;">
+                            ❌ OMISIÓN (Misses)<br><span style="font-size: 16px;">{res_interv['misses']} h</span>
+                        </td>
+                        <td style="background: rgba(0, 80, 115, 0.12); font-weight: 800; color: #005073; padding: 8px; border: 1px solid #cce0eb;">
+                            🟢 SECO COINCIDENTE<br><span style="font-size: 16px;">{res_interv['correct_neg']} h</span>
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+            """, unsafe_allow_html=True)
+            
+        with c_err:
+            st.markdown("#### 📐 Métricas Cuantitativas de Precipitación")
+            st.markdown(f"""
+            <div style="background: rgba(0,80,115,0.05); padding: 14px 18px; border-radius: 10px; border-left: 4px solid #005073; font-size: 13px; line-height: 1.7;">
+                <strong>🌧️ Lluvia Total Acumulada en el Período:</strong><br>
+                • <strong>Pluviómetro Físico (Pluvio² amb):</strong> <code>{res_interv['lluvia_tot_obs']:.2f} mm</code><br>
+                • <strong>Estimación Satelital (Open-Meteo):</strong> <code>{res_interv['lluvia_tot_sat']:.2f} mm</code><br>
+                • <strong>Desviación Neta Acumulada:</strong> <code>{res_interv['lluvia_tot_sat'] - res_interv['lluvia_tot_obs']:+.2f} mm</code><br>
+                <hr style="margin: 8px 0; border: none; border-top: 1px dashed rgba(0,80,115,0.2);">
+                <strong>📊 Estadísticos de Dispersión & Correlación:</strong><br>
+                • <strong>Error Absoluto Medio (MAE):</strong> <code>{res_interv['mae_mm']:.3f} mm/h</code><br>
+                • <strong>Error Cuadrático Medio (RMSE):</strong> <code>{res_interv['rmse_mm']:.3f} mm/h</code><br>
+                • <strong>Coeficiente de Correlación Pearson (r):</strong> <code>{res_interv['corr_pearson']:.3f}</code> (R²: <code>{res_interv['corr_pearson']**2:.3f}</code>)
+            </div>
+            """, unsafe_allow_html=True)
+            
+        # 3. Gráfica Comparativa de Interventoría Hora a Hora
+        df_comp = res_interv['df_comparativo']
+        fig_comp = go.Figure()
+        fig_comp.add_trace(go.Bar(
+            x=df_comp['time_bin'],
+            y=df_comp['precip_obs_mm'],
+            name='Pluviómetro Físico (Terreno amb)',
+            marker_color='#00CC96',
+            opacity=0.85
+        ))
+        fig_comp.add_trace(go.Bar(
+            x=df_comp['time_bin'],
+            y=df_comp['precip_sat_mm'],
+            name='Satélite / Radar (Open-Meteo)',
+            marker_color='#005073',
+            opacity=0.70
+        ))
+        fig_comp.update_layout(
+            title=f'📊 Auditoría Ex-Post: Lluvia Registrada en Terreno vs. Lluvia Estimada por Satélite (Últimas {horas_eval_interv}h)',
+            xaxis_title='Fecha / Hora',
+            yaxis_title='Precipitación Horaria (mm/h)',
+            barmode='group',
+            template='plotly_white',
+            height=320,
+            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+            margin=dict(t=40, b=10, l=10, r=10)
+        )
+        st.plotly_chart(fig_comp, use_container_width=True)
+        
+        # 4. Diagnóstico Técnico de Interventoría
+        if res_interv['pod_pct'] >= 75.0:
+            diag_estado = "ALTA CONFIABILIDAD SATELITAL"
+            diag_color = "#00CC96"
+            diag_txt = f"Excelente calibración del modelo numérico sobre <strong>{meta_sel['nombre_completo']}</strong>. El satélite capturó el {res_interv['pod_pct']:.1f}% de las lluvias ocurridas en suelo con un error medio de {res_interv['mae_mm']:.2f} mm/h."
+        elif res_interv['pod_pct'] >= 40.0:
+            diag_estado = "CONFIABILIDAD MODERADA (EVIDENCIA MICROCLIMÁTICA)"
+            diag_color = "#FFBB00"
+            diag_txt = f"Concordancia parcial ({res_interv['pod_pct']:.1f}% de detección). La orografía abrupta de la cuenca ({meta_sel['altitud_msnm']:,.0f} msnm) induce lluvias convectivas de valle o crestas locales que el modelo de 2 km suaviza."
+        else:
+            diag_estado = "DISCREPANCIA OROGRÁFICA / BLOQUEO TOPOGRÁFICO"
+            diag_color = "#FF8000"
+            diag_txt = f"Detección satelital reducida ({res_interv['pod_pct']:.1f}% POD). Predominan eventos hiperlocales o apantallamiento de nubes bajas por debajo de la resolución de reflectividad satelital."
+            
+        st.markdown(f"""
+        <div class="alert-box" style="border-left: 5px solid {diag_color}; background: rgba(0, 80, 115, 0.04); font-size: 13px; line-height: 1.6;">
+            <div>
+                <strong>🔍 Diagnóstico de Interventoría Meteorológica: {diag_estado}</strong><br>
+                {diag_txt}<br>
+                <span style="font-size: 12px; color: #555;">
+                    💡 <em>Utilidad Técnica: Esta auditoría permite calibrar qué estaciones de la red tienen correlación satelital óptima para anticipar caudales hacia PTAP Florida, PTAP La Flora/Morrorico y PTAP Bosconia.</em>
+                </span>
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+    else:
+        st.info(f"ℹ️ {res_interv.get('mensaje', 'Consultando datos históricos de satélite...')}")
 
 # ------------------------------------------------------------
 # TAB 4: SERIES DE TIEMPO, ROSA DE VIENTOS Y DESCARGAS
