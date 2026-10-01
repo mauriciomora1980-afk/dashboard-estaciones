@@ -471,6 +471,20 @@ def calcular_interventoria_satelital_vs_terreno(df_hist, lat, lon, horas_eval=72
     lluvia_tot_obs = float(df_merged['precip_obs_mm'].sum())
     lluvia_tot_sat = float(df_merged['precip_sat_mm'].sum())
     
+    # 6. Factor de Magnitud / Sesgo Condicional sobre Aciertos Coincidentes (Hits)
+    df_hits = df_merged[s_rain & o_rain]
+    if len(df_hits) >= 1 and df_hits['precip_sat_mm'].sum() > 0:
+        factor_magnitud = float(df_hits['precip_obs_mm'].sum() / df_hits['precip_sat_mm'].sum())
+        factor_magnitud = max(0.20, min(2.50, factor_magnitud))
+    elif lluvia_tot_sat > 0 and lluvia_tot_obs > 0:
+        factor_magnitud = max(0.20, min(2.50, float(lluvia_tot_obs / lluvia_tot_sat)))
+    else:
+        factor_magnitud = 1.0 # Neutro
+        
+    horas_con_lluvia_obs = int(o_rain.sum())
+    horas_con_lluvia_sat = int(s_rain.sum())
+    muestra_robusta = bool(total_eventos_reales >= 3)
+    
     if total_horas >= 3 and (df_merged['precip_sat_mm'].std() > 0 or df_merged['precip_obs_mm'].std() > 0):
         corr_val = np.corrcoef(df_merged['precip_sat_mm'], df_merged['precip_obs_mm'])[0, 1]
         corr_pearson = float(corr_val) if not np.isnan(corr_val) else (1.0 if abs(lluvia_tot_obs - lluvia_tot_sat) < 0.1 else 0.0)
@@ -487,6 +501,10 @@ def calcular_interventoria_satelital_vs_terreno(df_hist, lat, lon, horas_eval=72
         "total_horas": total_horas,
         "total_eventos_reales": total_eventos_reales,
         "total_predicciones_lluvia": total_predicciones_lluvia,
+        "horas_con_lluvia_obs": horas_con_lluvia_obs,
+        "horas_con_lluvia_sat": horas_con_lluvia_sat,
+        "muestra_robusta": muestra_robusta,
+        "factor_magnitud": factor_magnitud,
         "accuracy_pct": accuracy_pct,
         "pod_pct": pod_pct,
         "far_pct": far_pct,
@@ -1787,19 +1805,17 @@ with tab_radar_72h:
         meta_aud = METADATA_ESTACIONES_AMB[est_auditar]
         lat_aud = meta_aud["lat"]
         lon_aud = meta_aud["lon"]
-        df_hist_aud = get_historical_data_range(est_auditar, fecha_inicio, fecha_fin)
         nombre_auditar = meta_aud["nombre_completo"]
     else:
         est_auditar = seleccion
         lat_aud = lat_sel
         lon_aud = lon_sel
-        df_hist_aud = df_hist
         nombre_auditar = meta_sel["nombre_completo"]
 
     with col_int_opt1:
         horas_eval_interv = st.selectbox(
             "⏱️ Ventana Histórica a Auditar:",
-            [24, 48, 72, 168],
+            [24, 48, 72, 168, 720],
             index=2,
             format_func=lambda h: f"Últimas {h} Horas ({h//24} Días)" if h >= 24 else f"Últimas {h} Horas",
             help="Período retrospectivo para contrastar la serie temporal de lluvia satelital contra la telemetría en BigQuery."
@@ -1814,6 +1830,12 @@ with tab_radar_72h:
             help="Intensidad mínima horaria para clasificar un intervalo como evento activo de lluvia (Estándar OMM / WMO = 0.1 mm/h)."
         )
         
+    # Asegurar cobertura temporal completa e independiente del slider para la auditoría y el fallback
+    h_consulta_nec = max(horas_eval_interv, 168)
+    f_fin_aud = datetime.now(colombia_tz)
+    f_ini_aud = f_fin_aud - timedelta(hours=h_consulta_nec)
+    df_hist_aud = get_historical_data_range(est_auditar, f_ini_aud, f_fin_aud)
+        
     res_interv = calcular_interventoria_satelital_vs_terreno(
         df_hist=df_hist_aud,
         lat=lat_aud,
@@ -1824,31 +1846,37 @@ with tab_radar_72h:
     
     if res_interv.get("valido"):
         # 1. Tarjetas Superiores de Métricas de Calibración
-        k1, k2, k3, k4 = st.columns(4)
+        k1, k2, k3, k4, k5 = st.columns(5)
         k1.metric(
             "🎯 Coincidencia Global",
             f"{res_interv['accuracy_pct']:.1f}%",
-            delta=f"{res_interv['hits'] + res_interv['correct_neg']} de {res_interv['total_horas']}h concordantes",
-            help="Exactitud global del modelo satelital considerando tanto horas con lluvia como horas de tiempo seco."
+            delta=f"{res_interv['hits'] + res_interv['correct_neg']} de {res_interv['total_horas']}h",
+            help="Exactitud global considerando tanto horas con lluvia como horas de tiempo seco."
         )
         k2.metric(
-            "🌧️ Tasa Detección (POD)",
+            "🌧️ Detección (POD)",
             f"{res_interv['pod_pct']:.1f}%",
-            delta=f"{res_interv['hits']} aciertos / {res_interv['total_eventos_reales']} eventos reales",
-            help="Probability of Detection (Hit Rate): Porcentaje de eventos de lluvia reales en terreno que el satélite anticipó exitosamente."
+            delta=f"{res_interv['hits']} aciertos / {res_interv['total_eventos_reales']}h lluvia",
+            help="Probability of Detection (Hit Rate): Porcentaje de eventos de lluvia reales en terreno anticipados por el satélite."
         )
         k3.metric(
-            "🚫 Tasa Falsa Alarma (FAR)",
+            "🚫 Falsa Alarma (FAR)",
             f"{res_interv['far_pct']:.1f}%",
             delta=f"{res_interv['false_alarms']} falsas alarmas" if res_interv['false_alarms'] > 0 else "0 falsas alarmas",
             delta_color="inverse",
-            help="False Alarm Ratio: Porcentaje de alertas satelitales que no generaron precipitación en el pluviómetro de suelo (ej. nubes altas o virga)."
+            help="False Alarm Ratio: Alertas satelitales que no generaron lluvia en terreno (virga o nubosidad alta)."
         )
         k4.metric(
             "🏆 Threat Score (CSI)",
             f"{res_interv['csi_pct']:.1f}%",
-            delta="Skill Score OMM/WMO",
-            help="Critical Success Index (CSI): Índice de calidad hidrológica que penaliza tanto las falsas alarmas como las omisiones."
+            delta="Skill OMM/WMO",
+            help="Critical Success Index: Calidad hidrológica penalizando falsas alarmas y omisiones."
+        )
+        k5.metric(
+            "⚖️ Sesgo Magnitud (β)",
+            f"{res_interv['factor_magnitud']:.2f}×",
+            delta=f"n = {res_interv['total_eventos_reales']}h ({'Robusta' if res_interv['muestra_robusta'] else 'Reducida'})",
+            help="Ratio entre lámina de lluvia real y satelital en eventos coincidentes (Hits). Factor multiplicador de volumen para calibración MOS."
         )
         
         # 2. Matriz de Confusión 2x2 y Errores Cuantitativos
@@ -1892,13 +1920,14 @@ with tab_radar_72h:
             """, unsafe_allow_html=True)
             
         with c_err:
-            st.markdown("#### 📐 Métricas Cuantitativas de Precipitación")
+            st.markdown("#### 📐 Métricas Cuantitativas de Precipitación & Sesgo")
             st.markdown(f"""
             <div style="background: rgba(0,80,115,0.05); padding: 14px 18px; border-radius: 10px; border-left: 4px solid #005073; font-size: 13px; line-height: 1.7;">
                 <strong>🌧️ Lluvia Total Acumulada en el Período:</strong><br>
-                • <strong>Pluviómetro Físico (Pluvio² amb):</strong> <code>{res_interv['lluvia_tot_obs']:.2f} mm</code><br>
-                • <strong>Estimación Satelital (Open-Meteo):</strong> <code>{res_interv['lluvia_tot_sat']:.2f} mm</code><br>
+                • <strong>Pluviómetro Físico (Pluvio² amb):</strong> <code>{res_interv['lluvia_tot_obs']:.2f} mm</code> ({res_interv['horas_con_lluvia_obs']}h con lluvia)<br>
+                • <strong>Estimación Satelital (Open-Meteo):</strong> <code>{res_interv['lluvia_tot_sat']:.2f} mm</code> ({res_interv['horas_con_lluvia_sat']}h con lluvia)<br>
                 • <strong>Desviación Neta Acumulada:</strong> <code>{res_interv['lluvia_tot_sat'] - res_interv['lluvia_tot_obs']:+.2f} mm</code><br>
+                • <strong>Factor Sesgo de Magnitud (β):</strong> <code>{res_interv['factor_magnitud']:.2f}×</code> ({'Subestimación satelital (+ lámina real)' if res_interv['factor_magnitud'] > 1.05 else ('Sobreestimación satelital (+ lámina satélite)' if res_interv['factor_magnitud'] < 0.95 else 'Calibración de volumen neutra')})<br>
                 <hr style="margin: 8px 0; border: none; border-top: 1px dashed rgba(0,80,115,0.2);">
                 <strong>📊 Estadísticos de Dispersión & Correlación:</strong><br>
                 • <strong>Error Absoluto Medio (MAE):</strong> <code>{res_interv['mae_mm']:.3f} mm/h</code><br>
@@ -1978,7 +2007,7 @@ with tab_radar_72h:
         hora_p_max = df_fc.loc[idx_max]['time']
         
         # ------------------------------------------------------------
-        # CAPA DE CALIBRACIÓN MOS (MODEL OUTPUT STATISTICS - MIMAT-C26)
+        # CAPA DE CALIBRACIÓN MOS DUAL (DETECCIÓN + MAGNITUD + FALLBACK ADAPTATIVO)
         # ------------------------------------------------------------
         mes_actual = datetime.now().month
         if mes_actual in [3, 4, 5]:
@@ -1994,15 +2023,48 @@ with tab_radar_72h:
             nombre_temporada = "Temporada Seca Principal (Estiaje)"
             tag_temporada = "☀️ SECA / ESTIAJE"
             
-        prob_calibrada = float(res_interv.get('pod_pct', 75.0)) if res_interv.get('valido') else 75.0
-        far_reciente = float(res_interv.get('far_pct', 25.0)) if res_interv.get('valido') else 25.0
-        csi_reciente = float(res_interv.get('csi_pct', 60.0)) if res_interv.get('valido') else 60.0
         lag_estacion = meta_sel.get('lag_horas', '1.0 - 2.0 h')
         
-        # Coeficiente Continuo MOS (Model Output Statistics)
-        factor_mos = max(0.0, min(1.0, (prob_calibrada / 100.0) * (1.0 - (far_reciente / 100.0))))
-        p_tot_mos = p_tot_fc * factor_mos
-        p_max_mos = p_max_fc * factor_mos
+        # 1. Control de Estabilidad Estadística de Muestra (Fallback Jerárquico a 7 Días)
+        n_obs_actual = int(res_interv.get('total_eventos_reales', 0)) if res_interv.get('valido') else 0
+        es_muestra_corta = (n_obs_actual < 3 and horas_eval_interv < 168)
+        
+        if es_muestra_corta:
+            # Consultar línea base extendida de 7 días (168h) para estabilizar MOS
+            res_7d = calcular_interventoria_satelital_vs_terreno(
+                df_hist=df_hist_aud,
+                lat=lat_aud,
+                lon=lon_aud,
+                horas_eval=168,
+                umbral_mm=umbral_lluvia_interv
+            )
+            if res_7d.get('valido') and res_7d.get('total_horas', 0) > 0:
+                prob_calibrada = float(res_7d.get('pod_pct', 70.0))
+                far_reciente = float(res_7d.get('far_pct', 30.0))
+                csi_reciente = float(res_7d.get('csi_pct', 55.0))
+                factor_magnitud_mos = float(res_7d.get('factor_magnitud', 1.0))
+                n_base_7d = int(res_7d.get('total_eventos_reales', 0))
+                tag_muestreo = f"🔄 Fallback Línea Base 7 Días (n={n_base_7d}h lluvia real | Ventana {horas_eval_interv}h con solo {n_obs_actual}h)"
+            else:
+                prob_calibrada = float(res_interv.get('pod_pct', 70.0))
+                far_reciente = float(res_interv.get('far_pct', 30.0))
+                csi_reciente = float(res_interv.get('csi_pct', 55.0))
+                factor_magnitud_mos = float(res_interv.get('factor_magnitud', 1.0))
+                tag_muestreo = f"⚠️ Muestra Reducida ({n_obs_actual}h con lluvia)"
+        else:
+            prob_calibrada = float(res_interv.get('pod_pct', 75.0)) if res_interv.get('valido') else 75.0
+            far_reciente = float(res_interv.get('far_pct', 25.0)) if res_interv.get('valido') else 25.0
+            csi_reciente = float(res_interv.get('csi_pct', 60.0)) if res_interv.get('valido') else 60.0
+            factor_magnitud_mos = float(res_interv.get('factor_magnitud', 1.0)) if res_interv.get('valido') else 1.0
+            tag_muestreo = f"✅ Muestra Directa {horas_eval_interv}h (n={n_obs_actual}h lluvia real)"
+            
+        # 2. Coeficiente Dual MOS (Detección Probabilística × Corrección de Magnitud Volumétrica)
+        # I_MOS: Confiabilidad binaria de ocurrencia [0.0 - 1.0]
+        factor_imos = max(0.0, min(1.0, (prob_calibrada / 100.0) * (1.0 - (far_reciente / 100.0))))
+        
+        # P_MOS = P_sat × I_MOS × beta_magnitud
+        p_tot_mos = p_tot_fc * factor_imos * factor_magnitud_mos
+        p_max_mos = p_max_fc * factor_imos * factor_magnitud_mos
         
         col_al1, col_al2 = st.columns([1.15, 1])
         
@@ -2017,31 +2079,31 @@ with tab_radar_72h:
                 nivel_alerta = "ALERTA ROJA OPERATIVA: TORMENTA SEVERA CONFIRMADA"
                 color_alerta = "#FF4B4B"
                 icono_alerta = "⛈️"
-                desc_alerta = f"Se pronostica un pico de <strong>{p_max_fc:.1f} mm/h</strong> el <code>{hora_p_max.strftime('%d/%m/%Y %H:%M')}</code> ({p_tot_fc:.1f} mm en 72h).<br>🎯 <strong>Alta Confiabilidad MOS ({factor_mos*100:.0f}%):</strong> El modelo satelital registra un <strong>{prob_calibrada:.1f}% de acierto real (POD)</strong> en esta estación ({tag_temporada}). <strong>Se recomienda activar protocolo de maniobra preventiva.</strong>"
+                desc_alerta = f"Se pronostica un pico de <strong>{p_max_fc:.1f} mm/h</strong> el <code>{hora_p_max.strftime('%d/%m/%Y %H:%M')}</code> ({p_tot_fc:.1f} mm brutos ➔ <strong>{p_tot_mos:.1f} mm calibrados MOS</strong>).<br>🎯 <strong>Alta Confiabilidad MOS (I_MOS: {factor_imos*100:.0f}% | Sesgo Magnitud: {factor_magnitud_mos:.2f}×):</strong> El modelo satelital registra un <strong>{prob_calibrada:.1f}% de acierto real (POD)</strong> en esta estación ({tag_temporada}, {tag_muestreo}). <strong>Se recomienda activar protocolo de maniobra preventiva.</strong>"
                 estado_operativo = "ACTIVAR_MANIOBRA"
             elif es_evento_fuerte and es_baja_confianza:
                 nivel_alerta = "AVISO SATELITAL EN OBSERVACIÓN (NO VERIFICADO EN TERRENO)"
                 color_alerta = "#FF8000"
                 icono_alerta = "🟠"
-                desc_alerta = f"El satélite proyecta lluvia bruta de <strong>{p_max_fc:.1f} mm/h</strong> ({p_tot_fc:.1f} mm en 72h), pero la lluvia calibrada MOS es de solo <strong>{p_tot_mos:.1f} mm</strong>.<br>⚠️ <strong>Filtro de Confiabilidad Rodante ({horas_eval_interv}h):</strong> En esta microcuenca el modelo presenta baja habilidad de detección (<strong>POD: {prob_calibrada:.1f}% | Falsas Alarmas: {far_reciente:.1f}%</strong>) por bloqueo orográfico en {tag_temporada}.<br>🛡️ <strong>Criterio de Ingeniería:</strong> La alerta se mantiene en <em>observación pasiva</em>. <strong>NO escalar a Alerta Roja ni operar compuertas</strong> hasta que el pluviómetro físico (Pluvio²) confirme el primer pulso de lluvia."
+                desc_alerta = f"El satélite proyecta lluvia bruta de <strong>{p_max_fc:.1f} mm/h</strong> ({p_tot_fc:.1f} mm en 72h), pero la lluvia calibrada MOS es de <strong>{p_tot_mos:.1f} mm</strong> (I_MOS: {factor_imos*100:.0f}%, Sesgo: {factor_magnitud_mos:.2f}×).<br>⚠️ <strong>Filtro de Confiabilidad Rodante ({tag_muestreo}):</strong> En esta microcuenca el modelo presenta baja habilidad de detección (<strong>POD: {prob_calibrada:.1f}% | Falsas Alarmas: {far_reciente:.1f}%</strong>) por bloqueo orográfico en {tag_temporada}.<br>🛡️ <strong>Criterio de Ingeniería:</strong> La alerta se mantiene en <em>observación pasiva</em>. <strong>NO escalar a Alerta Roja ni operar compuertas</strong> hasta que el pluviómetro físico (Pluvio²) confirme el primer pulso de lluvia."
                 estado_operativo = "OBSERVACION_PASIVA"
             elif es_evento_moderado and es_confiable:
                 nivel_alerta = "ALERTA AMARILLA PREVENTIVA: LLUVIA MODERADA"
                 color_alerta = "#FFBB00"
                 icono_alerta = "🌧️"
-                desc_alerta = f"Previsión de lluvia moderada con pico de <strong>{p_max_fc:.1f} mm/h</strong> el <code>{hora_p_max.strftime('%d/%m/%Y %H:%M')}</code> ({p_tot_fc:.1f} mm en 72h). Confiabilidad empírica aprendida: <strong>{prob_calibrada:.1f}%</strong>."
+                desc_alerta = f"Previsión de lluvia moderada con pico de <strong>{p_max_fc:.1f} mm/h</strong> el <code>{hora_p_max.strftime('%d/%m/%Y %H:%M')}</code> ({p_tot_fc:.1f} mm brutos ➔ <strong>{p_tot_mos:.1f} mm calibrados MOS</strong>). Confiabilidad empírica ({tag_muestreo}): <strong>POD {prob_calibrada:.1f}% | FAR {far_reciente:.1f}% | Magnitud {factor_magnitud_mos:.2f}×</strong>."
                 estado_operativo = "VIGILANCIA_ESTANDAR"
             elif es_evento_moderado and es_baja_confianza:
                 nivel_alerta = "CONDICIÓN ESTÁNDAR (POSIBLE NUBOSIDAD ALTA / VIRGA)"
                 color_alerta = "#005073"
                 icono_alerta = "☁️"
-                desc_alerta = f"El modelo numérico muestra nubosidad con {p_tot_fc:.1f} mm brutos, pero la auditoría rodante indica alto sesgo eólico / virga (POD {prob_calibrada:.1f}%). Sin impacto operativo previsto."
+                desc_alerta = f"El modelo numérico muestra nubosidad con {p_tot_fc:.1f} mm brutos (calibrado MOS: {p_tot_mos:.1f} mm), pero la auditoría rodante ({tag_muestreo}) indica alto sesgo eólico / virga (POD {prob_calibrada:.1f}%). Sin impacto operativo previsto."
                 estado_operativo = "NORMAL"
             else:
                 nivel_alerta = "ESTADO VERDE: CONDICIONES NORMALES / ESTIAJE"
                 color_alerta = "#00CC96"
                 icono_alerta = "☀️"
-                desc_alerta = f"Sin eventos extremos previstos en la ventana de 72h (máximo previsto: {p_max_fc:.1f} mm/h). Operación estándar en cuenca."
+                desc_alerta = f"Sin eventos extremos previstos en la ventana de 72h (máximo previsto: {p_max_fc:.1f} mm/h). Operación estándar en cuenca ({tag_muestreo})."
                 estado_operativo = "NORMAL"
                 
             st.markdown(f"""
@@ -2069,7 +2131,7 @@ with tab_radar_72h:
                     <ul style="margin: 6px 0 0 0; padding-left: 18px;">
                         <li><strong>Tomero ({meta_sel['subsistema_abastecimiento']}):</strong> Mantener operación normal. Estar atento al reporte de telemetría in situ. <strong>No realizar purgas innecesarias</strong> ni suspender captación.</li>
                         <li><strong>Operadores de Planta (PTAP):</strong> Mantener dosificación química base sin alteración.</li>
-                        <li><strong>Condición de Disparo:</strong> Solo si el pluviómetro físico Pluvio² registra un pulso real ($P \ge 1.0\text{ mm}$), el sistema eleva a Alerta Operativa con ventana de <strong>{lag_estacion}</strong>.</li>
+                        <li><strong>Condición de Disparo:</strong> Solo si el pluviómetro físico Pluvio² registra un pulso real (P ≥ 1.0 mm), el sistema eleva a Alerta Operativa con ventana de <strong>{lag_estacion}</strong>.</li>
                     </ul>
                 </div>
                 """, unsafe_allow_html=True)
@@ -2394,7 +2456,7 @@ with tab_matematica:
            *Garantiza que no se trasladen lluvias locales de El Pajal si el radar confirma cielo despejado sobre la cresta de La Mariana.*
         """)
         
-    with st.expander("🔬 8. Interventoría Ex-Post de Predicciones Satelitales (Métricas Skill Score OMM/WMO)"):
+    with st.expander("🔬 8. Interventoría Ex-Post, Capa MOS Dual & Calibración de Magnitud (OMM/WMO)"):
         st.markdown(r"""
         Auditoría matemática retrospectiva de eventos horarios clasificados en la matriz de contingencia $2 \times 2$ ($A=\text{Hits}$, $B=\text{Falsas Alarmas}$, $C=\text{Omisiones}$, $D=\text{Seco Coincidente}$):
         
@@ -2410,7 +2472,20 @@ with tab_matematica:
         4. **Threat Score / Critical Success Index ($\text{CSI}$ Estándar OMM):**
            $$\text{CSI} = \frac{A}{A + B + C} \times 100\%$$
            
-        5. **Error Cuadrático Medio ($\text{RMSE}$) & Error Medio Absoluto ($\text{MAE}$):**
+        5. **Factor de Magnitud / Sesgo Condicional sobre Aciertos ($\beta_{\text{magnitud}}$):**
+           Calculado exclusivamente sobre los eventos de precipitación coincidentes ($\text{Hits}$):
+           $$\beta_{\text{magnitud}} = \frac{\sum_{t \in \text{Hits}} P_{\text{obs}}(t)}{\sum_{t \in \text{Hits}} P_{\text{sat}}(t)} \in [0.20, \, 2.50]$$
+           *Corrige la sobreestimación o subestimación sistemática de la lámina de lluvia en milímetros cuando el satélite acierta el evento.*
+           
+        6. **Ecuación Dual MOS (Model Output Statistics) de Precipitación Calibrada:**
+           $$I_{\text{MOS}} = \frac{\text{POD}}{100} \times \left(1 - \frac{\text{FAR}}{100}\right)$$
+           $$P_{\text{MOS}} = P_{\text{sat}} \times I_{\text{MOS}} \times \beta_{\text{magnitud}}$$
+           
+        7. **Control de Estabilidad Estadística & Fallback Jerárquico:**
+           Para evitar inestabilidad muestral en ventanas cortas (24h/48h):
+           $$\text{Calibración MOS} = \begin{cases} \text{Ventana Local } (T) & \text{si } n_{\text{lluvia}} \ge 3 \\ \text{Línea Base 7 Días } (168\text{h}) & \text{si } n_{\text{lluvia}} < 3 \end{cases}$$
+           
+        8. **Errores Cuantitativos Continuos:**
            $$\text{MAE} = \frac{1}{N} \sum_{t=1}^N |P_{\text{sat}}(t) - P_{\text{obs}}(t)| \qquad \text{RMSE} = \sqrt{\frac{1}{N} \sum_{t=1}^N \left(P_{\text{sat}}(t) - P_{\text{obs}}(t)\right)^2}$$
         """)
         
@@ -2457,4 +2532,3 @@ with st.sidebar.expander("📏 Extensómetros (EDV)"):
 # ============================================================
 # FIN DEL CÓDIGO — SISTEMA MIMAT-C26 (amb)
 # ============================================================
-
