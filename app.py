@@ -1698,11 +1698,19 @@ with tab_radar_72h:
             t_min_fc = df_fc['temperature_2m'].min()
             v_max_fc = df_fc['wind_speed_10m'].max()
             
-            mc1, mc2, mc3, mc4 = st.columns(4)
-            mc1.metric("🌧️ Lluvia Próximas 24h", f"{lluvia_24h:.1f} mm", delta="Lluvia esperada" if lluvia_24h > 0 else "Sin lluvia")
-            mc2.metric("🌧️ Lluvia Total 72h", f"{lluvia_72h:.1f} mm", delta="3 días acumulados")
-            mc3.metric("🌡️ Temp Prevista", f"{t_min_fc:.1f} / {t_max_fc:.1f} °C")
-            mc4.metric("💨 Ráfaga Máx Prevista", f"{v_max_fc:.1f} km/h")
+            if seleccion == "Embalse":
+                vol_espejo_m3 = lluvia_72h * 462.0
+                mc1, mc2, mc3, mc4 = st.columns(4)
+                mc1.metric("🌧️ Lluvia Próximas 24h", f"{lluvia_24h:.1f} mm", delta="Lluvia sobre el vaso" if lluvia_24h > 0 else "Sin lluvia")
+                mc2.metric("🌧️ Lluvia Total 72h", f"{lluvia_72h:.1f} mm", delta=f"+{vol_espejo_m3:,.0f} m³ al espejo (46 ha)", help="Aporte pluviométrico directo sobre el espejo de agua del embalse (462 m³/mm)")
+                mc3.metric("🌡️ Temp Prevista", f"{t_min_fc:.1f} / {t_max_fc:.1f} °C")
+                mc4.metric("💨 Ráfaga Máx Prevista", f"{v_max_fc:.1f} km/h")
+            else:
+                mc1, mc2, mc3, mc4 = st.columns(4)
+                mc1.metric("🌧️ Lluvia Próximas 24h", f"{lluvia_24h:.1f} mm", delta="Lluvia esperada" if lluvia_24h > 0 else "Sin lluvia")
+                mc2.metric("🌧️ Lluvia Total 72h", f"{lluvia_72h:.1f} mm", delta="3 días acumulados")
+                mc3.metric("🌡️ Temp Prevista", f"{t_min_fc:.1f} / {t_max_fc:.1f} °C")
+                mc4.metric("💨 Ráfaga Máx Prevista", f"{v_max_fc:.1f} km/h")
             
             # Gráfica 1: Precipitación Horaria Prevista
             fig_fc_p = px.bar(
@@ -1763,6 +1771,31 @@ with tab_radar_72h:
     st.caption("Auditoría retrospectiva de exactitud hidrometeorológica: Contraste hora a hora entre el pronóstico satelital numérico y la medición física real registrada en el pluviómetro de terreno (Pluvio² / balancín).")
     
     col_int_opt1, col_int_opt2 = st.columns([1, 1])
+    
+    if seleccion == "Embalse":
+        st.markdown("""
+        <div style="background: rgba(0, 80, 115, 0.06); padding: 12px 16px; border-radius: 8px; border-left: 4px solid #005073; font-size: 13px; margin-bottom: 12px;">
+            <strong>ℹ️ Nota Hidrométrica de Campo:</strong> La estación <strong>Embalse Tona</strong> cuenta exclusivamente con sensor hidrométrico <strong>Radar OTT (msnm)</strong> para nivel de vaso y no dispone de pluviómetro físico in situ. Para auditar la exactitud satelital en la cuenca afluente que alimenta el embalse, selecciona una de las microcuencas tributarias instrumentadas:
+        </div>
+        """, unsafe_allow_html=True)
+        est_auditar = col_int_opt1.selectbox(
+            "🏞️ Microcuenca Afluente a Auditar:", 
+            ["Yerbabuena", "Vegas_del_Quemado", "El_Pajal", "La_Mariana"], 
+            index=0,
+            help="Selecciona la estación con pluviómetro físico para auditar la correlación satelital en la cuenca de Tona."
+        )
+        meta_aud = METADATA_ESTACIONES_AMB[est_auditar]
+        lat_aud = meta_aud["lat"]
+        lon_aud = meta_aud["lon"]
+        df_hist_aud = get_historical_data_range(est_auditar, fecha_inicio, fecha_fin)
+        nombre_auditar = meta_aud["nombre_completo"]
+    else:
+        est_auditar = seleccion
+        lat_aud = lat_sel
+        lon_aud = lon_sel
+        df_hist_aud = df_hist
+        nombre_auditar = meta_sel["nombre_completo"]
+
     with col_int_opt1:
         horas_eval_interv = st.selectbox(
             "⏱️ Ventana Histórica a Auditar:",
@@ -1782,9 +1815,9 @@ with tab_radar_72h:
         )
         
     res_interv = calcular_interventoria_satelital_vs_terreno(
-        df_hist=df_hist,
-        lat=lat_sel,
-        lon=lon_sel,
+        df_hist=df_hist_aud,
+        lat=lat_aud,
+        lon=lon_aud,
         horas_eval=horas_eval_interv,
         umbral_mm=umbral_lluvia_interv
     )
@@ -1981,18 +2014,33 @@ with tab_radar_72h:
             
         with col_al2:
             st.markdown("#### 👷 Margen de Maniobra & Acciones Preventivas Sugeridas:")
-            st.markdown(f"""
-            <div style="font-size: 12.5px; line-height: 1.6; background: white; padding: 14px 18px; border-radius: 10px; border: 1px solid #cce0eb; box-shadow: 0 2px 6px rgba(0,0,0,0.04);">
-                <ul style="margin: 0; padding-left: 18px;">
-                    <li><strong>Tomero / Operador en Bocatoma ({meta_sel['subsistema_abastecimiento']}):</strong><br>
-                    Ventana de <strong>{lag_estacion}</strong> previa al pico para realizar purga preventiva de desarenadores, verificar rejillas y alistar cierre de compuertas ante picos de turbiedad.</li>
-                    <li style="margin-top: 6px;"><strong>Operadores de Planta (PTAP Florida / La Flora / Morrorico / Bosconia):</strong><br>
-                    Alistamiento anticipado de dosificación de coagulantes y regulación de niveles en tanques de almacenamiento.</li>
-                    <li style="margin-top: 6px;"><strong>Gestión del Riesgo & Comunidades Ribereñas:</strong><br>
-                    Aviso preventivo en microcuenca <em>{meta_sel['microcuencas']}</em> ante posible aumento súbito de nivel en quebradas tributarias.</li>
-                </ul>
-            </div>
-            """, unsafe_allow_html=True)
+            if seleccion == "Embalse":
+                vol_espejo_fc = p_tot_fc * 462.0
+                st.markdown(f"""
+                <div style="font-size: 12.5px; line-height: 1.6; background: white; padding: 14px 18px; border-radius: 10px; border: 1px solid #cce0eb; box-shadow: 0 2px 6px rgba(0,0,0,0.04);">
+                    <ul style="margin: 0; padding-left: 18px;">
+                        <li><strong>Operación de Presa & Válvula CRC Bosconia:</strong><br>
+                        Aporte pluviométrico directo sobre el vaso proyectado en <strong>~{vol_espejo_fc:,.0f} m³</strong> en 72h ({p_tot_fc:.1f} mm). Monitorear tasa neta de descenso del embalse y recarga de afluentes de ladera.</li>
+                        <li style="margin-top: 6px;"><strong>PTAP Bosconia & Futura PTAP Los Angelinos:</strong><br>
+                        Seguimiento continuo de la disponibilidad de agua cruda en vaso y previsión de caudales de rebose Morning Glory si la cota supera 885.75 msnm hacia Puente Tona.</li>
+                        <li style="margin-top: 6px;"><strong>Comunidades Ribereñas Puente Tona & Confluencia Suratá:</strong><br>
+                        Monitoreo preventivo del cauce aguas abajo de la presa ante eventuales aportes mayores de quebradas afluentes.</li>
+                    </ul>
+                </div>
+                """, unsafe_allow_html=True)
+            else:
+                st.markdown(f"""
+                <div style="font-size: 12.5px; line-height: 1.6; background: white; padding: 14px 18px; border-radius: 10px; border: 1px solid #cce0eb; box-shadow: 0 2px 6px rgba(0,0,0,0.04);">
+                    <ul style="margin: 0; padding-left: 18px;">
+                        <li><strong>Tomero / Operador en Bocatoma ({meta_sel['subsistema_abastecimiento']}):</strong><br>
+                        Ventana de <strong>{lag_estacion}</strong> previa al pico para realizar purga preventiva de desarenadores, verificar rejillas y alistar cierre de compuertas ante picos de turbiedad.</li>
+                        <li style="margin-top: 6px;"><strong>Operadores de Planta (PTAP Florida / La Flora / Morrorico / Bosconia):</strong><br>
+                        Alistamiento anticipado de dosificación de coagulantes y regulación de niveles en tanques de almacenamiento.</li>
+                        <li style="margin-top: 6px;"><strong>Gestión del Riesgo & Comunidades Ribereñas:</strong><br>
+                        Aviso preventivo en microcuenca <em>{meta_sel['microcuencas']}</em> ante posible aumento súbito de nivel en quebradas tributarias.</li>
+                    </ul>
+                </div>
+                """, unsafe_allow_html=True)
 
 # ------------------------------------------------------------
 # TAB 4: SERIES DE TIEMPO, ROSA DE VIENTOS Y DESCARGAS
@@ -2306,6 +2354,23 @@ with tab_matematica:
         5. **Error Cuadrático Medio ($\text{RMSE}$) & Error Medio Absoluto ($\text{MAE}$):**
            $$\text{MAE} = \frac{1}{N} \sum_{t=1}^N |P_{\text{sat}}(t) - P_{\text{obs}}(t)| \qquad \text{RMSE} = \sqrt{\frac{1}{N} \sum_{t=1}^N \left(P_{\text{sat}}(t) - P_{\text{obs}}(t)\right)^2}$$
         """)
+        
+    with st.expander("🌪️ 9. Cinemática del Vector de Viento, Advección y Confirmación Tridimensional en el Espejo de Agua"):
+        st.markdown(r"""
+        Para confirmar físicamente la efectividad de lluvias proyectadas sobre el **Embalse Tona** en ausencia de pluviómetro in situ, el sistema implementa la **Ecuación de Confirmación Tridimensional**:
+        $$\text{Confirmación}_{\text{3D}} = \underbrace{P_{\text{terreno}}(\text{Pajal/Vegas})}_{\text{Génesis en Ladera}} + \underbrace{\vec{V}_{\text{viento}}(\theta, v)}_{\text{Advección Eólica hacia el Vaso}} + \underbrace{\Delta h_{\text{instantáneo}}(\text{Radar OTT})}_{\text{Recepción en el Espejo}}$$
+        
+        1. **Advección y Tiempo de Viaje Eólico ($\Delta t_{\text{vuelo}}$):**
+           La masa nubosa precipitante se desplaza a lo largo de la distancia geodésica $d \approx 2.5\text{ km}$ desde las laderas hacia el centro del vaso con velocidad $v_{\text{viento}}$:
+           $$\Delta t_{\text{vuelo}} = \frac{d_{\text{ladera}\rightarrow\text{vaso}}}{v_{\text{viento}}} \approx 10 \text{ a } 15\text{ minutos}$$
+           
+        2. **Respuesta Hidrométrica Instantánea en el Radar OTT:**
+           A diferencia del retardo hidrológico de los afluentes fluviales ($\text{Lag Time} = 1.5 \text{ a } 3.5\text{ horas}$), la precipitación que intercepta las $46.2\text{ hectáreas}$ del espejo de agua genera una tasa de ascenso instantánea:
+           $$\Delta h_{\text{OTT}} (\text{cm}) = \frac{P_{\text{directa}} (\text{mm})}{10\text{ mm/cm}} \implies \Delta V_{\text{espejo}} (\text{m}^3) = P_{\text{directa}} (\text{mm}) \times 462\text{ m}^3/\text{mm}$$
+           
+        3. **Validación de Masas en Balance Dinámico:**
+           $$\left.\frac{dh}{dt}\right|_{t < \text{Lag}} > 0 \implies \text{Lluvia Directa Confirmada sobre el Espejo de Agua}.$$
+        """)
 
 # ============================================================
 # 9. SIDEBAR FOOTER
@@ -2333,3 +2398,4 @@ with st.sidebar.expander("📏 Extensómetros (EDV)"):
 # ============================================================
 # FIN DEL CÓDIGO — SISTEMA MIMAT-C26 (amb)
 # ============================================================
+
