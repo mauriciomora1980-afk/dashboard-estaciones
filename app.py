@@ -2193,6 +2193,56 @@ with tab_matematica:
         * $h = 885.85\text{ msnm} \rightarrow x = 0.10\text{ m} \rightarrow Q_{\text{rebose}} = 9.10\text{ m}^3/\text{s}$ ($9.100\text{ L/s}$)
         * $h = 885.95\text{ msnm} \rightarrow x = 0.20\text{ m} \rightarrow Q_{\text{rebose}} = 19.58\text{ m}^3/\text{s}$ ($19.580\text{ L/s}$)
         """)
+        
+    with st.expander("🌦️ 6. Modelo Hidrológico Dual de Rendimiento de Cuenca & Vector Orográfico"):
+        st.markdown(r"""
+        Para desacoplar el efecto distorsionante de eventos puntuales de lluvia sobre el flujo base permanente, el aporte de cada microcuenca $i$ se modela como una superposición lineal dual:
+        $$Q_{\text{total } i} = Q_{\text{base } i} + Q_{\text{escorrentía } i}$$
+        
+        Donde la partición dinámica entre flujo base hidrogeológico y escorrentía rápida superficial se rige por:
+        $$\phi_{\text{escorrentía}} = \min\left(0.65, \, \max\left(0.15, \, \frac{\sum P_k}{50\text{ mm}} \times 0.65\right)\right) \quad \text{si } \sum P_k > 0$$
+        $$\phi_{\text{base}} = 1.0 - \phi_{\text{escorrentía}}$$
+        
+        **Ponderación Vectorial del Cono Orográfico (Estación La Mariana):**
+        El vector geodésico desde La Mariana ($2,436\text{ msnm}$) hacia el nacimiento de Golondrinas / El Pajal ($2,163\text{ msnm}$) tiene un rumbo $\theta_{\text{óptimo}} = 202^\circ$ (Sur-Suroeste). El factor de entrega orográfica modulado por el coseno del viento es:
+        $$f_{\text{viento}} = \cos\left(\frac{(\theta_{\text{viento}} - 202^\circ) \pi}{180}\right)$$
+        $$W_{\text{Mariana efectivo}} = W_{\text{base}} \times \left(1.0 + 0.40 \cdot f_{\text{viento}}\right) \quad \text{para } 140^\circ \le \theta \le 270^\circ$$
+        """)
+        
+    with st.expander("🤖 7. Sensor Virtual Resiliente (Termo-Dinámica Altimétrica & Validación Satelital)"):
+        st.markdown(r"""
+        Ante la pérdida de enlace o lecturas en cero en la **Estación La Mariana (2,436 msnm)**, el estado atmosférico se reconstruye a partir del nodo de referencia **El Pajal (2,163 msnm)** mediante gradiente vertical:
+        
+        1. **Gradiente Térmico Adiabático Húmedo ($\Gamma = -0.65^\circ\text{C} / 100\text{ m}$):**
+           $$T_{\text{virtual}} = T_{\text{Pajal}} - \Gamma \cdot (z_{\text{Mariana}} - z_{\text{Pajal}}) = T_{\text{Pajal}} - \left(0.65 \times \frac{2436 - 2163}{100}\right) = T_{\text{Pajal}} - 1.77^\circ\text{C}$$
+        
+        2. **Perfil Vertical de Viento en Cresta:**
+           $$V_{\text{virtual}} = V_{\text{Pajal}} \times 1.25 \quad (\text{Mayor exposición orográfica en cumbre})$$
+        
+        3. **Validación Cruzada Satelital de Precipitación:**
+           $$P_{\text{virtual}} = P_{\text{satélite}}(7.1227^\circ\text{N}, -73.0070^\circ\text{W}, t)$$
+           *Garantiza que no se trasladen lluvias locales de El Pajal si el radar confirma cielo despejado sobre la cresta de La Mariana.*
+        """)
+        
+    with st.expander("🔬 8. Interventoría Ex-Post de Predicciones Satelitales (Métricas Skill Score OMM/WMO)"):
+        st.markdown(r"""
+        Auditoría matemática retrospectiva de eventos horarios clasificados en la matriz de contingencia $2 \times 2$ ($A=\text{Hits}$, $B=\text{Falsas Alarmas}$, $C=\text{Omisiones}$, $D=\text{Seco Coincidente}$):
+        
+        1. **Exactitud Global ($\text{Accuracy}$):**
+           $$\text{Exactitud} = \frac{A + D}{A + B + C + D} \times 100\%$$
+           
+        2. **Probabilidad de Detección ($\text{POD}$ / Hit Rate):**
+           $$\text{POD} = \frac{A}{A + C} \times 100\%$$
+           
+        3. **Tasa de Falsa Alarma ($\text{FAR}$):**
+           $$\text{FAR} = \frac{B}{A + B} \times 100\%$$
+           
+        4. **Threat Score / Critical Success Index ($\text{CSI}$ Estándar OMM):**
+           $$\text{CSI} = \frac{A}{A + B + C} \times 100\%$$
+           
+        5. **Error Cuadrático Medio ($\text{RMSE}$) & Error Medio Absoluto ($\text{MAE}$):**
+           $$\text{MAE} = \frac{1}{N} \sum_{t=1}^N |P_{\text{sat}}(t) - P_{\text{obs}}(t)| \qquad \text{RMSE} = \sqrt{\frac{1}{N} \sum_{t=1}^N \left(P_{\text{sat}}(t) - P_{\text{obs}}(t)\right)^2}$$
+        """)
 
 # ============================================================
 # 9. SIDEBAR FOOTER
@@ -2220,3 +2270,4 @@ with st.sidebar.expander("📏 Extensómetros (EDV)"):
 # ============================================================
 # FIN DEL CÓDIGO — SISTEMA MIMAT-C26 (amb)
 # ============================================================
+
