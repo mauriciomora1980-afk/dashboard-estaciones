@@ -371,7 +371,7 @@ def get_cota_embalse_actual_segura():
 @st.cache_data(ttl=1800)
 def obtener_pronostico_open_meteo(lat: float, lon: float, past_days: int = 7, forecast_days: int = 3):
     try:
-        url = f"https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}&hourly=precipitation,temperature_2m,relative_humidity_2m,wind_speed_10m,wind_direction_10m&past_days={past_days}&forecast_days={forecast_days}&timezone=America/Bogota"
+        url = f"https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}&hourly=precipitation,temperature_2m,relative_humidity_2m,wind_speed_10m,wind_direction_10m,weather_code,precipitation_probability&past_days={past_days}&forecast_days={forecast_days}&timezone=America/Bogota"
         req = urllib.request.Request(url, headers={'User-Agent': 'MIMAT-C26-amb/2.6'})
         with urllib.request.urlopen(req, timeout=8) as response:
             data = json.loads(response.read().decode('utf-8'))
@@ -985,6 +985,177 @@ def mostrar_ficha_geografica_estacion(nombre_estacion):
             zoom=12
         )
 
+def mapear_codigo_wmo(codigo):
+    """Mapeo estándar OMM/WMO a ícono y descripción meteorológica en español"""
+    try:
+        c = int(codigo) if pd.notna(codigo) else 0
+    except:
+        c = 0
+    if c == 0:
+        return "☀️", "Despejado"
+    elif c in [1, 2]:
+        return "🌤️", "Parc. Nublado"
+    elif c == 3:
+        return "☁️", "Mayormente Nublado"
+    elif c in [45, 48]:
+        return "🌫️", "Niebla"
+    elif c in [51, 53, 55]:
+        return "🌦️", "Llovizna"
+    elif c in [61, 63]:
+        return "🌧️", "Lluvia Moderada"
+    elif c == 65:
+        return "🌧️", "Lluvia Fuerte"
+    elif c in [80, 81, 82]:
+        return "🌧️", "Chubasco"
+    elif c in [95, 96, 99]:
+        return "⛈️", "Tormenta"
+    else:
+        return "🌤️", "Nubosidad Var."
+
+def renderizar_modulo_pronostico_horario_estacion(nombre_estacion, df_actual_row):
+    if nombre_estacion not in METADATA_ESTACIONES_AMB:
+        return
+    meta = METADATA_ESTACIONES_AMB[nombre_estacion]
+    
+    df_fc_all = obtener_pronostico_open_meteo(meta['lat'], meta['lon'], past_days=1, forecast_days=3)
+    if df_fc_all.empty:
+        return
+        
+    ahora_dt = datetime.now(colombia_tz)
+    df_fc = df_fc_all.copy()
+    if df_fc['time'].dt.tz is None:
+        df_fc['time_dt'] = df_fc['time'].dt.tz_localize(colombia_tz)
+    else:
+        df_fc['time_dt'] = df_fc['time'].dt.tz_convert(colombia_tz)
+        
+    df_futuro = df_fc[df_fc['time_dt'] >= (ahora_dt - timedelta(minutes=45))].copy()
+    if df_futuro.empty:
+        return
+        
+    st.markdown("---")
+    st.subheader(f"🔮 Pronóstico Meteorológico Horario & Línea de Tiempo — {meta['nombre_completo']}")
+    st.caption(f"📍 Coordenadas: `{meta['lat']:.4f}°N, {meta['lon']:.4f}°W` • Altitud: `{meta['altitud_msnm']:,.2f} msnm` • Consulta automatizada en Python por peticiones HTTP a Open-Meteo & BigQuery.")
+    
+    col_fc1, col_fc2 = st.columns([1.3, 1])
+    with col_fc1:
+        ventana_h = st.radio(
+            "⏱️ Horizonte de Pronóstico:",
+            [12, 24, 48, 72],
+            index=1,
+            format_func=lambda h: f"Próximas {h} Horas" if h < 72 else "72 Horas (3 Días Completos)",
+            horizontal=True,
+            key=f"rad_fc_h_{nombre_estacion}"
+        )
+    
+    df_vista = df_futuro.head(ventana_h).copy()
+    
+    # Paralelo en Vivo: Terreno vs Satélite Actual
+    row_fc_act = df_vista.iloc[0]
+    ico_sat_act, desc_sat_act = mapear_codigo_wmo(row_fc_act.get('weather_code', 0))
+    t_sat_act = float(row_fc_act.get('temperature_2m', 0.0))
+    p_sat_act = float(row_fc_act.get('precipitation', 0.0))
+    prob_sat_act = int(row_fc_act.get('precipitation_probability', 0) or 0)
+    
+    if df_actual_row is not None and not (isinstance(df_actual_row, pd.Series) and df_actual_row.empty):
+        if nombre_estacion == "Embalse":
+            raw_c = df_actual_row.get('temperatura', 885.80)
+            cota_t = (float(raw_c) - OFFSET_RADAR_EMBALSE) if pd.notna(raw_c) and float(raw_c) > 800 else 885.80
+            txt_terreno = f"🌊 Cota Vaso: <strong>{cota_t:.2f} msnm</strong> (Radar OTT in situ)"
+        else:
+            t_terr = float(df_actual_row.get('temperatura', 0.0)) if pd.notna(df_actual_row.get('temperatura')) else 0.0
+            p_terr = float(df_actual_row.get('precipitacion', 0.0)) if pd.notna(df_actual_row.get('precipitacion')) else 0.0
+            v_terr = float(df_actual_row.get('velocidad_viento', 0.0)) if pd.notna(df_actual_row.get('velocidad_viento')) else 0.0
+            d_terr = float(df_actual_row.get('direccion_viento', 0.0)) if pd.notna(df_actual_row.get('direccion_viento')) else 0.0
+            txt_terreno = f"🌡️ Temp: <strong>{t_terr:.1f}°C</strong> | 🌧️ Lluvia: <strong>{p_terr:.1f} mm</strong> | 💨 Viento: <strong>{v_terr:.1f} km/h ({d_terr:.0f}°)</strong>"
+    else:
+        txt_terreno = "📡 Telemetría en proceso de adquisición"
+        
+    st.markdown(f"""
+    <div style="background: rgba(0,80,115,0.06); padding: 12px 18px; border-radius: 10px; border-left: 5px solid #005073; margin: 8px 0 14px 0; font-size: 13px; line-height: 1.6;">
+        <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; margin-bottom: 4px;">
+            <strong style="color: #005073; font-size: 13.5px;">⚖️ PARALELO METEOROLÓGICO EN VIVO: MEDICIÓN EN SUELO VS. ESTIMACIÓN SATELITAL</strong>
+            <span class="badge-status" style="background: rgba(0,80,115,0.15); color: #005073; border: 1px solid #005073;">AUTOMATIZACIÓN PYTHON (API + BIGQUERY)</span>
+        </div>
+        • <strong>📡 Telemetría en Suelo (Estación Física amb):</strong> {txt_terreno}<br>
+        • <strong>🛰️ Satélite / Modelo Numérico (Open-Meteo):</strong> {ico_sat_act} <strong>{desc_sat_act}</strong> | Temp Prevista: <strong>{t_sat_act:.1f}°C</strong> | Lluvia: <strong>{p_sat_act:.1f} mm/h</strong> | Probabilidad de Lluvia: <strong>{prob_sat_act}%</strong>
+    </div>
+    """, unsafe_allow_html=True)
+    
+    # Carrusel / Tira Horizontal de Tarjetas Horarias
+    cards_html = []
+    for _, row_h in df_vista.iterrows():
+        t_h = row_h['time_dt']
+        hora_str = t_h.strftime('%I:%M %p').lower()
+        dia_str = t_h.strftime('%a %d')
+        w_code = row_h.get('weather_code', 0)
+        ico, desc = mapear_codigo_wmo(w_code)
+        temp_val = float(row_h.get('temperature_2m', 0.0))
+        precip_val = float(row_h.get('precipitation', 0.0))
+        prob_val = int(row_h.get('precipitation_probability', 0) or 0)
+        
+        bg_card = "rgba(0, 80, 115, 0.04)" if precip_val < 0.1 else "rgba(0, 204, 150, 0.12)"
+        bdr_card = "#005073" if precip_val < 0.1 else "#00CC96"
+        txt_precip = f"🌧️ {precip_val:.1f} mm" if precip_val > 0 else "☀️ 0.0 mm"
+        color_precip = "#00805A" if precip_val > 0 else "#888"
+        
+        card = f"""
+        <div style="flex: 0 0 102px; background: {bg_card}; border: 1px solid {bdr_card}; border-radius: 10px; padding: 10px 6px; text-align: center; font-family: sans-serif; box-shadow: 0 2px 5px rgba(0,0,0,0.04);">
+            <div style="font-size: 11px; font-weight: 700; color: #555;">{dia_str}</div>
+            <div style="font-size: 12px; font-weight: 800; color: #005073; margin-bottom: 2px;">{hora_str}</div>
+            <div style="font-size: 26px; line-height: 1.2; margin: 3px 0;">{ico}</div>
+            <div style="font-size: 10px; color: #444; height: 22px; overflow: hidden; line-height: 1.1; font-weight: 600;">{desc}</div>
+            <div style="font-size: 16px; font-weight: 800; color: #222; margin: 3px 0;">{temp_val:.0f}°C</div>
+            <div style="font-size: 11px; font-weight: 700; color: {color_precip};">
+                {txt_precip}
+            </div>
+            <div style="font-size: 10.5px; color: #005073; font-weight: 600;">
+                💧 {prob_val}%
+            </div>
+        </div>
+        """
+        cards_html.append(card)
+        
+    tira_html = f"""
+    <div style="display: flex; gap: 8px; overflow-x: auto; padding: 4px 2px 14px 2px; margin-bottom: 8px;">
+        {''.join(cards_html)}
+    </div>
+    """
+    st.markdown(tira_html, unsafe_allow_html=True)
+    
+    # Gráfico interactivo combinado (Plotly Dual-Y)
+    fig_comb = make_subplots(specs=[[{"secondary_y": True}]])
+    fig_comb.add_trace(
+        go.Bar(
+            x=df_vista['time_dt'],
+            y=df_vista['precipitation'],
+            name='Lluvia Prevista (mm/h)',
+            marker_color='#00CC96',
+            opacity=0.75
+        ),
+        secondary_y=False
+    )
+    fig_comb.add_trace(
+        go.Scatter(
+            x=df_vista['time_dt'],
+            y=df_vista['temperature_2m'],
+            name='Temperatura Prevista (°C)',
+            mode='lines+markers',
+            line=dict(color='#FF4B4B', width=2.5),
+            marker=dict(size=6, color='#FF4B4B')
+        ),
+        secondary_y=True
+    )
+    fig_comb.update_layout(
+        title=f"📈 Evolución Horaria de Lluvia (mm/h) & Temperatura (°C) — {meta['nombre_completo']} (Próximas {ventana_h} Horas)",
+        template='plotly_white',
+        height=280,
+        margin=dict(t=40, b=10, l=10, r=10),
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
+    )
+    fig_comb.update_yaxes(title_text="Lluvia (mm/h)", secondary_y=False)
+    fig_comb.update_yaxes(title_text="Temperatura (°C)", secondary_y=True)
+    st.plotly_chart(fig_comb, use_container_width=True)
+
 def mostrar_modulo_atribucion_cuenca(df_cuenca, q_afluente_ls, horas):
     res = calcular_atribucion_cuenca_tona(df_cuenca, q_afluente_ls)
     df_atrib = res["df"]
@@ -1546,6 +1717,7 @@ with tab_situacion:
                     
             st.info(f"📅 Última lectura: {row['timestamp'].strftime('%Y-%m-%d %H:%M:%S')}")
             mostrar_seccion_edv()
+            renderizar_modulo_pronostico_horario_estacion("Embalse", row)
             
         else:
             salud = evaluar_salud_estacion(df_hist, row, seleccion)
@@ -1634,6 +1806,7 @@ with tab_situacion:
                     with col2: st.metric("🔼 Temp Máxima", f"{t_series_valid.max():.1f}°C")
                     with col3: st.metric("📊 Temp Promedio", f"{t_series_valid.mean():.1f}°C")
                     
+            renderizar_modulo_pronostico_horario_estacion(seleccion, row)
             mostrar_ficha_geografica_estacion(seleccion)
     else:
         st.warning("⚠️ Sin datos recientes para esta estación.")
