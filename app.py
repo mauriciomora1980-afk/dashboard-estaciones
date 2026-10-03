@@ -1070,16 +1070,17 @@ def renderizar_modulo_pronostico_horario_estacion(nombre_estacion, df_actual_row
     else:
         txt_terreno = "📡 Telemetría en proceso de adquisición"
         
-    st.markdown(f"""
-    <div style="background: rgba(0,80,115,0.06); padding: 12px 18px; border-radius: 10px; border-left: 5px solid #005073; margin: 8px 0 14px 0; font-size: 13px; line-height: 1.6;">
-        <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; margin-bottom: 4px;">
-            <strong style="color: #005073; font-size: 13.5px;">⚖️ PARALELO METEOROLÓGICO EN VIVO: MEDICIÓN EN SUELO VS. ESTIMACIÓN SATELITAL</strong>
-            <span class="badge-status" style="background: rgba(0,80,115,0.15); color: #005073; border: 1px solid #005073;">AUTOMATIZACIÓN PYTHON (API + BIGQUERY)</span>
-        </div>
-        • <strong>📡 Telemetría en Suelo (Estación Física amb):</strong> {txt_terreno}<br>
-        • <strong>🛰️ Satélite / Modelo Numérico (Open-Meteo):</strong> {ico_sat_act} <strong>{desc_sat_act}</strong> | Temp Prevista: <strong>{t_sat_act:.1f}°C</strong> | Lluvia: <strong>{p_sat_act:.1f} mm/h</strong> | Probabilidad de Lluvia: <strong>{prob_sat_act}%</strong>
-    </div>
-    """, unsafe_allow_html=True)
+    txt_paralelo_html = (
+        f'<div style="background: rgba(0,80,115,0.06); padding: 12px 18px; border-radius: 10px; border-left: 5px solid #005073; margin: 8px 0 14px 0; font-size: 13px; line-height: 1.6;">'
+        f'<div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; margin-bottom: 4px;">'
+        f'<strong style="color: #005073; font-size: 13.5px;">⚖️ PARALELO METEOROLÓGICO EN VIVO: MEDICIÓN EN SUELO VS. ESTIMACIÓN SATELITAL</strong>'
+        f'<span class="badge-status" style="background: rgba(0,80,115,0.15); color: #005073; border: 1px solid #005073;">AUTOMATIZACIÓN PYTHON (API + BIGQUERY)</span>'
+        f'</div>'
+        f'• <strong>📡 Telemetría en Suelo (Estación Física amb):</strong> {txt_terreno}<br>'
+        f'• <strong>🛰️ Satélite / Modelo Numérico (Open-Meteo):</strong> {ico_sat_act} <strong>{desc_sat_act}</strong> | Temp Prevista: <strong>{t_sat_act:.1f}°C</strong> | Lluvia: <strong>{p_sat_act:.1f} mm/h</strong> | Probabilidad de Lluvia: <strong>{prob_sat_act}%</strong>'
+        f'</div>'
+    )
+    st.markdown(txt_paralelo_html, unsafe_allow_html=True)
     
     # Carrusel / Tira Horizontal de Tarjetas Horarias
     cards_html = []
@@ -1098,28 +1099,20 @@ def renderizar_modulo_pronostico_horario_estacion(nombre_estacion, df_actual_row
         txt_precip = f"🌧️ {precip_val:.1f} mm" if precip_val > 0 else "☀️ 0.0 mm"
         color_precip = "#00805A" if precip_val > 0 else "#888"
         
-        card = f"""
-        <div style="flex: 0 0 102px; background: {bg_card}; border: 1px solid {bdr_card}; border-radius: 10px; padding: 10px 6px; text-align: center; font-family: sans-serif; box-shadow: 0 2px 5px rgba(0,0,0,0.04);">
-            <div style="font-size: 11px; font-weight: 700; color: #555;">{dia_str}</div>
-            <div style="font-size: 12px; font-weight: 800; color: #005073; margin-bottom: 2px;">{hora_str}</div>
-            <div style="font-size: 26px; line-height: 1.2; margin: 3px 0;">{ico}</div>
-            <div style="font-size: 10px; color: #444; height: 22px; overflow: hidden; line-height: 1.1; font-weight: 600;">{desc}</div>
-            <div style="font-size: 16px; font-weight: 800; color: #222; margin: 3px 0;">{temp_val:.0f}°C</div>
-            <div style="font-size: 11px; font-weight: 700; color: {color_precip};">
-                {txt_precip}
-            </div>
-            <div style="font-size: 10.5px; color: #005073; font-weight: 600;">
-                💧 {prob_val}%
-            </div>
-        </div>
-        """
+        card = (
+            f'<div style="flex: 0 0 102px; background: {bg_card}; border: 1px solid {bdr_card}; border-radius: 10px; padding: 10px 6px; text-align: center; font-family: sans-serif; box-shadow: 0 2px 5px rgba(0,0,0,0.04);">'
+            f'<div style="font-size: 11px; font-weight: 700; color: #555;">{dia_str}</div>'
+            f'<div style="font-size: 12px; font-weight: 800; color: #005073; margin-bottom: 2px;">{hora_str}</div>'
+            f'<div style="font-size: 26px; line-height: 1.2; margin: 3px 0;">{ico}</div>'
+            f'<div style="font-size: 10px; color: #444; height: 22px; overflow: hidden; line-height: 1.1; font-weight: 600;">{desc}</div>'
+            f'<div style="font-size: 16px; font-weight: 800; color: #222; margin: 3px 0;">{temp_val:.0f}°C</div>'
+            f'<div style="font-size: 11px; font-weight: 700; color: {color_precip};">{txt_precip}</div>'
+            f'<div style="font-size: 10.5px; color: #005073; font-weight: 600;">💧 {prob_val}%</div>'
+            f'</div>'
+        )
         cards_html.append(card)
         
-    tira_html = f"""
-    <div style="display: flex; gap: 8px; overflow-x: auto; padding: 4px 2px 14px 2px; margin-bottom: 8px;">
-        {''.join(cards_html)}
-    </div>
-    """
+    tira_html = f'<div style="display: flex; gap: 8px; overflow-x: auto; padding: 4px 2px 14px 2px; margin-bottom: 8px;">{"".join(cards_html)}</div>'
     st.markdown(tira_html, unsafe_allow_html=True)
     
     # Gráfico interactivo combinado (Plotly Dual-Y)
