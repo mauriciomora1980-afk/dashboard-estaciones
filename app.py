@@ -1664,7 +1664,7 @@ with tab_situacion:
             c1, c2, c3, c4 = st.columns(4)
             c1.metric("🌊 Cota Calibrada", f"{cota_actual:.2f} msnm", delta=f"{descenso_total_cm:+.1f} cm vs Rebose (885.75)", help=f"Sensor OTT: {cota_raw:.2f} msnm | Offset calibrado: -{OFFSET_RADAR_EMBALSE*100:.0f} cm")
             c2.metric("💧 Volumen Útil", f"{hidro['volumen_util_hm3']:.2f} hm³", delta=f"{hidro['porcentaje_util']:.1f}% útil")
-            c3.metric("📦 Consumo Total Bosconia", f"{vol_entregado_total_m3:,.0f} m³", delta=f"{abs(descenso_total_cm):.1f} cm acumulados ({txt_maniobra_corto})", delta_color="inverse", help=f"Total de metros cúbicos consumidos por PTAP Bosconia desde que se abrió la CRC el martes 22 de septiembre a la 1:00 PM ({txt_maniobra_largo}) en cota de rebose 885.75 msnm")
+            c3.metric("📦 Desalmacenamiento Vaso", f"{vol_entregado_total_m3:,.0f} m³", delta=f"{abs(descenso_total_cm):.1f} cm cedidos ({txt_maniobra_corto})", delta_color="inverse", help=f"Volumen neto cedido por el vaso del embalse (-{abs(descenso_total_cm):.1f} cm) desde el inicio de maniobra el martes 22 de septiembre a la 1:00 PM ({txt_maniobra_largo}). El suministro total a Bosconia a ~400 L/s es de ~{(horas_maniobra_crc*3600*0.4):,.0f} m³, amortiguado por la recarga de cuenca.")
             if hidro["q_rebose_ls"] > 0:
                 c4.metric("🌊 Caudal Rebose MG", f"{hidro['q_rebose_m3_s']:.2f} m³/s", delta=f"{hidro['q_rebose_ls']:,.0f} L/s hacia Puente Tona")
             elif bal and bal["q_neto_ls"] > 0:
@@ -1676,13 +1676,13 @@ with tab_situacion:
             if bal:
                 st.markdown("---")
                 st.markdown("### ⚖️ Balance Hídrico Dinámico en Vivo (Extracción CRC Bosconia)")
-                st.caption(f"Consumo acumulado total ({vol_entregado_total_m3:,.0f} m³ consumidos por Bosconia en {txt_maniobra_largo} de maniobra / desde Martes 22 Sept 1:00 PM) y tasa neta calibrada en las últimas **{bal['horas']:.1f} horas**.")
+                st.caption(f"Descenso neto del vaso ({vol_entregado_total_m3:,.0f} m³ cedidos en {txt_maniobra_largo} de maniobra / desde Martes 22 Sept 1:00 PM) y tasa neta calibrada en las últimas **{bal['horas']:.1f} horas**.")
                 
                 bc1, bc2, bc3, bc4 = st.columns(4)
-                bc1.metric("📦 Consumo Total Maniobra", f"{vol_entregado_total_m3:,.0f} m³", delta=f"{abs(descenso_total_cm):.1f} cm acumulados ({txt_maniobra_corto})", delta_color="inverse", help=f"Total de metros cúbicos consumidos por Bosconia desde que inició la maniobra el martes 22 de septiembre a la 1:00 PM ({txt_maniobra_largo}) en la cota de rebose 885.75 msnm")
+                bc1.metric("📦 Desalmacenamiento Total", f"{vol_entregado_total_m3:,.0f} m³", delta=f"{abs(descenso_total_cm):.1f} cm cedidos ({txt_maniobra_corto})", delta_color="inverse", help=f"Volumen neto cedido por el vaso desde el 22 de septiembre a la 1:00 PM en cota de rebose 885.75 msnm")
                 bc2.metric("⚡ Tasa Neta Reciente", f"{bal['q_neto_ls']:.0f} L/s", delta=f"{bal['vel_cm_dia']:+.1f} cm/día", delta_color="inverse", help=f"Velocidad neta de vaciado en las últimas {bal['horas']:.1f} horas")
-                bc3.metric(f"🚰 Consumo Ventana ({bal['horas']:.1f}h)", f"{abs(bal['delta_v_m3']):,.0f} m³", delta=f"{bal['delta_cota_cm']:+.1f} cm en 24h", delta_color="inverse", help=f"Metros cúbicos cedidos exclusivamente en el período de análisis de las últimas {bal['horas']:.1f} horas")
-                bc4.metric("⏳ Autonomía Real Dinámica", f"{bal['dias_autonomia']:.0f} Días" if bal['dias_autonomia'] else "N/A", help="Días restantes de agua continua hasta el Nivel Mínimo Técnico (841 msnm)")
+                bc3.metric(f"🚰 Desalmacenado ({bal['horas']:.1f}h)", f"{abs(bal['delta_v_m3']):,.0f} m³", delta=f"{bal['delta_cota_cm']:+.1f} cm en ventana", delta_color="inverse", help=f"Metros cúbicos cedidos exclusivamente en el período de análisis de las últimas {bal['horas']:.1f} horas")
+                bc4.metric("⏳ Autonomía Real Dinámica", f"{bal['dias_autonomia']:.0f} Días" if bal['dias_autonomia'] else "N/A", help="Días restantes de agua continua a la tasa neta actual hasta el Nivel Mínimo Técnico (841 msnm)")
                 
                 st.markdown(f"""
                 <div style="background: rgba(0,80,115,0.06); padding: 14px 18px; border-radius: 8px; border-left: 4px solid #005073; margin-top: 10px; font-size: 13px; line-height: 1.5;">
@@ -2698,3 +2698,4 @@ with st.sidebar.expander("📏 Extensómetros (EDV)"):
 # ============================================================
 # FIN DEL CÓDIGO — SISTEMA MIMAT-C26 (amb)
 # ============================================================
+
