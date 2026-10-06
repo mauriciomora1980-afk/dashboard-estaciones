@@ -2040,14 +2040,30 @@ with tab_radar_72h:
             st.warning("⚠️ No se pudo conectar con el servicio de pronóstico meteorológico.")
             
     with col_rad2:
-        st.markdown("### 🛰️ Radar Satelital de Lluvia en Vivo (Santander)")
-        st.caption("Reflectividad Doppler y desplazamiento de frentes de tormenta en tiempo real")
+        st.markdown("### 🛰️ Visor Satelital & Radar en Vivo (Santander)")
+        st.caption("Imágenes infrarrojas GOES-16 y frentes de tormenta en tiempo real centrados en la estación")
         
-        radar_url = f"https://www.rainviewer.com/map.html?loc={lat_sel},{lon_sel},10&oFa=0&oC=1&oU=0&oCS=1&oF=0&oAP=1&c=3&o=83&lm=1&layer=radar&sm=1&sn=1"
+        tipo_visor = st.radio(
+            "Capa Meteorológica:",
+            ["🛰️ Satélite GOES-16 (Nubes en Vivo)", "🌧️ Radar de Precipitación", "📡 RainViewer"],
+            horizontal=True,
+            label_visibility="collapsed"
+        )
+        
+        if "Satélite" in tipo_visor:
+            map_url = f"https://embed.windy.com/embed2.html?lat={lat_sel}&lon={lon_sel}&detailLat={lat_sel}&detailLon={lon_sel}&width=650&height=480&zoom=10&level=surface&overlay=satellite&product=satellite&menu=&message=&marker=true&calendar=now&pressure=&type=map&location=coordinates&detail=&metricWind=default&metricTemp=default&radarRange=-1"
+            subtitulo_mapa = f"🛰️ Satélite Infrarrojo GOES-16 centrado en <strong>{meta_sel['nombre_completo']}</strong>. Muestra la masa nubosa, convección y vapor de agua en vivo."
+        elif "Radar" in tipo_visor:
+            map_url = f"https://embed.windy.com/embed2.html?lat={lat_sel}&lon={lon_sel}&detailLat={lat_sel}&detailLon={lon_sel}&width=650&height=480&zoom=10&level=surface&overlay=radar&product=radar&menu=&message=&marker=true&calendar=now&pressure=&type=map&location=coordinates&detail=&metricWind=default&metricTemp=default&radarRange=-1"
+            subtitulo_mapa = f"🌧️ Radar de precipitación y reflectividad Doppler centrado en <strong>{meta_sel['nombre_completo']}</strong>."
+        else:
+            map_url = f"https://www.rainviewer.com/map.html?loc={lat_sel},{lon_sel},10&oFa=0&oC=1&oU=0&oCS=1&oF=0&oAP=1&c=3&o=83&lm=1&layer=radar&sm=1&sn=1"
+            subtitulo_mapa = f"📡 RainViewer centrado en <strong>{meta_sel['nombre_completo']}</strong>."
+            
         st.markdown(f"""
-        <iframe src="{radar_url}" width="100%" height="480" frameborder="0" style="border-radius: 12px; border: 2px solid #005073; box-shadow: 0 4px 15px rgba(0,0,0,0.12);"></iframe>
+        <iframe src="{map_url}" width="100%" height="480" frameborder="0" style="border-radius: 12px; border: 2px solid #005073; box-shadow: 0 4px 15px rgba(0,0,0,0.12);"></iframe>
         <div style="font-size: 11.5px; color: #555; text-align: center; margin-top: 6px;">
-            📡 Radar Doppler interactivo centrado en <strong>{meta_sel['nombre_completo']}</strong>. Usa los controles inferiores para reproducir la animación en vivo.
+            {subtitulo_mapa}
         </div>
         """, unsafe_allow_html=True)
         
