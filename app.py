@@ -2224,22 +2224,22 @@ with tab_radar_72h:
             factor_magnitud_mos = float(res_interv.get('factor_magnitud', 1.0)) if res_interv.get('valido') else 1.0
             tag_muestreo = f"✅ Muestra Directa {horas_eval_interv}h (n={n_obs_actual}h lluvia real)"
             
-        # 2. Coeficiente Dual MOS (Detección Probabilística × Corrección de Magnitud Volumétrica)
-        # I_MOS: Confiabilidad binaria de ocurrencia [0.0 - 1.0]
+        # 2. Coeficiente Dual MOS Desacoplado (Detección Probabilística + Corrección de Magnitud Volumétrica)
+        # I_MOS: Confiabilidad binaria de detección [0.0 - 1.0]
         factor_imos = max(0.0, min(1.0, (prob_calibrada / 100.0) * (1.0 - (far_reciente / 100.0))))
         
-        # P_MOS = P_sat × I_MOS × beta_magnitud
-        p_tot_mos = p_tot_fc * factor_imos * factor_magnitud_mos
-        p_max_mos = p_max_fc * factor_imos * factor_magnitud_mos
+        # P_MOS = P_sat × beta_magnitud (corrección cuantitativa de magnitud)
+        p_tot_mos = p_tot_fc * factor_magnitud_mos
+        p_max_mos = p_max_fc * factor_magnitud_mos
         
         col_al1, col_al2 = st.columns([1.15, 1])
         
         with col_al1:
-            # FILTRO BAYESIANO DE CONFIABILIDAD EMPÍRICA (Resuelve contradicción con la interventoría)
+            # FILTRO DE CONFIABILIDAD EMPÍRICA PROPIO MIMAT-C26 (Criterio Unificado I_MOS)
             es_evento_fuerte = (p_max_fc >= 15.0 or p_tot_fc >= 30.0)
             es_evento_moderado = (p_max_fc >= 5.0 or p_tot_fc >= 15.0)
-            es_confiable = (prob_calibrada >= 50.0 and far_reciente <= 50.0)
-            es_baja_confianza = (prob_calibrada < 30.0 or far_reciente >= 70.0)
+            es_confiable = (factor_imos >= 0.25)
+            es_baja_confianza = (factor_imos < 0.25)
             
             if es_evento_fuerte and es_confiable:
                 nivel_alerta = "ALERTA ROJA OPERATIVA: TORMENTA SEVERA CONFIRMADA"
@@ -2328,6 +2328,49 @@ with tab_radar_72h:
                     </ul>
                 </div>
                 """, unsafe_allow_html=True)
+                
+        # ------------------------------------------------------------
+        # SUBSECCIÓN: CENTRO DE NOTIFICACIONES SMS & ALERTAS EN VIVO (amb)
+        # ------------------------------------------------------------
+        st.markdown("---")
+        with st.expander("📲 Centro de Notificaciones SMS & Boletines Automatizados (SAT-IA)", expanded=False):
+            st.markdown("""
+            <div style="background: rgba(0,80,115,0.05); padding: 12px 16px; border-radius: 8px; border-left: 4px solid #005073; font-size: 13px; line-height: 1.5; margin-bottom: 12px;">
+                <strong>📱 Protocolo de Mensajería SMS a Teléfonos Móviles de Campo:</strong><br>
+                • <strong>Boletín Semanal:</strong> Enviado todos los <strong>Lunes a las 07:00 AM COT</strong> a la Dirección de Producción (Ing. Diana Calderón e Ing. Carlos Angarita).<br>
+                • <strong>Avisos Diurnos:</strong> Monitoreo activo de lluvias significativas (P75) de <strong>07:00 AM a 05:00 PM COT</strong>.<br>
+                • <strong>Canal Crítico 24/7:</strong> Alertas Naranja y Roja (P90/P99) se despachan inmediatamente a cualquier hora.
+            </div>
+            """, unsafe_allow_html=True)
+            
+            c_sms1, c_sms2 = st.columns(2)
+            with c_sms1:
+                st.markdown("##### 🚀 1. Formato Boletín Semanal (1 Segmento Puro GSM-7)")
+                sms_act_preview = (
+                    "MIMAT-C26 (5-11 oct)\n"
+                    "Vegas: 22mm\n"
+                    "Yerbabuena: 35mm\n"
+                    "Pajal: 18mm\n"
+                    "Mariana: 28mm\n"
+                    "Monsalve: 40mm\n"
+                    "Pronostico semanal amb"
+                )
+                st.text_area("Texto SMS Ultra-Reducido (117 caracteres):", sms_act_preview, height=180)
+                st.caption("✅ 1 solo segmento (<160 chars). Sin caracteres especiales. Entrega directa sin buffer de red.")
+                
+            with c_sms2:
+                st.markdown(f"##### 🚨 2. Plantilla de Alerta en Vivo — {meta_sel['nombre_completo']}")
+                p_sim = max(p_max_fc, 18.5)
+                sms_alerta_preview = (
+                    f"ALERTA MIMAT-C26 (amb)\n"
+                    f"Estacion: {seleccion.replace('_', ' ').upper()} ({meta_sel['microcuencas']})\n"
+                    f"Lluvia: {p_sim:.1f} mm/h (ALERTA OPERATIVA)\n"
+                    f"Tiempo Estimado de Llegada: {lag_estacion}\n"
+                    f"Accion: Estar pendiente de los niveles de la cuenca e inspeccion de rejillas.\n"
+                    f"Hora: {datetime.now(colombia_tz).strftime('%H:%M COT')}\n"
+                    f"MIMAT: https://dashboard-estaciones-sqzvqxabsxpvct3r63tka8.streamlit.app/"
+                )
+                st.text_area("Formato SMS de Alerta:", sms_alerta_preview, height=220)
 
 # ------------------------------------------------------------
 # TAB 4: SERIES DE TIEMPO, ROSA DE VIENTOS Y DESCARGAS
@@ -2566,10 +2609,22 @@ with tab_matematica:
         $$Q_{\text{Tona}} = A(h) \cdot \frac{\Delta h}{\Delta t} + Q_{\text{PTAP}} + Q_{\text{rebose}}$$
         """)
         
-    with st.expander("⏳ 3. Autonomía Hídrica y Contingencia Sequía Súper Niño"):
+    with st.expander("⏳ 3. Autonomía Hídrica y Contingencia Sequía Súper Niño (Modelo Multi-Régimen)", expanded=False):
         st.markdown(r"""
-        La autonomía de suministro continuo para el Área Metropolitana de Bucaramanga hasta el Nivel Mínimo Técnico ($841.00\text{ msnm}$) se modela como:
-        $$\text{Autonomía (Días)} = \frac{V_{\text{útil actual}} (\text{m}^3) - V(841.00)}{Q_{\text{PTAP}} (\text{m}^3/\text{s}) \times 86.400\text{ s/día}}$$
+        La autonomía hídrica de suministro continuo para el Área Metropolitana de Bucaramanga hasta el Nivel Mínimo Técnico ($841.00\text{ msnm}$) se modela dinámicamente mediante la ecuación de vaciado neto:
+        
+        $$\text{Autonomía (Días)} = \frac{V_{\text{útil actual}} (\text{m}^3) - V_{\text{muerto}} (841.00\text{ msnm})}{Q_{\text{neto}} (\text{m}^3/\text{s}) \times 86.400\text{ s/día}}$$
+        
+        Donde el caudal neto de vaciado del vaso ($Q_{\text{neto}}$) es la resultante de la extracción a PTAP Bosconia menos la recarga continua de los afluentes de cuenca:
+        $$Q_{\text{neto}} = Q_{\text{PTAP Bosconia}} - Q_{\text{recarga afluentes}}$$
+        
+        **Escenarios Oficiales de Autonomía (Sobre $13.08\text{ hm}^3$ útiles):**
+        1. **Escenario 1 (Régimen Actual con Recarga Hidrológica Continua):**
+           $$Q_{\text{PTAP}} = 400\text{ L/s}, \quad Q_{\text{recarga}} = 175\text{ L/s} \implies Q_{\text{neto}} = 225\text{ L/s} \implies \mathbf{672\text{ Días}} \quad (\approx 22.4\text{ meses})$$
+        2. **Escenario 2 (Estiaje Medio / Reducción del 50% en Aportes Fluviales):**
+           $$Q_{\text{PTAP}} = 400\text{ L/s}, \quad Q_{\text{recarga}} = 87.5\text{ L/s} \implies Q_{\text{neto}} = 312.5\text{ L/s} \implies \mathbf{484\text{ Días}} \quad (\approx 16.1\text{ meses})$$
+        3. **Escenario 3 (Estiaje Crítico / Cero Aporte de Cuenca - Peor Escenario Súper Niño):**
+           $$Q_{\text{PTAP}} = 400\text{ L/s}, \quad Q_{\text{recarga}} = 0\text{ L/s} \implies Q_{\text{neto}} = 400\text{ L/s} \implies \mathbf{378\text{ Días}} \quad (\approx 12.6\text{ meses})$$
         """)
         
     with st.expander("📏 4. Calibración de Mira Virtual (Radar Sommer RQ-30)"):
@@ -2671,6 +2726,80 @@ with tab_matematica:
         3. **Validación de Masas en Balance Dinámico:**
            $$\left.\frac{dh}{dt}\right|_{t < \text{Lag}} > 0 \implies \text{Lluvia Directa Confirmada sobre el Espejo de Agua}.$$
         """)
+        
+    with st.expander("🌊 10. Modelo Matemático del Embalse como Pluviómetro Gigante y Receptor Volumétrico (46.2 ha)"):
+        st.markdown(r"""
+        El concepto de que el **Embalse Tona funciona como un pluviómetro gigante de 46.2 hectáreas** se fundamenta en la **Ecuación Diferencial de Continuidad de Masas en Superficies Libres** y la **Curva Hipsográfica Batimétrica**:
+        
+        1. **Definición Metrológica Fundamental de Pluviómetro:**
+            Un pluviómetro estándar recolecta agua en una boca de área conocida ($A_{\text{boca}} \approx 200\text{ cm}^2 = 0.02\text{ m}^2$). La lámina de precipitación $P$ en milímetros ($1\text{ mm} = 1\text{ L/m}^2 = 10^{-3}\text{ m}$) satisface:
+            $$P (\text{mm}) = \frac{\Delta V (\text{m}^3)}{A (\text{m}^2)} \times 1.000 = \Delta h (\text{mm})$$
+            
+        2. **Escalamiento al Espejo de Agua del Embalse Tona ($A_{\text{espejo}} = 462.000\text{ m}^2$):**
+            El espejo de agua libre a cota de operación normal actúa como un receptor volumétrico continuo $23.1\text{ millones de veces}$ mayor que un pluviómetro de laboratorio:
+            $$\Delta V_{\text{directo}} (\text{m}^3) = P_{\text{directa}} (\text{mm}) \times A_{\text{espejo}} (\text{m}^2) \times 10^{-3} = P (\text{mm}) \times 462\text{ m}^3/\text{mm}$$
+            $$\Delta h_{\text{directo}} (\text{mm}) = P_{\text{directa}} (\text{mm}) \implies \Delta h_{\text{directo}} (\text{cm}) = \frac{P (\text{mm})}{10}$$
+            *Cada $1.0\text{ mm}$ de lluvia directa sobre el vaso produce un ascenso vertical instantáneo de exactamente $1.0\text{ mm}$ ($0.1\text{ cm}$) en la cota del Radar OTT, aportando $+462\text{ m}^3$ instantáneos al sistema.*
+            
+        3. **Ecuación Diferencial Completa de Balance y Derivada Batimétrica:**
+            La variación volumétrica en el tiempo se descompone en aporte directo instantáneo, aporte fluvial con retardo y extracciones:
+            $$\frac{dV(t)}{dt} = \underbrace{P_{\text{directa}}(t) \cdot A_{\text{espejo}}(h)}_{\text{Pluviómetro Gigante Instantáneo}} + \underbrace{Q_{\text{afluentes}}(t)}_{\text{Escorrentía de Cuenca con Retardo}} - \underbrace{Q_{\text{salida CRC}}(t)}_{\text{Extracción a PTAP Bosconia}} - \underbrace{\left[ E(t) + I(t) \right]}_{\text{Evaporación / Infiltración}}$$
+            
+            Aplicando la derivada de la curva batimétrica multihaz ($\frac{dV}{dh} = A(h)$):
+            $$\frac{dh}{dt} = P_{\text{directa}}(t) + \frac{Q_{\text{afluentes}}(t) - Q_{\text{salida CRC}}(t) - E(t)}{A(h)}$$
+            
+        4. **Desacoplamiento Temporal en Dos Fases:**
+            * **Fase 1 (Respuesta Inmediata, $t < 10\text{ min}$):** El radar OTT asciende instantáneamente por impacto pluvial directo sobre las 46.2 ha ($\Delta h = P_{\text{mm}}$).
+            * **Fase 2 (Respuesta Hidrológica Retardada, $t = 30 \text{ a } 210\text{ min}$):** Arriban los hidrogramas de creciente de los afluentes (Río Tona, Ranás, Gualilo, Reforma, Los Monos), multiplicando la recarga total acumulada del vaso.
+        """)
+        
+    with st.expander("📊 11. Umbrales Estadísticos de Precipitación (P75, P90, P99) y Lógica de Disparo SMS"):
+        st.markdown(r"""
+        La activación de alertas y notificaciones tempranas se basa en la **Función de Distribución Acumulada Empírica (ECDF)** calibrada para las microcuencas de captación del sistema amb:
+        
+        $$F(I) = P(X \le I) = \frac{1}{n} \sum_{i=1}^n \mathbf{1}_{x_i \le I}$$
+        
+        **Estratificación de Umbrales Estadísticos:**
+        1. **Percentil 75 ($P_{75}$ — Umbral de Inicio de Lluvia Significativa):**
+           Intensidad horaria a partir de la cual se considera un pulso hidrológico relevante que amerita notificación operativa diurna ($07:00\text{ a }17:00\text{ COT}$).
+        2. **Percentil 90 ($P_{90}$ — Alerta Naranja Operativa):**
+           Lluvia severa con potencial de generar turbiedad elevada en bocatomas y aumento súbito de caudales. Canal crítico activo $24/7$.
+        3. **Percentil 99 ($P_{99}$ — Alerta Roja Crítica):**
+           Evento torrencial extremo ($1\%$ superior histórico). Activa maniobras de protección de infraestructura y purga inmediata $24/7$.
+           
+        **Matriz Oficial de Umbrales de Activación por Estación:**
+        """)
+        df_umbrales_st = pd.DataFrame({
+            "Estación / Microcuenca": ["Yerbabuena (Suratá)", "Monsalve (Suratá)", "La Mariana (Tona)", "El Pajal (Tona)", "Vegas del Quemado (Tona)", "Embalse Tona (Vaso)"],
+            "Inicio Lluvia Diurna (P75)": ["≥ 10.9 mm/h", "≥ 10.9 mm/h", "≥ 11.7 mm/h", "≥ 12.3 mm/h", "≥ 27.2 mm/h", "≥ 10.0 mm/h"],
+            "Alerta Naranja (P90)": ["≥ 20.0 mm/h", "≥ 20.0 mm/h", "≥ 22.0 mm/h", "≥ 23.5 mm/h", "≥ 40.0 mm/h", "≥ 18.0 mm/h"],
+            "Alerta Roja (P99)": ["≥ 35.0 mm/h", "≥ 35.0 mm/h", "≥ 38.0 mm/h", "≥ 40.0 mm/h", "≥ 60.0 mm/h", "≥ 30.0 mm/h"],
+            "Lag Time Estimado": ["45 - 90 min", "60 - 120 min", "90 - 180 min", "75 - 150 min", "120 - 210 min", "Instantáneo (0 min)"]
+        })
+        st.dataframe(df_umbrales_st, use_container_width=True)
+        st.caption("Filtro Anti-Fatiga: Eventos clasificados como 'Avisos en Observación' (I_MOS < 0.25) se excluyen de la mensajería SMS para proteger la atención del personal operativo.")
+        
+    with st.expander("📲 12. Arquitectura Serverless SMS, Algoritmo de Debounce y Auditoría Cloud en BigQuery"):
+        st.markdown(r"""
+        El subsistema de alertas tempranas vía SMS opera sobre una arquitectura serverless desacoplada de alta resiliencia y costo cero ($0.00\text{ USD/mes}$):
+        
+        1. **Algoritmo de Debounce Temporal Anti-Fatiga:**
+           Para evitar saturación de mensajes ante oscilaciones de señal de telemetría, se impone una ventana mínima entre reenvíos sucesivos por estación:
+           $$\Delta t = t_{\text{actual}} - t_{\text{último\_envío}} \ge 120\text{ minutos}$$
+           
+        2. **Bypass de Excepción por Escalada de Severidad:**
+           Si la severidad del evento escala ($S(t_{\text{actual}}) > S(t_{\text{previo}})$), por ejemplo de Alerta Amarilla a Alerta Roja ($P_{99}$), el sistema omite el temporizador y despacha la alerta crítica de forma instantánea:
+           $$\text{Bypass} = \mathbf{1}_{\{S_{\text{nuevo}} > S_{\text{anterior}}\}} \implies \text{Despacho Inmediato}$$
+           
+        3. **Auditoría Transaccional y Acuse de Recibo en Google BigQuery:**
+           Cada mensaje disparado por Google Cloud Functions Gen 2 se audita en la tabla:
+           `gen-lang-client-0342049346.amb_hidrologia.historial_sms_enviados`
+           
+           Registrando: `timestamp_envio`, `tipo_mensaje`, `estacion`, `severidad`, `destinatarios_enmascarados` (bajo Ley 1581 de 2012), `sid_twilio` y `status_callback` (queued, sent, delivered, undelivered).
+           
+        4. **Eficiencia de Costos en la Nube (GCP):**
+           Con $4.320$ ejecuciones programadas al mes ($1$ cada $10\text{ min}$) y consultas optimizadas de $\approx 4.3\text{ GB/mes}$, el consumo queda $100\%$ cubierto por el **Free Tier mensual de 1 TB de BigQuery y 2 millones de invocaciones de Cloud Run/Functions**.
+        """)
 
 # ============================================================
 # 9. SIDEBAR FOOTER
@@ -2698,4 +2827,3 @@ with st.sidebar.expander("📏 Extensómetros (EDV)"):
 # ============================================================
 # FIN DEL CÓDIGO — SISTEMA MIMAT-C26 (amb)
 # ============================================================
-
