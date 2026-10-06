@@ -629,6 +629,19 @@ def obtener_sensor_virtual_resiliente(estacion):
         }
     return None
 
+def calcular_presion_atmosferica_hpa(altitud_msnm: float, temp_c: float = 18.0) -> float:
+    """
+    Calcula la presión atmosférica local (hPa / mbar) aplicando la fórmula barométrica
+    hipsográfica estándar internacional (ISA / OMM).
+    P0 = 1013.25 hPa al nivel del mar.
+    """
+    try:
+        alt = float(altitud_msnm)
+        presion = 1013.25 * ((1.0 - (0.0065 * alt) / 288.15) ** 5.25588)
+        return round(float(presion), 1)
+    except:
+        return 1013.2
+
 # ============================================================
 # 4.1 METADATOS HIDROLÓGICOS & GEORREFERENCIACIÓN OFICIAL (amb)
 # ============================================================
@@ -1661,16 +1674,17 @@ with tab_situacion:
                 </div>
                 """, unsafe_allow_html=True)
             
-            c1, c2, c3, c4 = st.columns(4)
+            c1, c2, c3, c4, c5 = st.columns(5)
             c1.metric("🌊 Cota Calibrada", f"{cota_actual:.2f} msnm", delta=f"{descenso_total_cm:+.1f} cm vs Rebose (885.75)", help=f"Sensor OTT: {cota_raw:.2f} msnm | Offset calibrado: -{OFFSET_RADAR_EMBALSE*100:.0f} cm")
             c2.metric("💧 Volumen Útil", f"{hidro['volumen_util_hm3']:.2f} hm³", delta=f"{hidro['porcentaje_util']:.1f}% útil")
             c3.metric("📦 Desalmacenamiento Vaso", f"{vol_entregado_total_m3:,.0f} m³", delta=f"{abs(descenso_total_cm):.1f} cm cedidos ({txt_maniobra_corto})", delta_color="inverse", help=f"Volumen neto cedido por el vaso del embalse (-{abs(descenso_total_cm):.1f} cm) desde el inicio de maniobra el martes 22 de septiembre a la 1:00 PM ({txt_maniobra_largo}). El suministro total a Bosconia a ~400 L/s es de ~{(horas_maniobra_crc*3600*0.4):,.0f} m³, amortiguado por la recarga de cuenca.")
+            c4.metric("🧭 Presión Atm.", f"{calcular_presion_atmosferica_hpa(cota_actual):.1f} hPa", help="Presión barométrica local en la caseta de presa (Cota ~885 msnm - ISA/OMM)")
             if hidro["q_rebose_ls"] > 0:
-                c4.metric("🌊 Caudal Rebose MG", f"{hidro['q_rebose_m3_s']:.2f} m³/s", delta=f"{hidro['q_rebose_ls']:,.0f} L/s hacia Puente Tona")
+                c5.metric("🌊 Caudal Rebose MG", f"{hidro['q_rebose_m3_s']:.2f} m³/s", delta=f"{hidro['q_rebose_ls']:,.0f} L/s hacia Puente Tona")
             elif bal and bal["q_neto_ls"] > 0:
-                c4.metric("⚡ Tasa Neta Vaciado", f"{bal['q_neto_ls']:.0f} L/s", delta=f"{bal['vaciado_diario_m3']:,.0f} m³/día", delta_color="inverse", help=f"Velocidad neta de vaciado en las últimas {bal['horas']:.1f} horas. Salida Válvula CRC = Tasa Neta + Aporte Río Tona.")
+                c5.metric("⚡ Tasa Neta Vaciado", f"{bal['q_neto_ls']:.0f} L/s", delta=f"{bal['vaciado_diario_m3']:,.0f} m³/día", delta_color="inverse", help=f"Velocidad neta de vaciado en las últimas {bal['horas']:.1f} horas. Salida Válvula CRC = Tasa Neta + Aporte Río Tona.")
             else:
-                c4.metric("📐 Área Espejo", f"{hidro['area_ha']:.1f} ha", delta=f"{hidro['m3_por_cm']:.0f} m³/cm")
+                c5.metric("📐 Área Espejo", f"{hidro['area_ha']:.1f} ha", delta=f"{hidro['m3_por_cm']:.0f} m³/cm")
             
             # Tarjeta de Balance Dinámico en Tiempo Real (Derivada Batimétrica)
             if bal:
@@ -1771,21 +1785,29 @@ with tab_situacion:
                 ''', unsafe_allow_html=True)
                 st.write("")
             
-            c1, c2, c3, c4, c5, c6 = st.columns(6)
+            alt_est = METADATA_ESTACIONES_AMB.get(seleccion, {}).get('altitud_msnm', 2000.0)
+            pres_raw = row.get('presion') or row.get('presion_atmosferica') or row.get('barometro')
+            es_presion_fisica = pd.notna(pres_raw) and float(pres_raw) > 300
+            pres_val = float(pres_raw) if es_presion_fisica else calcular_presion_atmosferica_hpa(alt_est, t_val)
+            ayuda_pres = f"📡 Barómetro Físico de Estación: {pres_val:.1f} hPa" if es_presion_fisica else f"🧭 Estimación Barométrica ISA/OMM para {alt_est:,.0f} msnm"
+            
+            c1, c2, c3, c4, c5, c6, c7 = st.columns(7)
             if sensor_virt:
                 c1.metric("🌡️ Temp (Virtual)", f"{t_val:.1f} °C", help="Estimada por gradiente altimétrico vertical (-0.65°C/100m) desde El Pajal")
                 c2.metric("🌧️ Precip (Virtual)", f"{p_val:.1f} mm")
                 c3.metric("💧 Humedad (Virtual)", f"{h_val:.1f} %")
-                c4.metric("💨 Viento (Virtual)", f"{v_val:.1f} km/h")
-                c5.metric("🧭 Dir. Viento (Virtual)", f"{d_val:.0f}°")
-                c6.metric("🔋 Voltaje", "N/A", help="Sensor de batería pendiente de conexión en SCADA")
+                c4.metric("🧭 Presión Atm.", f"{pres_val:.1f} hPa", help=ayuda_pres)
+                c5.metric("💨 Viento (Virtual)", f"{v_val:.1f} km/h")
+                c6.metric("🧭 Dir. Viento (Virtual)", f"{d_val:.0f}°")
+                c7.metric("🔋 Voltaje", "N/A", help="Sensor de batería pendiente de conexión en SCADA")
             else:
                 c1.metric("🌡️ Temp", f"{t_val:.1f} °C")
                 c2.metric("🌧️ Precip", f"{p_val:.1f} mm")
                 c3.metric("💧 Humedad", f"{h_val:.1f} %")
-                c4.metric("💨 Viento", f"{v_val:.1f} km/h")
-                c5.metric("🧭 Dir. Viento", f"{d_val:.0f}°")
-                c6.metric("🔋 Voltaje", f"{b_val:.1f} V" if b_val > 0 else "N/A", help="Sensor de batería pendiente de integración SCADA")
+                c4.metric("🧭 Presión Atm.", f"{pres_val:.1f} hPa", help=ayuda_pres)
+                c5.metric("💨 Viento", f"{v_val:.1f} km/h")
+                c6.metric("🧭 Dir. Viento", f"{d_val:.0f}°")
+                c7.metric("🔋 Voltaje", f"{b_val:.1f} V" if b_val > 0 else "N/A", help="Sensor de batería pendiente de integración SCADA")
             
             st.info(f"📅 Última lectura recibida en servidor: {row['timestamp'].strftime('%Y-%m-%d %H:%M:%S')}")
             
@@ -2449,6 +2471,15 @@ with tab_series:
                 fig_h = px.line(df_hist.sort_values('timestamp'), x='timestamp', y='humedad', title='Humedad Relativa (%)')
                 fig_h.update_layout(height=250, template='plotly_white')
                 st.plotly_chart(fig_h, use_container_width=True)
+                
+            if 'presion' in df_hist.columns:
+                df_p_val = df_hist.dropna(subset=['presion']).copy()
+                df_p_val['presion'] = pd.to_numeric(df_p_val['presion'], errors='coerce')
+                df_p_val = df_p_val[df_p_val['presion'] > 100]
+                if not df_p_val.empty:
+                    fig_pres = px.line(df_p_val.sort_values('timestamp'), x='timestamp', y='presion', title='Presión Atmosférica (hPa / mbar)')
+                    fig_pres.update_layout(height=250, template='plotly_white')
+                    st.plotly_chart(fig_pres, use_container_width=True)
                 
             if 'direccion_viento' in df_hist.columns and 'velocidad_viento' in df_hist.columns:
                 st.markdown("### 🧭 Rosa de los Vientos")
