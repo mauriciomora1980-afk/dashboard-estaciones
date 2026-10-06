@@ -1674,17 +1674,16 @@ with tab_situacion:
                 </div>
                 """, unsafe_allow_html=True)
             
-            c1, c2, c3, c4, c5 = st.columns(5)
+            c1, c2, c3, c4 = st.columns(4)
             c1.metric("🌊 Cota Calibrada", f"{cota_actual:.2f} msnm", delta=f"{descenso_total_cm:+.1f} cm vs Rebose (885.75)", help=f"Sensor OTT: {cota_raw:.2f} msnm | Offset calibrado: -{OFFSET_RADAR_EMBALSE*100:.0f} cm")
             c2.metric("💧 Volumen Útil", f"{hidro['volumen_util_hm3']:.2f} hm³", delta=f"{hidro['porcentaje_util']:.1f}% útil")
             c3.metric("📦 Desalmacenamiento Vaso", f"{vol_entregado_total_m3:,.0f} m³", delta=f"{abs(descenso_total_cm):.1f} cm cedidos ({txt_maniobra_corto})", delta_color="inverse", help=f"Volumen neto cedido por el vaso del embalse (-{abs(descenso_total_cm):.1f} cm) desde el inicio de maniobra el martes 22 de septiembre a la 1:00 PM ({txt_maniobra_largo}). El suministro total a Bosconia a ~400 L/s es de ~{(horas_maniobra_crc*3600*0.4):,.0f} m³, amortiguado por la recarga de cuenca.")
-            c4.metric("🧭 Presión Atm.", f"{calcular_presion_atmosferica_hpa(cota_actual):.1f} hPa", help="Presión barométrica local en la caseta de presa (Cota ~885 msnm - ISA/OMM)")
             if hidro["q_rebose_ls"] > 0:
-                c5.metric("🌊 Caudal Rebose MG", f"{hidro['q_rebose_m3_s']:.2f} m³/s", delta=f"{hidro['q_rebose_ls']:,.0f} L/s hacia Puente Tona")
+                c4.metric("🌊 Caudal Rebose MG", f"{hidro['q_rebose_m3_s']:.2f} m³/s", delta=f"{hidro['q_rebose_ls']:,.0f} L/s hacia Puente Tona")
             elif bal and bal["q_neto_ls"] > 0:
-                c5.metric("⚡ Tasa Neta Vaciado", f"{bal['q_neto_ls']:.0f} L/s", delta=f"{bal['vaciado_diario_m3']:,.0f} m³/día", delta_color="inverse", help=f"Velocidad neta de vaciado en las últimas {bal['horas']:.1f} horas. Salida Válvula CRC = Tasa Neta + Aporte Río Tona.")
+                c4.metric("⚡ Tasa Neta Vaciado", f"{bal['q_neto_ls']:.0f} L/s", delta=f"{bal['vaciado_diario_m3']:,.0f} m³/día", delta_color="inverse", help=f"Velocidad neta de vaciado en las últimas {bal['horas']:.1f} horas. Salida Válvula CRC = Tasa Neta + Aporte Río Tona.")
             else:
-                c5.metric("📐 Área Espejo", f"{hidro['area_ha']:.1f} ha", delta=f"{hidro['m3_por_cm']:.0f} m³/cm")
+                c4.metric("📐 Área Espejo", f"{hidro['area_ha']:.1f} ha", delta=f"{hidro['m3_por_cm']:.0f} m³/cm")
             
             # Tarjeta de Balance Dinámico en Tiempo Real (Derivada Batimétrica)
             if bal:
