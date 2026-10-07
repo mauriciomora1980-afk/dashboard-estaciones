@@ -1363,9 +1363,9 @@ def mostrar_modulo_atribucion_cuenca(df_cuenca, q_afluente_ls, horas):
         lambda r: f"{r['precipitacion_mm']:.1f} mm (IA)" if r.get('es_estimado_ia') else f"{r['precipitacion_mm']:.1f} mm",
         axis=1
     )
-    df_tabla['Aporte (%)'] = df_tabla['Aporte (%)'].apply(lambda x: f"{x:.1f} %")
-    df_tabla['Q Estimado (L/s)'] = df_tabla['Q Estimado (L/s)'].apply(lambda x: f"{x:,.0f} L/s")
-    df_tabla = df_tabla[['nombre', 'zona', 'microcuencas', 'subsistema', 'Lluvia (mm)', 'lag_horas', 'Aporte (%)', 'caudal_estimado_ls']]
+    df_tabla['Aporte (%)'] = df_tabla['porcentaje_atribucion'].apply(lambda x: f"{x:.1f} %")
+    df_tabla['Q Estimado (L/s)'] = df_tabla['caudal_estimado_ls'].apply(lambda x: f"{x:,.0f} L/s")
+    df_tabla = df_tabla[['nombre', 'zona', 'microcuencas', 'subsistema', 'Lluvia (mm)', 'lag_horas', 'Aporte (%)', 'Q Estimado (L/s)']]
     df_tabla.columns = ['Estación', 'Zona Cuenca', 'Microcuencas / Quebradas', 'Subsistema Abastecido', 'Lluvia (mm)', 'Retardo (Lag)', 'Aporte (%)', 'Q Estimado (L/s)']
     
     st.dataframe(df_tabla, use_container_width=True, hide_index=True)
