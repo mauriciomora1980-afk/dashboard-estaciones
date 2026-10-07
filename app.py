@@ -215,10 +215,26 @@ def calcular_balance_dinamico(df_hist):
     vaciado_diario_m3 = q_neto_m3_s * 86400.0
     
     vol_util_m3 = max(0.0, (interpolar_volumen(c_fin) - 1.980) * 1_000_000.0)
-    if q_neto_m3_s > 0:
+    vol_rebose_m3 = interpolar_volumen(NIVEL_REBOSE_EMBALSE) * 1_000_000.0
+    vol_faltante_rebose_m3 = max(0.0, vol_rebose_m3 - v_fin_m3)
+    
+    # Clasificación Dinámica: Vaciado vs Llenado vs Equilibrio
+    if q_neto_m3_s > 0.005:  # Vaciado neto (> 5 L/s)
+        modo_balance = "VACIADO"
         dias_autonomia = vol_util_m3 / (q_neto_m3_s * 86400.0)
-    else:
+        dias_para_llenar = None
+    elif q_neto_m3_s < -0.005:  # Llenado neto (Recarga de cuenca > Salida CRC Bosconia)
+        modo_balance = "LLENADO"
         dias_autonomia = None
+        q_llenado_m3_s = -q_neto_m3_s
+        if vol_faltante_rebose_m3 > 0:
+            dias_para_llenar = vol_faltante_rebose_m3 / (q_llenado_m3_s * 86400.0)
+        else:
+            dias_para_llenar = 0.0 # Ya se encuentra en o sobre cota de rebose
+    else:  # Equilibrio dinámico estricto (|Q_neto| <= 5 L/s)
+        modo_balance = "EQUILIBRIO"
+        dias_autonomia = None
+        dias_para_llenar = None
         
     return {
         "horas": delta_horas,
@@ -230,7 +246,10 @@ def calcular_balance_dinamico(df_hist):
         "delta_v_m3": delta_v_m3,
         "q_neto_ls": q_neto_ls,
         "vaciado_diario_m3": vaciado_diario_m3,
-        "dias_autonomia": dias_autonomia
+        "modo_balance": modo_balance,
+        "dias_autonomia": dias_autonomia,
+        "dias_para_llenar": dias_para_llenar,
+        "vol_faltante_rebose_m3": vol_faltante_rebose_m3
     }
 
 def calcular_hidraulica_embalse(cota_calibrada: float, q_ptap_ls: float = 0.0):
@@ -865,7 +884,34 @@ def obtener_precipitacion_cuenca_tona(fecha_inicio, fecha_fin):
         """
         query_job = client.query(query)
         rows = [dict(row) for row in query_job.result()]
-        return pd.DataFrame(rows)
+        df_res = pd.DataFrame(rows)
+        
+        # Resiliencia & Imputación Orográfica Inteligente para La Mariana:
+        # Si el sensor físico de La Mariana no reportó pulsos (0.0 mm en BigQuery por anomalía de sonda física),
+        # pero la ladera media (El Pajal a 2,163m) o el valle registraron precipitación activa en cuenca:
+        if not df_res.empty:
+            map_p = {r['id_estacion']: float(r.get('precip_total', 0) or 0) for _, r in df_res.iterrows()}
+            p_pajal = map_p.get('El_Pajal', 0.0)
+            p_mariana = map_p.get('La_Mariana', 0.0)
+            
+            if p_mariana == 0.0 and p_pajal > 0.0:
+                p_imputada = round(p_pajal * 1.15, 1)  # Gradiente orográfico de condensación de cresta (2,436 msnm)
+                mask = df_res['id_estacion'] == 'La_Mariana'
+                if mask.any():
+                    df_res.loc[mask, 'precip_total'] = p_imputada
+                    df_res.loc[mask, 'precip_max_evento'] = round(p_imputada * 0.6, 1)
+                    df_res.loc[mask, 'es_estimado_ia'] = True
+                else:
+                    nuevo = pd.DataFrame([{
+                        'id_estacion': 'La_Mariana',
+                        'precip_total': p_imputada,
+                        'precip_max_evento': round(p_imputada * 0.6, 1),
+                        'num_registros': 1,
+                        'es_estimado_ia': True
+                    }])
+                    df_res = pd.concat([df_res, nuevo], ignore_index=True)
+                    
+        return df_res
     except Exception as e:
         return pd.DataFrame()
 
@@ -949,7 +995,8 @@ def calcular_atribucion_cuenca_tona(df_cuenca, q_afluente_ls):
             est_id = r['id_estacion']
             p_tot = float(r.get('precip_total', 0.0) or 0.0)
             p_max = float(r.get('precip_max_evento', 0.0) or 0.0)
-            mapa_precip[est_id] = {'total': p_tot, 'max': p_max}
+            es_ia = bool(r.get('es_estimado_ia', False))
+            mapa_precip[est_id] = {'total': p_tot, 'max': p_max, 'es_estimado_ia': es_ia}
             
     vec_viento = analizar_vector_viento_mariana()
     
@@ -957,7 +1004,7 @@ def calcular_atribucion_cuenca_tona(df_cuenca, q_afluente_ls):
     datos_temp = []
     for est_id in ['Yerbabuena', 'Vegas_del_Quemado', 'El_Pajal', 'La_Mariana']:
         meta = METADATA_ESTACIONES_AMB[est_id]
-        p_info = mapa_precip.get(est_id, {'total': 0.0, 'max': 0.0})
+        p_info = mapa_precip.get(est_id, {'total': 0.0, 'max': 0.0, 'es_estimado_ia': False})
         p_val = max(0.0, p_info['total'])
         suma_precip_pura += p_val
         
@@ -1022,6 +1069,7 @@ def calcular_atribucion_cuenca_tona(df_cuenca, q_afluente_ls):
             "lag_horas": meta["lag_horas"],
             "color": meta["color"],
             "precipitacion_mm": p_val,
+            "es_estimado_ia": d["p_info"].get('es_estimado_ia', False),
             "precip_max_mm": d["p_info"]['max'],
             "caudal_estimado_ls": q_estacion_total,
             "porcentaje_atribucion": porcentaje_final,
@@ -1310,11 +1358,15 @@ def mostrar_modulo_atribucion_cuenca(df_cuenca, q_afluente_ls, horas):
         st.plotly_chart(fig_bar, use_container_width=True)
         
     st.markdown("#### 📋 Matriz Hidrológica de Cuenca Tona & Tiempos de Tránsito (Lag Time):")
-    df_tabla = df_atrib[['nombre', 'zona', 'microcuencas', 'subsistema', 'precipitacion_mm', 'lag_horas', 'porcentaje_atribucion', 'caudal_estimado_ls']].copy()
-    df_tabla.columns = ['Estación', 'Zona Cuenca', 'Microcuencas / Quebradas', 'Subsistema Abastecido', 'Lluvia (mm)', 'Retardo (Lag)', 'Aporte (%)', 'Q Estimado (L/s)']
-    df_tabla['Lluvia (mm)'] = df_tabla['Lluvia (mm)'].apply(lambda x: f"{x:.1f} mm")
+    df_tabla = df_atrib[['nombre', 'zona', 'microcuencas', 'subsistema', 'precipitacion_mm', 'es_estimado_ia', 'lag_horas', 'porcentaje_atribucion', 'caudal_estimado_ls']].copy()
+    df_tabla['Lluvia (mm)'] = df_tabla.apply(
+        lambda r: f"{r['precipitacion_mm']:.1f} mm (IA)" if r.get('es_estimado_ia') else f"{r['precipitacion_mm']:.1f} mm",
+        axis=1
+    )
     df_tabla['Aporte (%)'] = df_tabla['Aporte (%)'].apply(lambda x: f"{x:.1f} %")
     df_tabla['Q Estimado (L/s)'] = df_tabla['Q Estimado (L/s)'].apply(lambda x: f"{x:,.0f} L/s")
+    df_tabla = df_tabla[['nombre', 'zona', 'microcuencas', 'subsistema', 'Lluvia (mm)', 'lag_horas', 'Aporte (%)', 'caudal_estimado_ls']]
+    df_tabla.columns = ['Estación', 'Zona Cuenca', 'Microcuencas / Quebradas', 'Subsistema Abastecido', 'Lluvia (mm)', 'Retardo (Lag)', 'Aporte (%)', 'Q Estimado (L/s)']
     
     st.dataframe(df_tabla, use_container_width=True, hide_index=True)
     
@@ -1768,10 +1820,12 @@ with tab_situacion:
             c3.metric("📦 Desalmacenamiento Vaso", f"{vol_entregado_total_m3:,.0f} m³", delta=f"{abs(descenso_total_cm):.1f} cm cedidos ({txt_maniobra_corto})", delta_color="inverse", help=f"Volumen neto cedido por el vaso del embalse (-{abs(descenso_total_cm):.1f} cm) desde el inicio de maniobra el martes 22 de septiembre a la 1:00 PM ({txt_maniobra_largo}). El suministro total a Bosconia a ~400 L/s es de ~{(horas_maniobra_crc*3600*0.4):,.0f} m³, amortiguado por la recarga de cuenca.")
             if hidro["q_rebose_ls"] > 0:
                 c4.metric("🌊 Caudal Rebose MG", f"{hidro['q_rebose_m3_s']:.2f} m³/s", delta=f"{hidro['q_rebose_ls']:,.0f} L/s hacia Puente Tona")
-            elif bal and bal["q_neto_ls"] > 0:
+            elif bal and bal["modo_balance"] == "VACIADO":
                 c4.metric("⚡ Tasa Neta Vaciado", f"{bal['q_neto_ls']:.0f} L/s", delta=f"{bal['vaciado_diario_m3']:,.0f} m³/día", delta_color="inverse", help=f"Velocidad neta de vaciado en las últimas {bal['horas']:.1f} horas. Salida Válvula CRC = Tasa Neta + Aporte Río Tona.")
+            elif bal and bal["modo_balance"] == "LLENADO":
+                c4.metric("🌊 Tasa Neta Llenado", f"{abs(bal['q_neto_ls']):.0f} L/s", delta=f"+{abs(bal['vaciado_diario_m3']):,.0f} m³/día recarga", delta_color="normal", help=f"Velocidad neta de llenado en las últimas {bal['horas']:.1f} horas. Aportes de cuenca superan la extracción de la CRC Bosconia.")
             else:
-                c4.metric("📐 Área Espejo", f"{hidro['area_ha']:.1f} ha", delta=f"{hidro['m3_por_cm']:.0f} m³/cm")
+                c4.metric("⚖️ Régimen Equilibrio", "0 L/s", delta="Equilibrio Dinámico", help="Caudal de entrada igual al caudal de salida.")
             
             # Tarjeta de Balance Dinámico en Tiempo Real (Derivada Batimétrica)
             if bal:
@@ -1781,24 +1835,42 @@ with tab_situacion:
                 
                 bc1, bc2, bc3, bc4 = st.columns(4)
                 bc1.metric("📦 Desalmacenamiento Total", f"{vol_entregado_total_m3:,.0f} m³", delta=f"{abs(descenso_total_cm):.1f} cm cedidos ({txt_maniobra_corto})", delta_color="inverse", help=f"Volumen neto cedido por el vaso desde el 22 de septiembre a la 1:00 PM en cota de rebose 885.75 msnm")
-                bc2.metric("⚡ Tasa Neta Reciente", f"{bal['q_neto_ls']:.0f} L/s", delta=f"{bal['vel_cm_dia']:+.1f} cm/día", delta_color="inverse", help=f"Velocidad neta de vaciado en las últimas {bal['horas']:.1f} horas")
-                bc3.metric(f"🚰 Desalmacenado ({bal['horas']:.1f}h)", f"{abs(bal['delta_v_m3']):,.0f} m³", delta=f"{bal['delta_cota_cm']:+.1f} cm en ventana", delta_color="inverse", help=f"Metros cúbicos cedidos exclusivamente en el período de análisis de las últimas {bal['horas']:.1f} horas")
-                bc4.metric("⏳ Autonomía Real Dinámica", f"{bal['dias_autonomia']:.0f} Días" if bal['dias_autonomia'] else "N/A", help="Días restantes de agua continua a la tasa neta actual hasta el Nivel Mínimo Técnico (841 msnm)")
                 
+                if bal["modo_balance"] == "VACIADO":
+                    bc2.metric("⚡ Tasa Neta Reciente", f"{bal['q_neto_ls']:.0f} L/s", delta=f"{bal['vel_cm_dia']:+.1f} cm/día", delta_color="inverse", help=f"Velocidad neta de vaciado en las últimas {bal['horas']:.1f} horas")
+                    bc3.metric(f"🚰 Desalmacenado ({bal['horas']:.1f}h)", f"{abs(bal['delta_v_m3']):,.0f} m³", delta=f"{bal['delta_cota_cm']:+.1f} cm en ventana", delta_color="inverse", help=f"Metros cúbicos cedidos exclusivamente en el período de análisis de las últimas {bal['horas']:.1f} horas")
+                    bc4.metric("⏳ Autonomía Dinámica", f"{bal['dias_autonomia']:.0f} Días" if bal['dias_autonomia'] else "N/A", help="Días restantes de agua continua a la tasa neta actual hasta el Nivel Mínimo Técnico (841 msnm)")
+                elif bal["modo_balance"] == "LLENADO":
+                    bc2.metric("🌊 Tasa Neta de Llenado", f"{abs(bal['q_neto_ls']):.0f} L/s", delta=f"+{abs(bal['vel_cm_dia']):.1f} cm/día ascenso", delta_color="normal", help=f"Velocidad neta de recarga y ascenso de cota en las últimas {bal['horas']:.1f} horas")
+                    bc3.metric(f"📥 Recuperado ({bal['horas']:.1f}h)", f"{abs(bal['delta_v_m3']):,.0f} m³", delta=f"+{abs(bal['delta_cota_cm']):.1f} cm ganados", delta_color="normal", help=f"Metros cúbicos recuperados en el vaso por recarga de quebradas en las últimas {bal['horas']:.1f} horas")
+                    bc4.metric("📈 Días para Llenarse", f"{bal['dias_para_llenar']:.0f} Días" if bal.get('dias_para_llenar') is not None else "En Rebose (100%)", delta=f"{bal['vol_faltante_rebose_m3']:,.0f} m³ a rebose", delta_color="normal", help="Días proyectados para alcanzar la cota de rebose (885.75 msnm) al ritmo actual de recarga de cuenca")
+                else:
+                    bc2.metric("⚖️ Tasa Neta", "0 L/s", delta="0.0 cm/día", help="Entradas de cuenca equivalentes a salida de válvula CRC")
+                    bc3.metric(f"⚖️ Delta ({bal['horas']:.1f}h)", "0 m³", delta="0.0 cm", help="Nivel estático")
+                    bc4.metric("♾️ Tiempo Proyectado", "Indefinido (Equilibrio)", help="Empate exacto entre afluentes de cuenca y salida de válvula CRC Bosconia")
+                
+                if bal["modo_balance"] == "VACIADO":
+                    txt_variacion_bal = f"<li><strong>Variación Neta de Almacenamiento (ΔV/Δt):</strong> El vaso del embalse solo cede la diferencia neta (<strong>{bal['q_neto_ls']:.0f} L/s</strong>), garantizando una autonomía dinámica proyectada de <strong>{bal['dias_autonomia']:.0f} días</strong> a este régimen.</li>"
+                elif bal["modo_balance"] == "LLENADO":
+                    dias_txt_llenado = f"{bal['dias_para_llenar']:.0f} días" if bal.get('dias_para_llenar') is not None else "0 días (en rebose)"
+                    txt_variacion_bal = f"<li><strong>Variación Neta de Almacenamiento (ΔV/Δt):</strong> El embalse está en <strong>RÉGIMEN DE LLENADO / RECUPERACIÓN</strong>. Los afluentes de cuenca superan el consumo de Bosconia en <strong>+{abs(bal['q_neto_ls']):.0f} L/s</strong> netos, con un tiempo estimado de <strong>{dias_txt_llenado}</strong> para alcanzar el labio de rebose (885.75 msnm).</li>"
+                else:
+                    txt_variacion_bal = "<li><strong>Variación Neta de Almacenamiento (ΔV/Δt):</strong> El embalse está en <strong>RÉGIMEN DE EQUILIBRIO DINÁMICO</strong> (entradas iguales a salidas). Autonomía proyectada: <strong>Indefinida</strong>.</li>"
+                    
                 st.markdown(f"""
                 <div style="background: rgba(0,80,115,0.06); padding: 14px 18px; border-radius: 8px; border-left: 4px solid #005073; margin-top: 10px; font-size: 13px; line-height: 1.5;">
                     <strong style="color: #005073; font-size: 14px;">⚖️ Principio Físico: Balance de Masas & Continuidad Hidráulica</strong><br>
                     <div style="margin-top: 6px; font-family: monospace; background: rgba(255,255,255,0.7); padding: 6px 10px; border-radius: 4px; border: 1px solid #cce0eb;">
-                        <strong>Q_Salida_CRC_Bosconia</strong> = <strong>Q_Tasa_Neta_Vaciado ({bal['q_neto_ls']:.0f} L/s)</strong> + <strong>∑ Q_Afluentes_Cuenca_Tona (~{max(0, 400 - bal['q_neto_ls']):.0f} L/s)</strong>
+                        <strong>Q_Salida_CRC_Bosconia</strong> = <strong>Q_Tasa_Neta ({bal['q_neto_ls']:.0f} L/s)</strong> + <strong>∑ Q_Afluentes_Cuenca_Tona (~{max(0, 400 - bal['q_neto_ls']):.0f} L/s)</strong>
                     </div>
                     <div style="margin-top: 8px;">
                         <strong>🌊 Interpretación de Volúmenes & Descenso del Embalse:</strong><br>
                         <ul style="margin: 4px 0 6px 18px; padding: 0;">
                             <li><strong>📦 Consumo Total Acumulado por Bosconia ({txt_maniobra_largo} de Maniobra / desde Martes 22 Sept 1:00 PM):</strong> <strong>{vol_entregado_total_m3:,.0f} m³</strong> (descenso acumulado total de <strong>{abs(descenso_total_cm):.1f} cm</strong> desde que se abrió la válvula CRC en la cota máxima de rebose de <strong>885.75 msnm</strong>).</li>
-                            <li><strong>⏱️ Consumo en la Ventana de Análisis Seleccionada ({bal['horas']:.1f}h):</strong> <strong>{abs(bal['delta_v_m3']):,.0f} m³</strong> (descenso neto de <strong>{abs(bal['delta_cota_cm']):.1f} cm</strong> en las últimas 24 horas).</li>
+                            <li><strong>⏱️ Balance en la Ventana de Análisis Seleccionada ({bal['horas']:.1f}h):</strong> <strong>{abs(bal['delta_v_m3']):,.0f} m³</strong> ({'cedidos' if bal['delta_cota_cm'] < 0 else 'ganados'}, variación de <strong>{bal['delta_cota_cm']:+.1f} cm</strong>).</li>
                             <li><strong>Entradas (Remanentes de Captaciones + Afluentes Directos):</strong> El Embalse Tona recibe la recarga continua de los <strong>caudales remanentes no derivados de las 3 captaciones con sensor RQ30 del Sistema Tona (Captación Carrizal en Río Tona, Captación Golondrinas y Captación Arnania)</strong>, más los 4 afluentes directos al vaso: <strong>Quebrada Ranás</strong> (desemboca en fondo cola), <strong>Quebrada el Gualilo</strong> (mitad del vaso), <strong>Quebrada La Reforma</strong> (cercana a la presa/radar) y <strong>Quebrada Los Monos</strong> (litoral derecho norte, frente a La Reforma) con un aporte sumado estimado en cola de <strong>~{max(0, 400 - bal['q_neto_ls']):.0f} L/s</strong>.</li>
                             <li><strong>Salida (Consumo PTAP):</strong> Conducción y entrega por gravedad hacia la válvula <strong>CRC Bosconia</strong> (fijada en <strong>~400 L/s</strong>).</li>
-                            <li><strong>Variación Neta de Almacenamiento (ΔV/Δt):</strong> El vaso del embalse solo cede la diferencia neta (<strong>{bal['q_neto_ls']:.0f} L/s</strong>), garantizando una autonomía dinámica proyectada de <strong>{bal['dias_autonomia']:.0f} días</strong> a este régimen.</li>
+                            {txt_variacion_bal}
                         </ul>
                     </div>
                 </div>
@@ -2986,4 +3058,3 @@ with st.sidebar.expander("📏 Extensómetros (EDV)"):
 # ============================================================
 # FIN DEL CÓDIGO — SISTEMA MIMAT-C26 (amb)
 # ============================================================
-
