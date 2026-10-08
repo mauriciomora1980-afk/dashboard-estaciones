@@ -885,6 +885,8 @@ def obtener_precipitacion_cuenca_tona(fecha_inicio, fecha_fin):
         query_job = client.query(query)
         rows = [dict(row) for row in query_job.result()]
         df_res = pd.DataFrame(rows)
+        if not df_res.empty:
+            df_res['es_estimado_ia'] = False
         
         # Resiliencia & Imputación Orográfica Inteligente para La Mariana:
         # Si el sensor físico de La Mariana no reportó pulsos (0.0 mm en BigQuery por anomalía de sonda física),
@@ -1358,9 +1360,9 @@ def mostrar_modulo_atribucion_cuenca(df_cuenca, q_afluente_ls, horas):
         st.plotly_chart(fig_bar, use_container_width=True)
         
     st.markdown("#### 📋 Matriz Hidrológica de Cuenca Tona & Tiempos de Tránsito (Lag Time):")
-    df_tabla = df_atrib[['nombre', 'zona', 'microcuencas', 'subsistema', 'precipitacion_mm', 'es_estimado_ia', 'lag_horas', 'porcentaje_atribucion', 'caudal_estimado_ls']].copy()
+    df_tabla = df_atrib[['id_estacion', 'nombre', 'zona', 'microcuencas', 'subsistema', 'precipitacion_mm', 'es_estimado_ia', 'lag_horas', 'porcentaje_atribucion', 'caudal_estimado_ls']].copy()
     df_tabla['Lluvia (mm)'] = df_tabla.apply(
-        lambda r: f"{r['precipitacion_mm']:.1f} mm (IA)" if r.get('es_estimado_ia') else f"{r['precipitacion_mm']:.1f} mm",
+        lambda r: f"{r['precipitacion_mm']:.1f} mm (IA)" if (r['id_estacion'] == 'La_Mariana' and bool(r.get('es_estimado_ia') is True)) else f"{r['precipitacion_mm']:.1f} mm",
         axis=1
     )
     df_tabla['Aporte (%)'] = df_tabla['porcentaje_atribucion'].apply(lambda x: f"{x:.1f} %")
