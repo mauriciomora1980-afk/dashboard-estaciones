@@ -181,10 +181,49 @@ def calcular_caudal_morning_glory(cota_real: float):
     q_ls = q_m3_s * 1000.0
     return q_m3_s, q_ls
 
+def filtrar_cota_embalse_robusta(df_emb_hist):
+    """
+    Filtro Hidráulico Físico Anti-Spike para Radar OTT del Embalse:
+    1. Descarta ceros o valores fuera de rango físico (818.0 - 886.5 msnm).
+    2. Aplica filtro de gradiente físico: ningún embalse de 46 ha cambia más de 3.5 cm en 10 min.
+    3. Si ocurre un glitch transitorio por caída/reconexión de energía de la antena Claro,
+       el algoritmo rechaza el salto abrupto y mantiene la cota suave.
+    """
+    if df_emb_hist.empty or 'temperatura' not in df_emb_hist.columns:
+        return df_emb_hist
+        
+    df_s = df_emb_hist.sort_values('timestamp').copy()
+    c_raw = pd.to_numeric(df_s['temperatura'], errors='coerce') - OFFSET_RADAR_EMBALSE
+    
+    # 1. Filtro de Rango Físico
+    c_raw = c_raw.apply(lambda c: c if (pd.notna(c) and 818.0 <= c <= 886.5) else np.nan)
+    
+    # 2. Filtro de Continuidad Hidráulica (|dc/dt| <= 3.5 cm / 10 min)
+    cotas_limpias = []
+    c_prev = None
+    for c in c_raw:
+        if pd.isna(c):
+            cotas_limpias.append(c_prev)
+        elif c_prev is None:
+            cotas_limpias.append(c)
+            c_prev = c
+        else:
+            delta = abs(c - c_prev)
+            if delta > 0.035: # Salto abrupto mayor a 3.5 cm en 10 min es físicamente imposible (ruido Claro)
+                cotas_limpias.append(c_prev) # Mantiene la lectura previa suave
+            else:
+                cotas_limpias.append(c)
+                c_prev = c
+                
+    df_s['cota_calibrada_limpia'] = cotas_limpias
+    df_s['temperatura'] = df_s['cota_calibrada_limpia'] + OFFSET_RADAR_EMBALSE
+    return df_s
+
 def calcular_balance_dinamico(df_hist):
     if df_hist.empty or len(df_hist) < 2:
         return None
-    df_s = df_hist.sort_values('timestamp').dropna(subset=['temperatura'])
+    df_s = filtrar_cota_embalse_robusta(df_hist)
+    df_s = df_s.dropna(subset=['cota_calibrada_limpia'])
     if len(df_s) < 2:
         return None
     
@@ -194,10 +233,8 @@ def calcular_balance_dinamico(df_hist):
     if delta_horas < 0.2:
         return None
         
-    c_ini_raw = float(df_s.iloc[0]['temperatura'])
-    c_fin_raw = float(df_s.iloc[-1]['temperatura'])
-    c_ini = c_ini_raw - OFFSET_RADAR_EMBALSE
-    c_fin = c_fin_raw - OFFSET_RADAR_EMBALSE
+    c_ini = float(df_s.iloc[0]['cota_calibrada_limpia'])
+    c_fin = float(df_s.iloc[-1]['cota_calibrada_limpia'])
     
     delta_cota_m = c_fin - c_ini
     delta_cota_cm = delta_cota_m * 100.0
@@ -382,14 +419,22 @@ def get_historical_data_range(estacion, fecha_inicio, fecha_fin):
 @st.cache_data(ttl=60)
 def get_cota_embalse_actual_segura():
     try:
-        df_emb = get_last_reading("Embalse")
-        if not df_emb.empty:
-            c = float(df_emb.iloc[0].get('temperatura', 885.80)) - OFFSET_RADAR_EMBALSE
-            if 818.0 <= c <= 886.0:
-                return c
+        # Consulta de los últimos 3 registros con filtro de rango para aplicar mediana anti-glitch
+        query = """
+        SELECT SAFE_CAST(temperatura AS FLOAT64) - 0.05 as cota_cal
+        FROM `gen-lang-client-0342049346.amb_hidrologia.telemetria_estaciones`
+        WHERE id_estacion = 'Embalse'
+          AND SAFE_CAST(temperatura AS FLOAT64) BETWEEN 818.0 AND 886.5
+        ORDER BY SAFE_CAST(timestamp AS TIMESTAMP) DESC
+        LIMIT 3
+        """
+        job = client.query(query)
+        rows = [float(r['cota_cal']) for r in job if r['cota_cal'] is not None]
+        if rows:
+            return float(np.median(rows))
     except:
         pass
-    return 885.75
+    return 885.32
 
 @st.cache_data(ttl=1800)
 def obtener_pronostico_open_meteo(lat: float, lon: float, past_days: int = 7, forecast_days: int = 3):
@@ -875,15 +920,46 @@ def obtener_precipitacion_cuenca_tona(fecha_inicio, fecha_fin):
         estaciones_cuenca = ['Yerbabuena', 'Vegas_del_Quemado', 'El_Pajal', 'La_Mariana', 'Monsalve']
         estaciones_str = "', '".join(estaciones_cuenca)
         
+        # Consulta SQL Inteligente con Filtro Anti-Hold (Detección de tramas congeladas por pérdida de señal)
         query = f"""
-        SELECT id_estacion, 
-               SUM(SAFE_CAST(precipitacion AS FLOAT64)) as precip_total,
-               MAX(SAFE_CAST(precipitacion AS FLOAT64)) as precip_max_evento,
-               COUNT(*) as num_registros
-        FROM `gen-lang-client-0342049346.amb_hidrologia.telemetria_estaciones`
-        WHERE id_estacion IN ('{estaciones_str}')
-        AND SAFE_CAST(timestamp AS TIMESTAMP) >= TIMESTAMP('{f_ini_str}')
-        AND SAFE_CAST(timestamp AS TIMESTAMP) <= TIMESTAMP('{f_fin_str}')
+        WITH datos_lag AS (
+          SELECT 
+            id_estacion,
+            SAFE_CAST(timestamp AS TIMESTAMP) as ts,
+            SAFE_CAST(temperatura AS FLOAT64) as temp,
+            SAFE_CAST(precipitacion AS FLOAT64) as precip,
+            SAFE_CAST(presion AS FLOAT64) as pres,
+            SAFE_CAST(direccion_viento AS FLOAT64) as dir_v,
+            LAG(SAFE_CAST(temperatura AS FLOAT64), 1) OVER(PARTITION BY id_estacion ORDER BY SAFE_CAST(timestamp AS TIMESTAMP)) as prev_t,
+            LAG(SAFE_CAST(presion AS FLOAT64), 1) OVER(PARTITION BY id_estacion ORDER BY SAFE_CAST(timestamp AS TIMESTAMP)) as prev_p,
+            LAG(SAFE_CAST(direccion_viento AS FLOAT64), 1) OVER(PARTITION BY id_estacion ORDER BY SAFE_CAST(timestamp AS TIMESTAMP)) as prev_d
+          FROM `gen-lang-client-0342049346.amb_hidrologia.telemetria_estaciones`
+          WHERE id_estacion IN ('{estaciones_str}')
+            AND SAFE_CAST(timestamp AS TIMESTAMP) >= TIMESTAMP_SUB(TIMESTAMP('{f_ini_str}'), INTERVAL 30 MINUTE)
+            AND SAFE_CAST(timestamp AS TIMESTAMP) <= TIMESTAMP('{f_fin_str}')
+        ),
+        datos_limpios AS (
+          SELECT 
+            id_estacion,
+            ts,
+            -- Filtro Físico Anti-Hold: Si temperatura, presión y viento son idénticos al paquete previo (Hold SCADA), la lluvia es 0.0
+            CASE 
+              WHEN prev_t IS NOT NULL 
+               AND ABS(temp - prev_t) < 0.0001 
+               AND ABS(pres - prev_p) < 0.0001 
+               AND ABS(dir_v - prev_d) < 0.0001 
+              THEN 0.0
+              ELSE IFNULL(precip, 0.0)
+            END as precip_limpia
+          FROM datos_lag
+          WHERE ts >= TIMESTAMP('{f_ini_str}')
+        )
+        SELECT 
+          id_estacion,
+          SUM(precip_limpia) as precip_total,
+          MAX(precip_limpia) as precip_max_evento,
+          COUNT(*) as num_registros
+        FROM datos_limpios
         GROUP BY id_estacion
         """
         query_job = client.query(query)
@@ -893,15 +969,23 @@ def obtener_precipitacion_cuenca_tona(fecha_inicio, fecha_fin):
             df_res['es_estimado_ia'] = False
         
         # Resiliencia & Imputación Orográfica Inteligente para La Mariana:
-        # Si el sensor físico de La Mariana no reportó pulsos (0.0 mm en BigQuery por anomalía de sonda física),
-        # pero la ladera media (El Pajal a 2,163m) o el valle registraron precipitación activa en cuenca:
+        # Si el sensor físico de La Mariana no reportó pulsos (0.0 mm en BigQuery por retiro del módem Teltonika):
         if not df_res.empty:
             map_p = {r['id_estacion']: float(r.get('precip_total', 0) or 0) for _, r in df_res.iterrows()}
             p_pajal = map_p.get('El_Pajal', 0.0)
             p_mariana = map_p.get('La_Mariana', 0.0)
             
             if p_mariana == 0.0 and p_pajal > 0.0:
-                p_imputada = round(p_pajal * 1.15, 1)  # Gradiente orográfico de condensación de cresta (2,436 msnm)
+                # Factor orográfico dinámico atenuado: en lluvias extremas (> 70 mm), la atmósfera está saturada
+                # en toda la columna y el factor se amortigua a 1.00x para no inflar artificialmente sobre 100 mm.
+                if p_pajal <= 40.0:
+                    factor_oro = 1.15
+                elif p_pajal <= 70.0:
+                    factor_oro = 1.08
+                else:
+                    factor_oro = 1.00 # En diluvios generalizados > 70 mm, igualar a El Pajal
+                p_imputada = round(p_pajal * factor_oro, 1)
+                
                 mask = df_res['id_estacion'] == 'La_Mariana'
                 if mask.any():
                     df_res.loc[mask, 'precip_total'] = p_imputada
@@ -3086,3 +3170,4 @@ with st.sidebar.expander("📏 Extensómetros (EDV)"):
 # ============================================================
 # FIN DEL CÓDIGO — SISTEMA MIMAT-C26 (amb)
 # ============================================================
+
