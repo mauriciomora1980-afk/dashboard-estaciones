@@ -293,7 +293,7 @@ def calcular_hidraulica_embalse(cota_calibrada: float, q_ptap_ls: float = 0.0):
         "q_rebose_ls": q_rebose_ls
     }
 
-def obtener_alerta(precipitacion, estacion):
+def obtener_alerta(precipitacion_horaria, estacion):
     if estacion == "Embalse": return "EMBALSE", "🌊 Nivel de Embalse", "#00BFFF", "0s"
     if estacion not in umbrales: return "GRIS", "☁️ Sin umbrales definidos", "#CCCCCC", "0s"
     
@@ -301,11 +301,15 @@ def obtener_alerta(precipitacion, estacion):
     es_paramo_ref = u.get("es_referencia_paramo", False)
     sufijo_ref = " (Ref. Páramo)" if es_paramo_ref else ""
     
-    if precipitacion >= u["roja"]: return "ROJA", f"🚨 ROJA{sufijo_ref}: Excede {u['roja']}mm", "#FF4B4B", "0.5s"
-    elif precipitacion >= u["naranja"]: return "NARANJA", f"⚠️ NARANJA{sufijo_ref}: Excede {u['naranja']}mm", "#FF9933", "1s"
-    elif precipitacion >= u["amarilla"]: return "AMARILLA", f"🟡 AMARILLA{sufijo_ref}: Excede {u['amarilla']}mm", "#FFFF00", "2s"
-    elif precipitacion > 0: return "VERDE", f"✅ Lluvia Normal{sufijo_ref}", "#00CC96", "0s"
-    return "GRIS", "☁️ Sin lluvia", "#CCCCCC", "0s"
+    if precipitacion_horaria >= u["roja"]: 
+        return "ROJA", f"🚨 ALERTA ROJA{sufijo_ref}: {precipitacion_horaria:.1f} mm/h (Excede {u['roja']} mm/h) — Creciente Inminente", "#FF4B4B", "0.5s"
+    elif precipitacion_horaria >= u["naranja"]: 
+        return "NARANJA", f"⚠️ ALERTA NARANJA{sufijo_ref}: {precipitacion_horaria:.1f} mm/h (Excede {u['naranja']} mm/h) — Inspección Rejillas", "#FF9933", "1s"
+    elif precipitacion_horaria >= u["amarilla"]: 
+        return "AMARILLA", f"🟡 AVISO AMARILLA{sufijo_ref}: {precipitacion_horaria:.1f} mm/h (Excede {u['amarilla']} mm/h)", "#FFFF00", "2s"
+    elif precipitacion_horaria > 0: 
+        return "VERDE", f"✅ Lluvia Normal{sufijo_ref}: {precipitacion_horaria:.1f} mm/h", "#00CC96", "0s"
+    return "GRIS", "☁️ Sin lluvia (0.0 mm/h en última hora)", "#CCCCCC", "0s"
 
 # ============================================================
 # 4. CLIENTE BIGQUERY
@@ -1447,6 +1451,15 @@ if seleccion_sidebar != seleccion:
 
 horas = st.sidebar.slider("⏱️ Horas históricas:", 1, 168, 24, step=1, help="Rango de horas para consultar y graficar telemetría histórica")
 
+q_salida_crc_actual = st.sidebar.number_input(
+    "🚰 Caudal Válvula CRC Bosconia (L/s):",
+    min_value=0,
+    max_value=3000,
+    value=1300,
+    step=50,
+    help="Caudal extraído hacia PTAP Bosconia. Nominal habitual: 400 L/s. En contingencia por turbiedad del Río Suratá se incrementó a 1,300 L/s."
+)
+
 fecha_fin = datetime.now(colombia_tz)
 fecha_inicio = fecha_fin - timedelta(hours=horas)
 
@@ -1863,15 +1876,15 @@ with tab_situacion:
                 <div style="background: rgba(0,80,115,0.06); padding: 14px 18px; border-radius: 8px; border-left: 4px solid #005073; margin-top: 10px; font-size: 13px; line-height: 1.5;">
                     <strong style="color: #005073; font-size: 14px;">⚖️ Principio Físico: Balance de Masas & Continuidad Hidráulica</strong><br>
                     <div style="margin-top: 6px; font-family: monospace; background: rgba(255,255,255,0.7); padding: 6px 10px; border-radius: 4px; border: 1px solid #cce0eb;">
-                        <strong>Q_Salida_CRC_Bosconia</strong> = <strong>Q_Tasa_Neta ({bal['q_neto_ls']:.0f} L/s)</strong> + <strong>∑ Q_Afluentes_Cuenca_Tona (~{max(0, 400 - bal['q_neto_ls']):.0f} L/s)</strong>
+                        <strong>Q_Salida_CRC_Bosconia ({q_salida_crc_actual:,.0f} L/s)</strong> = <strong>Q_Tasa_Neta ({bal['q_neto_ls']:.0f} L/s)</strong> + <strong>∑ Q_Afluentes_Cuenca_Tona (~{max(0, q_salida_crc_actual - bal['q_neto_ls']):,.0f} L/s)</strong>
                     </div>
                     <div style="margin-top: 8px;">
                         <strong>🌊 Interpretación de Volúmenes & Descenso del Embalse:</strong><br>
                         <ul style="margin: 4px 0 6px 18px; padding: 0;">
                             <li><strong>📦 Consumo Total Acumulado por Bosconia ({txt_maniobra_largo} de Maniobra / desde Martes 22 Sept 1:00 PM):</strong> <strong>{vol_entregado_total_m3:,.0f} m³</strong> (descenso acumulado total de <strong>{abs(descenso_total_cm):.1f} cm</strong> desde que se abrió la válvula CRC en la cota máxima de rebose de <strong>885.75 msnm</strong>).</li>
                             <li><strong>⏱️ Balance en la Ventana de Análisis Seleccionada ({bal['horas']:.1f}h):</strong> <strong>{abs(bal['delta_v_m3']):,.0f} m³</strong> ({'cedidos' if bal['delta_cota_cm'] < 0 else 'ganados'}, variación de <strong>{bal['delta_cota_cm']:+.1f} cm</strong>).</li>
-                            <li><strong>Entradas (Remanentes de Captaciones + Afluentes Directos):</strong> El Embalse Tona recibe la recarga continua de los <strong>caudales remanentes no derivados de las 3 captaciones con sensor RQ30 del Sistema Tona (Captación Carrizal en Río Tona, Captación Golondrinas y Captación Arnania)</strong>, más los 4 afluentes directos al vaso: <strong>Quebrada Ranás</strong> (desemboca en fondo cola), <strong>Quebrada el Gualilo</strong> (mitad del vaso), <strong>Quebrada La Reforma</strong> (cercana a la presa/radar) y <strong>Quebrada Los Monos</strong> (litoral derecho norte, frente a La Reforma) con un aporte sumado estimado en cola de <strong>~{max(0, 400 - bal['q_neto_ls']):.0f} L/s</strong>.</li>
-                            <li><strong>Salida (Consumo PTAP):</strong> Conducción y entrega por gravedad hacia la válvula <strong>CRC Bosconia</strong> (fijada en <strong>~400 L/s</strong>).</li>
+                            <li><strong>Entradas (Remanentes de Captaciones + Afluentes Directos):</strong> El Embalse Tona recibe la recarga continua de los <strong>caudales remanentes no derivados de las 3 captaciones con sensor RQ30 del Sistema Tona (Captación Carrizal en Río Tona, Captación Golondrinas y Captación Arnania)</strong>, más los 4 afluentes directos al vaso: <strong>Quebrada Ranás</strong> (desemboca en fondo cola), <strong>Quebrada el Gualilo</strong> (mitad del vaso), <strong>Quebrada La Reforma</strong> (cercana a la presa/radar) y <strong>Quebrada Los Monos</strong> (litoral derecho norte, frente a La Reforma) con un aporte sumado estimado en cola de <strong>~{max(0, q_salida_crc_actual - bal['q_neto_ls']):,.0f} L/s</strong>.</li>
+                            <li><strong>Salida (Consumo PTAP):</strong> Conducción y entrega por gravedad hacia la válvula <strong>CRC Bosconia</strong> (operando a <strong>~{q_salida_crc_actual:,.0f} L/s</strong> por contingencia de turbiedad en Río Suratá).</li>
                             {txt_variacion_bal}
                         </ul>
                     </div>
@@ -1879,7 +1892,7 @@ with tab_situacion:
                 """, unsafe_allow_html=True)
                 
                 # Módulo de Inteligencia de Cuenca (Trazabilidad y Atribución Hidrológica)
-                q_afluente_calc_ls = max(0.0, 400.0 - bal['q_neto_ls'])
+                q_afluente_calc_ls = max(0.0, float(q_salida_crc_actual) - bal['q_neto_ls'])
                 df_cuenca_tona = obtener_precipitacion_cuenca_tona(fecha_inicio, fecha_fin)
                 mostrar_modulo_atribucion_cuenca(df_cuenca_tona, q_afluente_calc_ls, bal['horas'])
                     
@@ -1933,12 +1946,25 @@ with tab_situacion:
                     v_val = sensor_virt['velocidad_viento']
                     d_val = sensor_virt['direccion_viento']
                     p_val = sensor_virt['precipitacion']
+            # Lluvia horaria acumulada (última hora / 60 min) para evaluación oficial de semáforo (mm/h)
+            ahora_col = datetime.now(colombia_tz)
+            lluvia_1h = 0.0
+            if not df_hist.empty and 'precipitacion' in df_hist.columns and 'timestamp' in df_hist.columns:
+                df_1h = df_hist[df_hist['timestamp'] >= (ahora_col - timedelta(hours=1))]
+                if not df_1h.empty:
+                    lluvia_1h = float(pd.to_numeric(df_1h['precipitacion'], errors='coerce').fillna(0).sum())
             else:
-                nombre, msg, color, vel = obtener_alerta(p_val, seleccion)
+                lluvia_1h = p_val
+                
+            if not salud["es_valido"]:
+                pass
+            else:
+                nombre, msg, color, vel = obtener_alerta(lluvia_1h, seleccion)
                 st.markdown(f'''
                 <div style="background-color:{color}; padding:16px; border-radius:12px; text-align:center; color:black; animation: blink {vel} infinite; border: 2px solid #333;">
                     <h3 style="margin:0;">🚦 {nombre}</h3>
-                    <b>{msg}</b>
+                    <b>{msg}</b><br>
+                    <span style="font-size:12px; color:#222; font-weight:600;">(Intensidad última hora: {lluvia_1h:.1f} mm/h | Último paquete 10 min: {p_val:.1f} mm)</span>
                 </div>
                 <style>
                 @keyframes blink {{ 0%{{opacity:1}} 50%{{opacity:0.3}} 100%{{opacity:1}} }}
@@ -1956,7 +1982,7 @@ with tab_situacion:
             c1, c2, c3, c4, c5, c6, c7 = st.columns(7)
             if sensor_virt:
                 c1.metric("🌡️ Temp (Virtual)", f"{t_val:.1f} °C", help="Estimada por gradiente altimétrico vertical (-0.65°C/100m) desde El Pajal")
-                c2.metric("🌧️ Precip (Virtual)", f"{p_val:.1f} mm")
+                c2.metric("🌧️ Precip (Virtual)", f"{p_val:.1f} mm", delta=f"{lluvia_1h:.1f} mm/h (1h)" if lluvia_1h > 0 else "0.0 mm/h")
                 c3.metric("💧 Humedad (Virtual)", f"{h_val:.1f} %")
                 c4.metric("🧭 Presión Atm.", f"{pres_val:.1f} hPa", delta=tendencia_baro['delta_display'], delta_color=tendencia_baro['color'], help=ayuda_pres)
                 c5.metric("💨 Viento (Virtual)", f"{v_val:.1f} km/h")
@@ -1964,7 +1990,7 @@ with tab_situacion:
                 c7.metric("🔋 Voltaje", "N/A", help="Sensor de batería pendiente de conexión en SCADA")
             else:
                 c1.metric("🌡️ Temp", f"{t_val:.1f} °C")
-                c2.metric("🌧️ Precip", f"{p_val:.1f} mm")
+                c2.metric("🌧️ Precip", f"{p_val:.1f} mm", delta=f"{lluvia_1h:.1f} mm/h (1h)" if lluvia_1h > 0 else "0.0 mm/h", help=f"Último paquete 10 min: {p_val:.1f} mm | Acumulado última hora: {lluvia_1h:.1f} mm/h")
                 c3.metric("💧 Humedad", f"{h_val:.1f} %")
                 c4.metric("🧭 Presión Atm.", f"{pres_val:.1f} hPa", delta=tendencia_baro['delta_display'], delta_color=tendencia_baro['color'], help=ayuda_pres)
                 c5.metric("💨 Viento", f"{v_val:.1f} km/h")
