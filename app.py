@@ -29,15 +29,18 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Estilos CSS Avanzados (amb minúscula + Flecha lateral destacada + UI Ejecutiva)
+# ============================================================
+# ESTILOS CSS INSTITUCIONALES (PORTAL WEB amb — EDICIÓN 110 AÑOS)
+# ============================================================
 st.markdown("""
 <style>
-    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700;800&display=swap');
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap');
     html, body, [class*="css"] { font-family: 'Inter', sans-serif; }
     
+    /* Control de barra lateral estilizada */
     [data-testid="stSidebarCollapsedControl"] {
         display: block !important;
-        background: linear-gradient(135deg, #005073 0%, #0A192F 100%) !important;
+        background: linear-gradient(135deg, #005073 0%, #00223D 100%) !important;
         color: #64FFDA !important;
         border-radius: 10px !important;
         padding: 8px 12px !important;
@@ -50,18 +53,61 @@ st.markdown("""
         box-shadow: 0 6px 20px rgba(100, 255, 218, 0.6) !important;
     }
     
-    .mimat-header {
-        background: linear-gradient(135deg, #0A192F 0%, #172A45 50%, #005073 100%);
-        padding: 20px 24px;
-        border-radius: 16px;
-        color: white;
-        margin-bottom: 15px;
-        box-shadow: 0 10px 30px rgba(0, 80, 115, 0.25);
-        border: 1px solid rgba(255, 255, 255, 0.1);
+    /* Barra Superior de Contact Center Institucional */
+    .amb-top-bar {
+        background: #003358;
+        color: #E2E8F0;
+        padding: 6px 18px;
+        border-radius: 10px 10px 0 0;
+        font-size: 11.5px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        flex-wrap: wrap;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.15);
     }
-    .mimat-title { font-size: 24px; font-weight: 800; color: #64FFDA; margin: 0; }
-    .mimat-subtitle { font-size: 13px; color: #8892B0; margin-top: 4px; }
     
+    /* Hero Header Oficial con Ondas Azules y 110 Años */
+    .amb-hero-header {
+        background: linear-gradient(135deg, #002A4A 0%, #005073 35%, #0077B6 70%, #0096C7 100%);
+        padding: 22px 26px;
+        border-radius: 0 0 16px 16px;
+        color: white;
+        margin-bottom: 12px;
+        box-shadow: 0 12px 32px rgba(0, 80, 115, 0.28);
+        border: 1px solid rgba(255, 255, 255, 0.12);
+        position: relative;
+        overflow: hidden;
+    }
+    
+    /* Píldora de Noticias / Novedades del Servicio */
+    .amb-ticker-bar {
+        background: #00223D;
+        color: #E2E8F0;
+        padding: 10px 18px;
+        border-radius: 10px;
+        margin-bottom: 16px;
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        font-size: 12.5px;
+        border-left: 4px solid #7CB342;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+    }
+    
+    .badge-ticker {
+        background: #7CB342;
+        color: #003300;
+        padding: 3px 10px;
+        border-radius: 12px;
+        font-weight: 800;
+        font-size: 10.5px;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        white-space: nowrap;
+    }
+    
+    /* Tarjetas de Alerta y Métricas */
     .alert-box {
         padding: 14px 18px;
         border-radius: 12px;
@@ -90,26 +136,8 @@ st.markdown("""
 colombia_tz = timezone('America/Bogota')
 utc_tz = timezone('UTC')
 
-# ============================================================
-# 1. ENCABEZADO Y LOGO (amb minúscula)
-# ============================================================
-st.markdown(f"""
-<div class="mimat-header">
-    <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap;">
-        <div>
-            <div class="mimat-title">🏛️ MIMAT-C26 | Centro de Monitoreo - amb</div>
-            <div class="mimat-subtitle">Monitoreo Inteligente de Meteorología, Análisis de Telemetría y Cuencas • amb s.a. e.s.p.</div>
-        </div>
-        <div style="text-align: right;">
-            <span class="badge-status" style="background: rgba(100, 255, 218, 0.2); color: #64FFDA; border: 1px solid #64FFDA;">● TELEMETRÍA 24/7 ACTIVA</span>
-            <div style="font-size: 12px; color: #8892B0; margin-top: 4px;">🕐 {datetime.now(colombia_tz).strftime('%Y-%m-%d %H:%M:%S')} (Hora Colombia)</div>
-        </div>
-    </div>
-</div>
-""", unsafe_allow_html=True)
-
-# Carga de Logo amb en barra lateral
-def render_logo_sidebar():
+# Carga de Logo amb y Selector de Estilo en barra lateral
+def render_logo_sidebar(es_edicion_110=True):
     posibles_rutas = [
         "amb_4_punto_cero.jpg",
         os.path.join(os.path.dirname(__file__), "amb_4_punto_cero.jpg"),
@@ -121,17 +149,118 @@ def render_logo_sidebar():
             try:
                 img = Image.open(ruta)
                 st.sidebar.image(img, use_container_width=True)
+                if es_edicion_110:
+                    st.sidebar.markdown("""
+                    <div style="text-align: center; margin: -6px 0 12px 0;">
+                        <span style="background: rgba(124, 179, 66, 0.2); color: #7CB342; border: 1px solid #7CB342; padding: 2px 8px; border-radius: 12px; font-size: 10px; font-weight: 800;">💧 110 AÑOS amb</span>
+                    </div>
+                    """, unsafe_allow_html=True)
                 return
             except:
                 pass
-    st.sidebar.markdown("""
-    <div style="background: linear-gradient(135deg, #005073, #0A192F); padding: 16px; border-radius: 12px; text-align: center; margin-bottom: 15px; border: 1px solid #64FFDA;">
-        <h1 style="color: #64FFDA; margin: 0; font-size: 32px; font-weight: 900; letter-spacing: -1px;">amb</h1>
+    st.sidebar.markdown(f"""
+    <div style="background: linear-gradient(135deg, #002A4A, #005073); padding: 16px; border-radius: 12px; text-align: center; margin-bottom: 15px; border: 1px solid #64FFDA; box-shadow: 0 4px 12px rgba(0,0,0,0.15);">
+        <div style="font-size: 28px; line-height: 1;">💧</div>
+        <h1 style="color: #64FFDA; margin: 4px 0 0 0; font-size: 32px; font-weight: 900; letter-spacing: -1px;">amb</h1>
         <div style="color: #E6F1FF; font-size: 11px; text-transform: lowercase; margin-top: 2px;">acueducto metropolitano de bucaramanga</div>
+        {"<div style='margin-top: 8px; padding-top: 6px; border-top: 1px solid rgba(255,255,255,0.15);'><span style='background: rgba(124, 179, 66, 0.25); color: #7CB342; border: 1px solid #7CB342; padding: 2px 8px; border-radius: 10px; font-size: 10px; font-weight: 800;'>EDICIÓN 110 AÑOS</span></div>" if es_edicion_110 else ""}
     </div>
     """, unsafe_allow_html=True)
 
-render_logo_sidebar()
+# Selector dinámico de ambientación visual para pruebas y comparación
+modo_visual = st.sidebar.radio(
+    "🎨 Ambientación Visual:",
+    ["💧 Portal amb (Edición 110 Años)", "⚡ SCADA Clásico (Ingeniería Dark)"],
+    index=0,
+    help="Permite evaluar en tiempo real la nueva imagen conmemorativa institucional vs el diseño clásico de telemetría."
+)
+
+es_110 = (modo_visual == "💧 Portal amb (Edición 110 Años)")
+render_logo_sidebar(es_edicion_110=es_110)
+
+# ============================================================
+# 1. ENCABEZADO SEGÚN MODO SELECCIONADO
+# ============================================================
+if es_110:
+    st.markdown(f"""
+    <div class="amb-top-bar">
+        <div>
+            <span>📞 Contact Center: <strong>(607) 6898080</strong> / Celular: <strong>3330333356</strong></span>
+            <span style="margin: 0 10px; opacity: 0.4;">|</span>
+            <span>🏛️ Acueducto Metropolitano de Bucaramanga S.A. E.S.P.</span>
+        </div>
+        <div>
+            <span style="color: #64FFDA; font-weight: 700;">💧 EDICIÓN CONMEMORATIVA 110 AÑOS</span>
+            <span style="margin: 0 10px; opacity: 0.4;">|</span>
+            <span>🛰️ MIMAT-C26 • Telemetría 24/7</span>
+        </div>
+    </div>
+
+    <div class="amb-hero-header">
+        <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 14px;">
+            <div style="display: flex; align-items: center; gap: 18px;">
+                <div style="background: rgba(255,255,255,0.12); padding: 10px 14px; border-radius: 12px; border: 1px solid rgba(255,255,255,0.25); text-align: center;">
+                    <div style="font-size: 26px; line-height: 1;">💧</div>
+                    <div style="font-size: 16px; font-weight: 900; color: #FFFFFF; letter-spacing: -5px; margin-top: 2px;">110</div>
+                    <div style="font-size: 9px; font-weight: 800; color: #7CB342; text-transform: uppercase; letter-spacing: 1px;">AÑOS</div>
+                </div>
+                <div>
+                    <div style="display: flex; align-items: center; gap: 10px;">
+                        <h1 style="font-size: 24px; font-weight: 900; color: #FFFFFF; margin: 0; letter-spacing: -0.5px;">amb | MIMAT-C26</h1>
+                        <span class="badge-status" style="background: rgba(124, 179, 66, 0.25); color: #7CB342; border: 1px solid #7CB342; font-size: 10px;">SISTEMA OFICIAL</span>
+                    </div>
+                    <div style="font-size: 14px; font-weight: 700; color: #E0F2FE; margin-top: 3px;">
+                        Centro de Monitoreo Inteligente de Meteorología, Análisis de Telemetría y Cuencas
+                    </div>
+                    <div style="font-size: 11.5px; color: #BAE6FD; font-style: italic; margin-top: 2px;">
+                        "110 años de historias que dan vida con cada gota" • Dirección de Producción & Recursos Hídricos
+                    </div>
+                </div>
+            </div>
+            <div style="text-align: right;">
+                <span class="badge-status" style="background: rgba(100, 255, 218, 0.2); color: #64FFDA; border: 1px solid #64FFDA;">
+                    ● RED TELEMÉTRICA 24/7 EN VIVO
+                </span>
+                <div style="font-size: 12px; color: #E0F2FE; margin-top: 4px; font-weight: 600;">
+                    🕐 {datetime.now(colombia_tz).strftime('%Y-%m-%d %H:%M:%S')} (Hora Colombia)
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="amb-ticker-bar">
+        <span class="badge-ticker">NOVEDADES DEL SISTEMA</span>
+        <span style="line-height: 1.4;">
+            🌊 <strong>Embalse Tona:</strong> Cota estabilizada en rebose <strong>885.80 msnm</strong> • <strong>CRC Bosconia:</strong> Suministro continuo a >1,300 L/s por contingencia de turbiedad en Río Suratá • <strong>Red de Microcuencas:</strong> Vigilancia hidrometeorológica activa 24/7.
+        </span>
+    </div>
+    """, unsafe_allow_html=True)
+else:
+    st.markdown(f"""
+    <div style="background: linear-gradient(135deg, #0A192F 0%, #112240 100%); padding: 20px 24px; border-radius: 12px; margin-bottom: 20px; border-left: 5px solid #64FFDA; box-shadow: 0 4px 20px rgba(0,0,0,0.3);">
+        <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap;">
+            <div>
+                <h1 style="color: #64FFDA; margin: 0; font-size: 26px; font-weight: 800; letter-spacing: -0.5px;">
+                    MIMAT-C26 | amb
+                </h1>
+                <div style="color: #CCD6F6; font-size: 14px; font-weight: 600; margin-top: 4px;">
+                    Sistema de Monitoreo Inteligente de Meteorología, Análisis de Telemetría y Cuencas
+                </div>
+                <div style="color: #8892B0; font-size: 12px; margin-top: 2px;">
+                    Acueducto Metropolitano de Bucaramanga S.A. E.S.P. • Dirección de Producción & Recursos Hídricos
+                </div>
+            </div>
+            <div style="text-align: right; margin-top: 5px;">
+                <span class="badge-status" style="background: rgba(100, 255, 218, 0.15); color: #64FFDA; border: 1px solid #64FFDA;">
+                    ● TELEMETRÍA EN VIVO
+                </span>
+                <div style="color: #8892B0; font-size: 12px; margin-top: 4px;">
+                    {datetime.now(colombia_tz).strftime('%Y-%m-%d %H:%M:%S')} COT
+                </div>
+            </div>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
 
 # ============================================================
 # 2. METADATOS Y CONSTANTES
