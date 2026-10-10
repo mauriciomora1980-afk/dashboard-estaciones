@@ -159,7 +159,7 @@ AREAS_REF = np.array([0.00, 8.50, 14.20, 18.60, 24.50, 30.80, 37.20, 44.60, 46.2
 
 NIVEL_MINIMO_TECNICO = 841.00
 NIVEL_REBOSE_EMBALSE = 885.75
-OFFSET_RADAR_EMBALSE = 0.05 # Desfase del sensor radar OTT (5 cm)
+OFFSET_RADAR_EMBALSE = 0.05 # Desfase certificado con descarga in situ del Morning Glory (5 cm)
 VOLUMEN_UTIL_MAX_HM3 = 12.11
 VOLUMEN_MUERTO_HM3 = 1.40
 
@@ -861,7 +861,7 @@ METADATA_ESTACIONES_AMB = {
         "lon": -73.012806,
         "altitud_msnm": 1759.24,
         "peso_cuenca": 0.30,
-        "lag_horas": "1.0 - 2.0 h",
+        "lag_horas": "1.3 h (Confirmado Empíricamente: 1h 20m inicio / 5.3h cresta)",
         "microcuencas": "Qda. Los Monos (Litoral Derecho frente a Reforma) & Cabecera Arnania",
         "descripcion": "Ubicada a 1,759.24 msnm. Monitorea la microcuenca Arnania (Captación Arnania RQ30 hacia el Sistema Tona / PTAP La Flora y Morrorico). Los caudales remanentes de la captación y la ladera norte (Qda. Los Monos) drenan directamente al vaso del Embalse Tona.",
         "color": "#00CC96"
@@ -1620,20 +1620,67 @@ def consolidar_balance_diario_embalse(df_emb_enr):
         })
     return pd.DataFrame(resumen_dias)
 
-def preparar_df_para_exportar(df):
+def preparar_df_para_exportar(df, nombre_estacion=None):
+    if df.empty:
+        return df
     df_export = df.copy()
-    if 'timestamp' in df_export.columns:
-        df_export['timestamp'] = df_export['timestamp'].dt.tz_localize(None)
-    return df_export
+    es_embalse = (nombre_estacion == "Embalse") or (df_export.get('id_estacion', pd.Series([''])).iloc[0] == "Embalse" if 'id_estacion' in df_export.columns and not df_export.empty else False)
+    
+    if es_embalse and 'temperatura' in df_export.columns:
+        # Exportación especializada para Embalse Tona (Limpia y con Encabezados Hidráulicos Oficiales)
+        df_enr = enriquecer_datos_embalse(df)
+        df_res = pd.DataFrame()
+        df_res['Fecha_Hora_COT'] = pd.to_datetime(df_enr['timestamp']).dt.strftime('%Y-%m-%d %H:%M:%S')
+        df_res['Estacion'] = 'Embalse Tona'
+        df_res['Cota_Calibrada_msnm'] = df_enr['cota_embalse_msnm'].round(3)
+        df_res['Lectura_Cruda_Radar_msnm'] = pd.to_numeric(df_enr['temperatura'], errors='coerce').round(3)
+        df_res['Margen_a_Rebose_cm'] = ((885.75 - df_enr['cota_embalse_msnm']) * 100.0).round(2)
+        df_res['Caudal_Rebose_Morning_Glory_ls'] = df_enr['caudal_rebose_ls'].round(1)
+        df_res['Volumen_Total_hm3'] = df_enr['volumen_total_hm3'].round(3)
+        df_res['Volumen_Util_hm3'] = df_enr['volumen_util_hm3'].round(3)
+        if 'm3_consumidos_bosconia' in df_enr.columns:
+            df_res['Volumen_Entregado_Bosconia_m3'] = df_enr['m3_consumidos_bosconia'].round(1)
+        if 'voltaje_bateria' in df_enr.columns:
+            df_res['Voltaje_Bateria_V'] = pd.to_numeric(df_enr['voltaje_bateria'], errors='coerce').round(2)
+        if 'estado_bateria' in df_enr.columns:
+            df_res['Estado_Sensor'] = df_enr['estado_bateria']
+        return df_res
+    else:
+        # Exportación especializada para Estaciones Meteorológicas con unidades claras
+        mapa_renombrar = {
+            'id_estacion': 'Estacion',
+            'temperatura': 'Temperatura_C',
+            'precipitacion': 'Precipitacion_mm',
+            'humedad': 'Humedad_Relativa_pct',
+            'presion': 'Presion_Atmosferica_hPa',
+            'velocidad_viento': 'Velocidad_Viento_kmh',
+            'direccion_viento': 'Direccion_Viento_grados',
+            'voltaje_bateria': 'Voltaje_Bateria_V',
+            'estado_bateria': 'Estado_Bateria'
+        }
+        df_res = pd.DataFrame()
+        if 'timestamp' in df_export.columns:
+            df_res['Fecha_Hora_COT'] = pd.to_datetime(df_export['timestamp']).dt.strftime('%Y-%m-%d %H:%M:%S')
+            
+        for col_orig, col_nueva in mapa_renombrar.items():
+            if col_orig in df_export.columns:
+                if col_orig in ['temperatura', 'precipitacion', 'humedad', 'presion', 'velocidad_viento', 'voltaje_bateria']:
+                    df_res[col_nueva] = pd.to_numeric(df_export[col_orig], errors='coerce').round(2)
+                elif col_orig == 'direccion_viento':
+                    df_res[col_nueva] = pd.to_numeric(df_export[col_orig], errors='coerce').round(0)
+                else:
+                    df_res[col_nueva] = df_export[col_orig]
+        return df_res
 
 def generar_excel_con_formato(df, nombre_estacion, periodo_descripcion):
     output = BytesIO()
+    es_embalse = (nombre_estacion == "Embalse")
+    df_export = preparar_df_para_exportar(df, nombre_estacion)
     
     with pd.ExcelWriter(output, engine='openpyxl') as writer:
-        if nombre_estacion == "Embalse" and 'temperatura' in df.columns:
+        if es_embalse and 'temperatura' in df.columns:
             df_enr = enriquecer_datos_embalse(df)
             df_balance_24h = consolidar_balance_diario_embalse(df_enr)
-            df_enr_export = preparar_df_para_exportar(df_enr)
             
             # Hoja 1: Balance Consolidado 24h
             if not df_balance_24h.empty:
@@ -1652,12 +1699,12 @@ def generar_excel_con_formato(df, nombre_estacion, periodo_descripcion):
                     col_letter = col[0].column_letter
                     ws_bal.column_dimensions[col_letter].width = min(max_len + 4, 40)
             
-            # Hoja 2: Telemetría Detallada
-            df_enr_export.to_excel(writer, sheet_name='Telemetria_Embalse', index=False)
+            # Hoja 2: Telemetría Detallada (Con Encabezados Profesionales)
+            df_export.to_excel(writer, sheet_name='Telemetria_Embalse', index=False)
             worksheet = writer.sheets['Telemetria_Embalse']
             header_font = Font(bold=True, color="FFFFFF")
             header_fill = PatternFill(start_color="172A45", end_color="172A45", fill_type="solid")
-            for col in range(1, len(df_enr_export.columns) + 1):
+            for col in range(1, len(df_export.columns) + 1):
                 cell = worksheet.cell(row=1, column=col)
                 cell.font = header_font
                 cell.fill = header_fill
@@ -1666,11 +1713,10 @@ def generar_excel_con_formato(df, nombre_estacion, periodo_descripcion):
                 max_len = max(len(str(cell.value or '')) for cell in col)
                 col_letter = col[0].column_letter
                 worksheet.column_dimensions[col_letter].width = min(max_len + 3, 50)
-            df_registros_len = len(df_enr_export)
+            df_registros_len = len(df_export)
         else:
-            df_export = preparar_df_para_exportar(df)
-            df_export.to_excel(writer, sheet_name='Datos', index=False)
-            worksheet = writer.sheets['Datos']
+            df_export.to_excel(writer, sheet_name='Datos_Meteorologicos', index=False)
+            worksheet = writer.sheets['Datos_Meteorologicos']
             header_font = Font(bold=True, color="FFFFFF")
             header_fill = PatternFill(start_color="005073", end_color="005073", fill_type="solid")
             header_alignment = Alignment(horizontal="center", vertical="center")
@@ -2842,7 +2888,7 @@ with tab_series:
                 st.dataframe(df_exp, use_container_width=True)
                 
         c_exp1, c_exp2 = st.columns(2)
-        df_p = preparar_df_para_exportar(df_exp)
+        df_p = preparar_df_para_exportar(df_exp, seleccion)
         csv_bytes = df_p.to_csv(index=False).encode('utf-8-sig')
         with c_exp1:
             try:
@@ -3170,4 +3216,3 @@ with st.sidebar.expander("📏 Extensómetros (EDV)"):
 # ============================================================
 # FIN DEL CÓDIGO — SISTEMA MIMAT-C26 (amb)
 # ============================================================
-
