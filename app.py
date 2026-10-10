@@ -1,4 +1,4 @@
-import streamlit as st
+ import streamlit as st
 import pandas as pd
 import numpy as np
 import json
@@ -1559,6 +1559,11 @@ def enriquecer_datos_embalse(df):
         return df
     df_e = df.copy().sort_values('timestamp')
     c_raw = pd.to_numeric(df_e['temperatura'], errors='coerce')
+    
+    # Validación física estricta: sólo procede si son cotas físicas reales (> 800 msnm)
+    if c_raw.dropna().empty or c_raw.dropna().mean() < 800:
+        return pd.DataFrame()
+        
     df_e['cota_embalse_msnm'] = (c_raw - OFFSET_RADAR_EMBALSE).round(3)
     
     df_e['volumen_total_hm3'] = df_e['cota_embalse_msnm'].apply(lambda c: round(interpolar_volumen(c), 4) if pd.notna(c) else None)
@@ -1624,57 +1629,64 @@ def preparar_df_para_exportar(df, nombre_estacion=None):
     if df.empty:
         return df
     df_export = df.copy()
-    es_embalse = (nombre_estacion == "Embalse") or (df_export.get('id_estacion', pd.Series([''])).iloc[0] == "Embalse" if 'id_estacion' in df_export.columns and not df_export.empty else False)
+    
+    # Validación física estricta: sólo es embalse si la estación es Embalse Y las lecturas son cotas físicas (> 800 msnm)
+    c_mean = pd.to_numeric(df_export.get('temperatura', pd.Series()), errors='coerce').dropna().mean() if 'temperatura' in df_export.columns else 0
+    id_est = df_export['id_estacion'].iloc[0] if ('id_estacion' in df_export.columns and not df_export.empty) else ""
+    es_embalse = (nombre_estacion == "Embalse" or id_est == "Embalse") and (c_mean > 800)
     
     if es_embalse and 'temperatura' in df_export.columns:
         # Exportación especializada para Embalse Tona (Limpia y con Encabezados Hidráulicos Oficiales)
         df_enr = enriquecer_datos_embalse(df)
-        df_res = pd.DataFrame()
-        df_res['Fecha_Hora_COT'] = pd.to_datetime(df_enr['timestamp']).dt.strftime('%Y-%m-%d %H:%M:%S')
-        df_res['Estacion'] = 'Embalse Tona'
-        df_res['Cota_Calibrada_msnm'] = df_enr['cota_embalse_msnm'].round(3)
-        df_res['Lectura_Cruda_Radar_msnm'] = pd.to_numeric(df_enr['temperatura'], errors='coerce').round(3)
-        df_res['Margen_a_Rebose_cm'] = ((885.75 - df_enr['cota_embalse_msnm']) * 100.0).round(2)
-        df_res['Caudal_Rebose_Morning_Glory_ls'] = df_enr['caudal_rebose_ls'].round(1)
-        df_res['Volumen_Total_hm3'] = df_enr['volumen_total_hm3'].round(3)
-        df_res['Volumen_Util_hm3'] = df_enr['volumen_util_hm3'].round(3)
-        if 'm3_consumidos_bosconia' in df_enr.columns:
-            df_res['Volumen_Entregado_Bosconia_m3'] = df_enr['m3_consumidos_bosconia'].round(1)
-        if 'voltaje_bateria' in df_enr.columns:
-            df_res['Voltaje_Bateria_V'] = pd.to_numeric(df_enr['voltaje_bateria'], errors='coerce').round(2)
-        if 'estado_bateria' in df_enr.columns:
-            df_res['Estado_Sensor'] = df_enr['estado_bateria']
-        return df_res
-    else:
-        # Exportación especializada para Estaciones Meteorológicas con unidades claras
-        mapa_renombrar = {
-            'id_estacion': 'Estacion',
-            'temperatura': 'Temperatura_C',
-            'precipitacion': 'Precipitacion_mm',
-            'humedad': 'Humedad_Relativa_pct',
-            'presion': 'Presion_Atmosferica_hPa',
-            'velocidad_viento': 'Velocidad_Viento_kmh',
-            'direccion_viento': 'Direccion_Viento_grados',
-            'voltaje_bateria': 'Voltaje_Bateria_V',
-            'estado_bateria': 'Estado_Bateria'
-        }
-        df_res = pd.DataFrame()
-        if 'timestamp' in df_export.columns:
-            df_res['Fecha_Hora_COT'] = pd.to_datetime(df_export['timestamp']).dt.strftime('%Y-%m-%d %H:%M:%S')
-            
-        for col_orig, col_nueva in mapa_renombrar.items():
-            if col_orig in df_export.columns:
-                if col_orig in ['temperatura', 'precipitacion', 'humedad', 'presion', 'velocidad_viento', 'voltaje_bateria']:
-                    df_res[col_nueva] = pd.to_numeric(df_export[col_orig], errors='coerce').round(2)
-                elif col_orig == 'direccion_viento':
-                    df_res[col_nueva] = pd.to_numeric(df_export[col_orig], errors='coerce').round(0)
-                else:
-                    df_res[col_nueva] = df_export[col_orig]
-        return df_res
+        if not df_enr.empty and 'cota_embalse_msnm' in df_enr.columns:
+            df_res = pd.DataFrame()
+            df_res['Fecha_Hora_COT'] = pd.to_datetime(df_enr['timestamp']).dt.strftime('%Y-%m-%d %H:%M:%S')
+            df_res['Estacion'] = 'Embalse Tona'
+            df_res['Cota_Calibrada_msnm'] = df_enr['cota_embalse_msnm'].round(3)
+            df_res['Lectura_Cruda_Radar_msnm'] = pd.to_numeric(df_enr['temperatura'], errors='coerce').round(3)
+            df_res['Margen_a_Rebose_cm'] = ((885.75 - df_enr['cota_embalse_msnm']) * 100.0).round(2)
+            df_res['Caudal_Rebose_Morning_Glory_ls'] = df_enr['caudal_rebose_ls'].round(1)
+            df_res['Volumen_Total_hm3'] = df_enr['volumen_total_hm3'].round(3)
+            df_res['Volumen_Util_hm3'] = df_enr['volumen_util_hm3'].round(3)
+            if 'm3_consumidos_bosconia' in df_enr.columns:
+                df_res['Volumen_Entregado_Bosconia_m3'] = df_enr['m3_consumidos_bosconia'].round(1)
+            if 'voltaje_bateria' in df_enr.columns:
+                df_res['Voltaje_Bateria_V'] = pd.to_numeric(df_enr['voltaje_bateria'], errors='coerce').round(2)
+            if 'estado_bateria' in df_enr.columns:
+                df_res['Estado_Sensor'] = df_enr['estado_bateria']
+            return df_res
+        
+    # Exportación especializada para Estaciones Meteorológicas con unidades claras
+    mapa_renombrar = {
+        'id_estacion': 'Estacion',
+        'temperatura': 'Temperatura_C',
+        'precipitacion': 'Precipitacion_mm',
+        'humedad': 'Humedad_Relativa_pct',
+        'presion': 'Presion_Atmosferica_hPa',
+        'velocidad_viento': 'Velocidad_Viento_kmh',
+        'direccion_viento': 'Direccion_Viento_grados',
+        'voltaje_bateria': 'Voltaje_Bateria_V',
+        'estado_bateria': 'Estado_Bateria'
+    }
+    df_res = pd.DataFrame()
+    if 'timestamp' in df_export.columns:
+        df_res['Fecha_Hora_COT'] = pd.to_datetime(df_export['timestamp']).dt.strftime('%Y-%m-%d %H:%M:%S')
+        
+    for col_orig, col_nueva in mapa_renombrar.items():
+        if col_orig in df_export.columns:
+            if col_orig in ['temperatura', 'precipitacion', 'humedad', 'presion', 'velocidad_viento', 'voltaje_bateria']:
+                df_res[col_nueva] = pd.to_numeric(df_export[col_orig], errors='coerce').round(2)
+            elif col_orig == 'direccion_viento':
+                df_res[col_nueva] = pd.to_numeric(df_export[col_orig], errors='coerce').round(0)
+            else:
+                df_res[col_nueva] = df_export[col_orig]
+    return df_res
 
 def generar_excel_con_formato(df, nombre_estacion, periodo_descripcion):
     output = BytesIO()
-    es_embalse = (nombre_estacion == "Embalse")
+    c_mean = pd.to_numeric(df.get('temperatura', pd.Series()), errors='coerce').dropna().mean() if 'temperatura' in df.columns else 0
+    id_est = df['id_estacion'].iloc[0] if ('id_estacion' in df.columns and not df.empty) else ""
+    es_embalse = (nombre_estacion == "Embalse" or id_est == "Embalse") and (c_mean > 800)
     df_export = preparar_df_para_exportar(df, nombre_estacion)
     
     with pd.ExcelWriter(output, engine='openpyxl') as writer:
@@ -2857,14 +2869,21 @@ with tab_series:
         f_fin_d = hoy
         desc_periodo = f"{op_periodo} ({f_ini_d.strftime('%d/%m/%Y')} - {f_fin_d.strftime('%d/%m/%Y')})"
         
+    # Limpieza automática si la estación seleccionada cambió respecto a los datos cargados en sesión
+    if 'estacion_descarga' in st.session_state and st.session_state['estacion_descarga'] != seleccion:
+        st.session_state.pop('df_descarga', None)
+        st.session_state.pop('periodo_descarga', None)
+        st.session_state.pop('estacion_descarga', None)
+        
     st.info(f"📊 **Período seleccionado para descarga:** {desc_periodo}")
     if st.button("📥 Cargar datos para exportar", use_container_width=True):
-        with st.spinner("🔄 Procesando datos históricos en BigQuery..."):
+        with st.spinner(f"🔄 Procesando datos históricos de {seleccion} en BigQuery..."):
             df_d = get_historical_data_range(seleccion, f_ini_d, f_fin_d)
             if not df_d.empty:
                 st.session_state['df_descarga'] = df_d
                 st.session_state['periodo_descarga'] = desc_periodo
-                st.success(f"✅ Datos listos: {len(df_d)} registros procesados")
+                st.session_state['estacion_descarga'] = seleccion
+                st.success(f"✅ Datos listos: {len(df_d)} registros procesados para {seleccion}")
             else:
                 st.warning("⚠️ Sin datos para el rango seleccionado.")
                 
@@ -2877,12 +2896,16 @@ with tab_series:
             
         if seleccion == "Embalse" and 'temperatura' in df_exp.columns:
             df_enr_exp = enriquecer_datos_embalse(df_exp)
-            df_bal_exp = consolidar_balance_diario_embalse(df_enr_exp)
-            if not df_bal_exp.empty:
-                st.markdown("### 📊 Balance Diario Consolidado hacia PTAP Bosconia (24 Horas Exactas):")
-                st.dataframe(df_bal_exp, use_container_width=True)
-            with st.expander("📋 Ver Matriz Detallada Enriquecida"):
-                st.dataframe(df_enr_exp, use_container_width=True)
+            if not df_enr_exp.empty:
+                df_bal_exp = consolidar_balance_diario_embalse(df_enr_exp)
+                if not df_bal_exp.empty:
+                    st.markdown("### 📊 Balance Diario Consolidado hacia PTAP Bosconia (24 Horas Exactas):")
+                    st.dataframe(df_bal_exp, use_container_width=True)
+                with st.expander("📋 Ver Matriz Detallada Enriquecida"):
+                    st.dataframe(df_enr_exp, use_container_width=True)
+            else:
+                with st.expander("📋 Ver Matriz de Datos"): 
+                    st.dataframe(df_exp, use_container_width=True)
         else:
             with st.expander("📋 Ver Matriz de Datos"): 
                 st.dataframe(df_exp, use_container_width=True)
