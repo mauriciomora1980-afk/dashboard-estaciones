@@ -170,97 +170,102 @@ def render_logo_sidebar(es_edicion_110=True):
 # Selector dinámico de ambientación visual para pruebas y comparación
 modo_visual = st.sidebar.radio(
     "🎨 Ambientación Visual:",
-    ["💧 Portal amb (Edición 110 Años)", "⚡ SCADA Clásico (Ingeniería Dark)"],
+    ["⚡ SCADA Clásico (Ingeniería Dark)", "💧 Portal amb (Edición 110 Años)"],
     index=0,
-    help="Permite evaluar en tiempo real la nueva imagen conmemorativa institucional vs el diseño clásico de telemetría."
+    help="Permite alternar entre el diseño técnico SCADA clásico preferido y la nueva imagen conmemorativa institucional."
 )
 
 es_110 = (modo_visual == "💧 Portal amb (Edición 110 Años)")
 render_logo_sidebar(es_edicion_110=es_110)
 
 # ============================================================
-# 1. ENCABEZADO SEGÚN MODO SELECCIONADO
+# 1. FUNCIÓN DE RENDERIZADO DE ENCABEZADO Y NOVEDADES DINÁMICAS
 # ============================================================
-if es_110:
-    st.markdown(f"""
-    <div class="amb-top-bar">
-        <div>
-            <span>📞 Contact Center: <strong>(607) 6898080</strong> / Celular: <strong>3330333356</strong></span>
-            <span style="margin: 0 10px; opacity: 0.4;">|</span>
-            <span>🏛️ Acueducto Metropolitano de Bucaramanga S.A. E.S.P.</span>
-        </div>
-        <div>
-            <span style="color: #64FFDA; font-weight: 700;">💧 EDICIÓN CONMEMORATIVA 110 AÑOS</span>
-            <span style="margin: 0 10px; opacity: 0.4;">|</span>
-            <span>🛰️ MIMAT-C26 • Telemetría 24/7</span>
-        </div>
-    </div>
-
-    <div class="amb-hero-header">
-        <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 14px;">
-            <div style="display: flex; align-items: center; gap: 18px;">
-                <div style="background: rgba(255,255,255,0.12); padding: 10px 14px; border-radius: 12px; border: 1px solid rgba(255,255,255,0.25); text-align: center;">
-                    <div style="font-size: 26px; line-height: 1;">💧</div>
-                    <div style="font-size: 16px; font-weight: 900; color: #FFFFFF; letter-spacing: -5px; margin-top: 2px;">110</div>
-                    <div style="font-size: 9px; font-weight: 800; color: #7CB342; text-transform: uppercase; letter-spacing: 1px;">AÑOS</div>
-                </div>
-                <div>
-                    <div style="display: flex; align-items: center; gap: 10px;">
-                        <h1 style="font-size: 24px; font-weight: 900; color: #FFFFFF; margin: 0; letter-spacing: -0.5px;">amb | MIMAT-C26</h1>
-                        <span class="badge-status" style="background: rgba(124, 179, 66, 0.25); color: #7CB342; border: 1px solid #7CB342; font-size: 10px;">SISTEMA OFICIAL</span>
-                    </div>
-                    <div style="font-size: 14px; font-weight: 700; color: #E0F2FE; margin-top: 3px;">
-                        Centro de Monitoreo Inteligente de Meteorología, Análisis de Telemetría y Cuencas
-                    </div>
-                    <div style="font-size: 11.5px; color: #BAE6FD; font-style: italic; margin-top: 2px;">
-                        "110 años de historias que dan vida con cada gota" • Dirección de Producción & Recursos Hídricos
-                    </div>
-                </div>
-            </div>
-            <div style="text-align: right;">
-                <span class="badge-status" style="background: rgba(100, 255, 218, 0.2); color: #64FFDA; border: 1px solid #64FFDA;">
-                    ● RED TELEMÉTRICA 24/7 EN VIVO
-                </span>
-                <div style="font-size: 12px; color: #E0F2FE; margin-top: 4px; font-weight: 600;">
-                    🕐 {datetime.now(colombia_tz).strftime('%Y-%m-%d %H:%M:%S')} (Hora Colombia)
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <div class="amb-ticker-bar">
-        <span class="badge-ticker">NOVEDADES DEL SISTEMA</span>
-        <span style="line-height: 1.4;">
-            🌊 <strong>Embalse Tona:</strong> Cota estabilizada en rebose <strong>885.80 msnm</strong> • <strong>CRC Bosconia:</strong> Suministro continuo a >1,300 L/s por contingencia de turbiedad en Río Suratá • <strong>Red de Microcuencas:</strong> Vigilancia hidrometeorológica activa 24/7.
-        </span>
-    </div>
-    """, unsafe_allow_html=True)
-else:
-    st.markdown(f"""
-    <div style="background: linear-gradient(135deg, #0A192F 0%, #112240 100%); padding: 20px 24px; border-radius: 12px; margin-bottom: 20px; border-left: 5px solid #64FFDA; box-shadow: 0 4px 20px rgba(0,0,0,0.3);">
-        <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap;">
+def render_encabezado_principal(es_110=False, txt_novedades=""):
+    if es_110:
+        st.markdown(f"""
+        <div class="amb-top-bar">
             <div>
-                <h1 style="color: #64FFDA; margin: 0; font-size: 26px; font-weight: 800; letter-spacing: -0.5px;">
-                    MIMAT-C26 | amb
-                </h1>
-                <div style="color: #CCD6F6; font-size: 14px; font-weight: 600; margin-top: 4px;">
-                    Sistema de Monitoreo Inteligente de Meteorología, Análisis de Telemetría y Cuencas
-                </div>
-                <div style="color: #8892B0; font-size: 12px; margin-top: 2px;">
-                    Acueducto Metropolitano de Bucaramanga S.A. E.S.P. • Dirección de Producción & Recursos Hídricos
-                </div>
+                <span>📞 Contact Center: <strong>(607) 6898080</strong> / Celular: <strong>3330333356</strong></span>
+                <span style="margin: 0 10px; opacity: 0.4;">|</span>
+                <span>🏛️ Acueducto Metropolitano de Bucaramanga S.A. E.S.P.</span>
             </div>
-            <div style="text-align: right; margin-top: 5px;">
-                <span class="badge-status" style="background: rgba(100, 255, 218, 0.15); color: #64FFDA; border: 1px solid #64FFDA;">
-                    ● TELEMETRÍA EN VIVO
-                </span>
-                <div style="color: #8892B0; font-size: 12px; margin-top: 4px;">
-                    {datetime.now(colombia_tz).strftime('%Y-%m-%d %H:%M:%S')} COT
+            <div>
+                <span style="color: #64FFDA; font-weight: 700;">💧 EDICIÓN CONMEMORATIVA 110 AÑOS</span>
+                <span style="margin: 0 10px; opacity: 0.4;">|</span>
+                <span>🛰️ MIMAT-C26 • Telemetría 24/7</span>
+            </div>
+        </div>
+
+        <div class="amb-hero-header">
+            <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 14px;">
+                <div style="display: flex; align-items: center; gap: 18px;">
+                    <div style="background: rgba(255,255,255,0.12); padding: 10px 14px; border-radius: 12px; border: 1px solid rgba(255,255,255,0.25); text-align: center;">
+                        <div style="font-size: 26px; line-height: 1;">💧</div>
+                        <div style="font-size: 16px; font-weight: 900; color: #FFFFFF; letter-spacing: -1px; margin-top: 2px;">110</div>
+                        <div style="font-size: 9px; font-weight: 800; color: #7CB342; text-transform: uppercase; letter-spacing: 1px;">AÑOS</div>
+                    </div>
+                    <div>
+                        <div style="display: flex; align-items: center; gap: 10px;">
+                            <h1 style="font-size: 24px; font-weight: 900; color: #FFFFFF; margin: 0; letter-spacing: -0.5px;">amb | MIMAT-C26</h1>
+                            <span class="badge-status" style="background: rgba(124, 179, 66, 0.25); color: #7CB342; border: 1px solid #7CB342; font-size: 10px;">SISTEMA OFICIAL</span>
+                        </div>
+                        <div style="font-size: 14px; font-weight: 700; color: #E0F2FE; margin-top: 3px;">
+                            Centro de Monitoreo Inteligente de Meteorología, Análisis de Telemetría y Cuencas
+                        </div>
+                        <div style="font-size: 11.5px; color: #BAE6FD; font-style: italic; margin-top: 2px;">
+                            "110 años de historias que dan vida con cada gota" • Dirección de Producción & Recursos Hídricos
+                        </div>
+                    </div>
+                </div>
+                <div style="text-align: right;">
+                    <span class="badge-status" style="background: rgba(100, 255, 218, 0.2); color: #64FFDA; border: 1px solid #64FFDA;">
+                        ● RED TELEMÉTRICA 24/7 EN VIVO
+                    </span>
+                    <div style="font-size: 12px; color: #E0F2FE; margin-top: 4px; font-weight: 600;">
+                        🕐 {datetime.now(colombia_tz).strftime('%Y-%m-%d %H:%M:%S')} (Hora Colombia)
+                    </div>
                 </div>
             </div>
         </div>
-    </div>
-    """, unsafe_allow_html=True)
+
+        <div class="amb-ticker-bar">
+            <span class="badge-ticker">NOVEDADES DEL SISTEMA</span>
+            <span style="line-height: 1.4;">
+                {txt_novedades}
+            </span>
+        </div>
+        """, unsafe_allow_html=True)
+    else:
+        st.markdown(f"""
+        <div style="background: linear-gradient(135deg, #0A192F 0%, #112240 100%); padding: 20px 24px; border-radius: 12px; margin-bottom: 12px; border-left: 5px solid #64FFDA; box-shadow: 0 4px 20px rgba(0,0,0,0.3);">
+            <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap;">
+                <div>
+                    <h1 style="color: #64FFDA; margin: 0; font-size: 26px; font-weight: 800; letter-spacing: -0.5px;">
+                        MIMAT-C26 | amb
+                    </h1>
+                    <div style="color: #CCD6F6; font-size: 14px; font-weight: 600; margin-top: 4px;">
+                        Sistema de Monitoreo Inteligente de Meteorología, Análisis de Telemetría y Cuencas
+                    </div>
+                    <div style="color: #8892B0; font-size: 12px; margin-top: 2px;">
+                        Acueducto Metropolitano de Bucaramanga S.A. E.S.P. • Dirección de Producción & Recursos Hídricos
+                    </div>
+                </div>
+                <div style="text-align: right; margin-top: 5px;">
+                    <span class="badge-status" style="background: rgba(100, 255, 218, 0.15); color: #64FFDA; border: 1px solid #64FFDA;">
+                        ● TELEMETRÍA EN VIVO
+                    </span>
+                    <div style="color: #8892B0; font-size: 12px; margin-top: 4px;">
+                        {datetime.now(colombia_tz).strftime('%Y-%m-%d %H:%M:%S')} COT
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div style="background: rgba(10, 25, 47, 0.95); padding: 9px 16px; border-radius: 8px; margin-bottom: 18px; border-left: 4px solid #64FFDA; font-size: 12.5px; color: #E2E8F0; display: flex; align-items: center; gap: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.25);">
+            <span style="background: rgba(100, 255, 218, 0.2); color: #64FFDA; border: 1px solid #64FFDA; padding: 2px 8px; border-radius: 6px; font-weight: 800; font-size: 10px; letter-spacing: 0.5px; white-space: nowrap;">● NOVEDADES EN VIVO</span>
+            <span style="line-height: 1.4;">{txt_novedades}</span>
+        </div>
+        """, unsafe_allow_html=True)
 
 # ============================================================
 # 2. METADATOS Y CONSTANTES
@@ -564,6 +569,89 @@ def get_cota_embalse_actual_segura():
     except:
         pass
     return 885.32
+
+@st.cache_data(ttl=60)
+def obtener_novedades_sistema_en_vivo():
+    """
+    Despachador Inteligente de Novedades Hidrológicas en Vivo (SAT-IA / MIMAT-C26):
+    1. Consulta cota en vivo del Embalse Tona y determina si está en rebose o descenso.
+    2. Consulta precipitaciones acumuladas de las últimas 2 horas en todas las estaciones.
+    3. Detecta activación de alertas amarillas, naranjas o rojas según umbrales físicos.
+    4. Genera el cintillo informativo dinámico para la cabecera del sistema.
+    """
+    novedades = []
+    
+    # 1. ESTADO HIDRÁULICO DEL EMBALSE TONA
+    try:
+        cota_act = get_cota_embalse_actual_segura()
+        if cota_act >= NIVEL_REBOSE_EMBALSE:
+            lamina_cm = (cota_act - NIVEL_REBOSE_EMBALSE) * 100.0
+            _, q_reb_ls = calcular_caudal_morning_glory(cota_act)
+            if lamina_cm >= 0.5 and q_reb_ls > 0:
+                novedades.append(f"🌊 <strong>Embalse Tona:</strong> Vertimiento controlado activo por Morning Glory (Cota <strong>{cota_act:.2f} msnm</strong> • Lámina <strong>+{lamina_cm:.1f} cm</strong> • Caudal vertido ~<strong>{q_reb_ls:,.0f} L/s</strong> hacia Puente Tona)")
+            else:
+                novedades.append(f"🌊 <strong>Embalse Tona:</strong> Cota estabilizada en umbral de vertimiento (<strong>{cota_act:.2f} msnm</strong>)")
+        else:
+            margen_cm = (NIVEL_REBOSE_EMBALSE - cota_act) * 100.0
+            margen_m = margen_cm / 100.0
+            novedades.append(f"📉 <strong>Embalse Tona:</strong> Nivel a <strong>{margen_m:.2f} m</strong> ({margen_cm:.0f} cm) de cota de rebose (Cota <strong>{cota_act:.2f} msnm</strong>)")
+    except Exception:
+        novedades.append(f"🌊 <strong>Embalse Tona:</strong> Cota de vertedero Morning Glory <strong>885.75 msnm</strong>")
+
+    # 2. DETECCIÓN DE LLUVIAS ACTIVAS Y ALERTAS EN ÚLTIMAS 2 HORAS
+    try:
+        query_lluvias = """
+        SELECT 
+            id_estacion,
+            SUM(SAFE_CAST(precipitacion AS FLOAT64)) as lluvia_reciente_mm,
+            MAX(SAFE_CAST(precipitacion AS FLOAT64)) as p_max_evento
+        FROM `gen-lang-client-0342049346.amb_hidrologia.telemetria_estaciones`
+        WHERE id_estacion != 'Embalse'
+          AND SAFE_CAST(timestamp AS TIMESTAMP) >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 2 HOUR)
+        GROUP BY id_estacion
+        """
+        job = client.query(query_lluvias)
+        rows = [dict(r) for r in job.result()]
+        
+        lluvias_activas = []
+        alertas_disparadas = []
+        
+        for r in rows:
+            est = r.get('id_estacion', '')
+            p_tot = float(r.get('lluvia_reciente_mm', 0) or 0)
+            p_max = float(r.get('p_max_evento', 0) or 0)
+            p_ref = max(p_tot, p_max)
+            
+            if est in umbrales:
+                u = umbrales[est]
+                nombre_est = est.replace('_', ' ')
+                if p_ref >= u["roja"]:
+                    alertas_disparadas.append(f"🚨 <strong>ALERTA ROJA en {nombre_est}</strong> ({p_ref:.1f} mm/h) — Creciente inminente")
+                elif p_ref >= u["naranja"]:
+                    alertas_disparadas.append(f"⚠️ <strong>ALERTA NARANJA en {nombre_est}</strong> ({p_ref:.1f} mm/h) — Inspección preventiva")
+                elif p_ref >= u["amarilla"]:
+                    alertas_disparadas.append(f"🟡 <strong>Alerta Amarilla en {nombre_est}</strong> ({p_ref:.1f} mm/h)")
+                elif p_ref >= 0.5:
+                    lluvias_activas.append(f"🌧️ <strong>Lluvia activa en {nombre_est}</strong> ({p_ref:.1f} mm en últimas 2h)")
+        
+        if alertas_disparadas:
+            novedades.extend(alertas_disparadas)
+        elif lluvias_activas:
+            novedades.extend(lluvias_activas)
+        else:
+            novedades.append("☀️ <strong>Microcuencas:</strong> Tiempo seco en cuencas altas. Sin precipitaciones activas")
+            
+    except Exception:
+        novedades.append("🛰️ <strong>Red Telemétrica:</strong> Vigilancia hidrometeorológica continua 24/7")
+
+    # 3. SELLO INSTITUCIONAL AMB
+    novedades.append("💧 <strong>amb:</strong> Suministro y potabilización continua para el Área Metropolitana")
+
+    return " • ".join(novedades)
+
+# Renderizado inicial del encabezado con telemetría viva
+txt_novedades_en_vivo = obtener_novedades_sistema_en_vivo()
+render_encabezado_principal(es_110=es_110, txt_novedades=txt_novedades_en_vivo)
 
 @st.cache_data(ttl=1800)
 def obtener_pronostico_open_meteo(lat: float, lon: float, past_days: int = 7, forecast_days: int = 3):
