@@ -655,17 +655,22 @@ render_encabezado_principal(es_110=es_110, txt_novedades=txt_novedades_en_vivo)
 
 @st.cache_data(ttl=1800)
 def obtener_pronostico_open_meteo(lat: float, lon: float, past_days: int = 7, forecast_days: int = 3):
-    try:
-        url = f"https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}&hourly=precipitation,temperature_2m,relative_humidity_2m,wind_speed_10m,wind_direction_10m,weather_code,precipitation_probability&past_days={past_days}&forecast_days={forecast_days}&timezone=America/Bogota"
-        req = urllib.request.Request(url, headers={'User-Agent': 'MIMAT-C26-amb/2.6'})
-        with urllib.request.urlopen(req, timeout=8) as response:
-            data = json.loads(response.read().decode('utf-8'))
-            if 'hourly' in data:
-                df_fc = pd.DataFrame(data['hourly'])
-                df_fc['time'] = pd.to_datetime(df_fc['time'])
-                return df_fc
-    except Exception as e:
-        pass
+    url = f"https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}&hourly=precipitation,temperature_2m,relative_humidity_2m,wind_speed_10m,wind_direction_10m,weather_code,precipitation_probability&past_days={past_days}&forecast_days={forecast_days}&timezone=America/Bogota"
+    
+    # 2 Reintentos con timeout extendido a 15s para tolerar ventanas de actualización de NOAA/ECMWF
+    for intento in range(2):
+        try:
+            req = urllib.request.Request(url, headers={'User-Agent': 'MIMAT-C26-amb/2.6'})
+            with urllib.request.urlopen(req, timeout=15) as response:
+                if response.status == 200:
+                    data = json.loads(response.read().decode('utf-8'))
+                    if 'hourly' in data:
+                        df_fc = pd.DataFrame(data['hourly'])
+                        df_fc['time'] = pd.to_datetime(df_fc['time'])
+                        return df_fc
+        except Exception:
+            if intento == 0:
+                time.sleep(1.2) # Breve pausa antes del segundo reintento
     return pd.DataFrame()
 
 def calcular_interventoria_satelital_vs_terreno(df_hist, lat, lon, horas_eval=72, umbral_mm=0.1):
