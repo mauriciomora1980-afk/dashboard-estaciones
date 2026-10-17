@@ -139,6 +139,12 @@ utc_tz = timezone('UTC')
 # Carga de Logo amb y Selector de Estilo en barra lateral
 def render_logo_sidebar(es_edicion_110=True):
     posibles_rutas = [
+        "logo_amb_4_0_olas_oficiales.jpg",
+        os.path.join(os.path.dirname(__file__), "logo_amb_4_0_olas_oficiales.jpg"),
+        os.path.join(os.getcwd(), "logo_amb_4_0_olas_oficiales.jpg"),
+        "logo_amb_4_0_oficial.jpg",
+        os.path.join(os.path.dirname(__file__), "logo_amb_4_0_oficial.jpg"),
+        os.path.join(os.getcwd(), "logo_amb_4_0_oficial.jpg"),
         "amb_4_punto_cero.jpg",
         os.path.join(os.path.dirname(__file__), "amb_4_punto_cero.jpg"),
         os.path.join(os.getcwd(), "amb_4_punto_cero.jpg"),
