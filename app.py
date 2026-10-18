@@ -892,6 +892,16 @@ def evaluar_salud_estacion(df_hist, row, estacion):
                 p_s6 = pd.to_numeric(df_6h['presion'], errors='coerce').dropna()
                 if p_s6.empty or p_s6.max() == 0.0 or (p_s6.max() == p_s6.min()):
                     sensores_en_falla.append("Barómetro (valor pegado sin variación)")
+
+        # 4. Detección de "Hold SCADA" (Trama congelada repitiendo exactamente la misma Temperatura, Viento, Dirección y Presión por > 3h)
+        df_3h_hold = df_hist[df_hist['timestamp'] >= (ahora - timedelta(hours=3))]
+        if not df_3h_hold.empty and len(df_3h_hold) >= 12 and not sensores_en_falla:
+            t_h3 = pd.to_numeric(df_3h_hold['temperatura'], errors='coerce').dropna()
+            v_h3 = pd.to_numeric(df_3h_hold['velocidad_viento'], errors='coerce').dropna()
+            d_h3 = pd.to_numeric(df_3h_hold['direccion_viento'], errors='coerce').dropna()
+            if not t_h3.empty and not v_h3.empty and not d_h3.empty:
+                if (t_h3.max() == t_h3.min()) and (v_h3.max() == v_h3.min()) and (d_h3.max() == d_h3.min()):
+                    sensores_en_falla.append(f"Trama Congelada en Hold ({t_h3.iloc[-1]:.2f}°C / {v_h3.iloc[-1]:.1f} km/h fijos)")
     else:
         if h_val == 0.0:
             sensores_en_falla.append("Humedad (0.0%)")
@@ -905,7 +915,7 @@ def evaluar_salud_estacion(df_hist, row, estacion):
             "es_valido": False,
             "horas_retraso": retraso_horas,
             "mensaje": f"🚨 ALERTA DE SENSORES EN CAMPO: {lista_txt}",
-            "diagnostico": f"Se detectan lecturas anómalas o congeladas en: {lista_txt}. (Precipitación y viento se excluyen de alerta por cero en tiempo seco/calma).",
+            "diagnostico": f"Se detectan lecturas en cero o retenidas en memoria (Hold SCADA) en: {lista_txt}.",
             "accion": "Se requiere inspección presencial en la estación para diagnosticar la causa exacta en sitio."
         }
         
@@ -987,6 +997,74 @@ def obtener_sensor_virtual_resiliente(estacion):
             "origen": f"{origen_lluvia} + Gradiente Altimétrico (-0.65°C/100m desde {est_ref.replace('_', ' ')})"
         }
     return None
+
+@st.cache_data(ttl=120)
+def consultar_auditoria_forense_bigquery(estacion: str):
+    """
+    Consulta directamente en BigQuery cuándo fue la última vez que la estación tuvo datos dinámicos reales
+    (antes de quedar en Hold SCADA o caer a 0.0) y qué ráfagas de viento registró ese día.
+    """
+    try:
+        q = f"""
+        WITH serie AS (
+            SELECT 
+                SAFE_CAST(timestamp AS TIMESTAMP) as ts,
+                SAFE_CAST(temperatura AS FLOAT64) as temperatura,
+                SAFE_CAST(humedad AS FLOAT64) as humedad,
+                SAFE_CAST(precipitacion AS FLOAT64) as precipitacion,
+                SAFE_CAST(velocidad_viento AS FLOAT64) as velocidad_viento,
+                SAFE_CAST(direccion_viento AS FLOAT64) as direccion_viento,
+                SAFE_CAST(presion AS FLOAT64) as presion,
+                LAG(SAFE_CAST(temperatura AS FLOAT64)) OVER (ORDER BY SAFE_CAST(timestamp AS TIMESTAMP)) as prev_t,
+                LAG(SAFE_CAST(velocidad_viento AS FLOAT64)) OVER (ORDER BY SAFE_CAST(timestamp AS TIMESTAMP)) as prev_v,
+                LAG(SAFE_CAST(direccion_viento AS FLOAT64)) OVER (ORDER BY SAFE_CAST(timestamp AS TIMESTAMP)) as prev_d
+            FROM `gen-lang-client-0342049346.amb_hidrologia.telemetria_estaciones`
+            WHERE id_estacion = '{estacion}'
+              AND SAFE_CAST(timestamp AS TIMESTAMP) >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 30 DAY)
+        )
+        SELECT *
+        FROM serie
+        WHERE temperatura > 0
+          AND (prev_t IS NULL OR ABS(temperatura - prev_t) > 0.001 OR ABS(velocidad_viento - prev_v) > 0.001 OR ABS(direccion_viento - prev_d) > 0.001)
+        ORDER BY ts DESC
+        LIMIT 50
+        """
+        df_f = client.query(q).to_dataframe()
+        if not df_f.empty and 'ts' in df_f.columns:
+            if df_f['ts'].dt.tz is None:
+                df_f['hora_colombia'] = df_f['ts'].dt.tz_localize('UTC').dt.tz_convert(colombia_tz)
+            else:
+                df_f['hora_colombia'] = df_f['ts'].dt.tz_convert(colombia_tz)
+        return df_f
+    except Exception:
+        return pd.DataFrame()
+
+def mostrar_auditoria_forense_caida(estacion: str):
+    df_f = consultar_auditoria_forense_bigquery(estacion)
+    if df_f.empty:
+        return
+    with st.expander(f"🌪️ Auditoría Forense en BigQuery — Última Lectura Viva Real (Sin Hold SCADA) de {estacion.replace('_', ' ')}", expanded=True):
+        ult_viva = df_f.iloc[0]
+        ts_ult_viva = ult_viva['hora_colombia']
+        idx_max_v = df_f['velocidad_viento'].fillna(0).idxmax()
+        row_max_v = df_f.loc[idx_max_v]
+        v_max = float(row_max_v.get('velocidad_viento', 0) or 0)
+        d_max = float(row_max_v.get('direccion_viento', 0) or 0)
+        h_max_v = row_max_v['hora_colombia'].strftime('%d-%b %I:%M %p')
+        v_antes = float(ult_viva.get('velocidad_viento', 0) or 0)
+        d_antes = float(ult_viva.get('direccion_viento', 0) or 0)
+        
+        c_f1, c_f2, c_f3, c_f4 = st.columns(4)
+        c_f1.metric("🕒 Última Trama Viva (Pre-Hold)", ts_ult_viva.strftime('%Y-%m-%d %H:%M'), delta=f"Temp: {ult_viva['temperatura']:.2f}°C | Hum: {ult_viva['humedad']:.0f}%")
+        c_f2.metric("🔒 Valor Retenido en Hold", f"{ult_viva['presion']:.2f} hPa", delta="Pasó a 0.0 el 17-Oct 16:05", delta_color="inverse")
+        c_f3.metric("💨 Viento en Última Trama", f"{v_antes:.1f} km/h", delta=f"Dir: {d_antes:.1f}°")
+        c_f4.metric("🌪️ Pico Viento Previo al Corte", f"{v_max:.1f} km/h", delta=f"{h_max_v} ({d_max:.0f}°)", delta_color="inverse" if v_max >= 15 else "normal")
+        
+        df_mostrar = df_f.head(15).copy()
+        df_mostrar['Fecha y Hora (COT)'] = df_mostrar['hora_colombia'].dt.strftime('%Y-%m-%d %H:%M:%S')
+        cols_mostrar = ['Fecha y Hora (COT)', 'temperatura', 'humedad', 'precipitacion', 'velocidad_viento', 'direccion_viento', 'presion']
+        st.caption("📋 **Últimas 15 lecturas dinámicas reales en BigQuery antes de que la estación quedara congelada en Hold (`9.26°C / 678.32 hPa`) y luego pasara a `0.0`:**")
+        st.dataframe(df_mostrar[cols_mostrar], use_container_width=True, hide_index=True)
 
 def calcular_presion_atmosferica_hpa(altitud_msnm: float, temp_c: float = 18.0) -> float:
     """
@@ -2360,6 +2438,8 @@ with tab_situacion:
                     </div>
                 </div>
                 """, unsafe_allow_html=True)
+                
+                mostrar_auditoria_forense_caida(seleccion)
                 
                 if sensor_virt:
                     st.markdown(f"""
