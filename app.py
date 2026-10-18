@@ -1337,22 +1337,20 @@ def obtener_precipitacion_cuenca_tona(fecha_inicio, fecha_fin):
         if not df_res.empty:
             df_res['es_estimado_ia'] = False
         
-        # Resiliencia & Imputación Orográfica Inteligente para La Mariana:
-        # Si el sensor físico de La Mariana no reportó pulsos (0.0 mm en BigQuery por retiro del módem Teltonika):
+        # Resiliencia & Imputación Orográfica / Satelital Inteligente para La Mariana y Yerbabuena:
         if not df_res.empty:
             map_p = {r['id_estacion']: float(r.get('precip_total', 0) or 0) for _, r in df_res.iterrows()}
             p_pajal = map_p.get('El_Pajal', 0.0)
             p_mariana = map_p.get('La_Mariana', 0.0)
+            p_yerba = map_p.get('Yerbabuena', 0.0)
             
             if p_mariana == 0.0 and p_pajal > 0.0:
-                # Factor orográfico dinámico atenuado: en lluvias extremas (> 70 mm), la atmósfera está saturada
-                # en toda la columna y el factor se amortigua a 1.00x para no inflar artificialmente sobre 100 mm.
                 if p_pajal <= 40.0:
                     factor_oro = 1.15
                 elif p_pajal <= 70.0:
                     factor_oro = 1.08
                 else:
-                    factor_oro = 1.00 # En diluvios generalizados > 70 mm, igualar a El Pajal
+                    factor_oro = 1.00
                 p_imputada = round(p_pajal * factor_oro, 1)
                 
                 mask = df_res['id_estacion'] == 'La_Mariana'
@@ -1369,6 +1367,40 @@ def obtener_precipitacion_cuenca_tona(fecha_inicio, fecha_fin):
                         'es_estimado_ia': True
                     }])
                     df_res = pd.concat([df_res, nuevo], ignore_index=True)
+
+            # Si Yerbabuena reporta 0.0 mm por estar con sensores en 0/Hold, respaldar con satélite Open-Meteo sobre Yerbabuena
+            if p_yerba == 0.0:
+                try:
+                    df_last_y = get_last_reading('Yerbabuena')
+                    y_en_falla = (df_last_y.empty or float(df_last_y.iloc[0].get('humedad', 0) or 0) == 0.0 or float(df_last_y.iloc[0].get('presion', 0) or 0) == 0.0)
+                    if y_en_falla:
+                        df_sat_y = obtener_pronostico_open_meteo(7.195831, -72.914719, past_days=7, forecast_days=1)
+                        if not df_sat_y.empty:
+                            t_s = pd.to_datetime(df_sat_y['time'])
+                            if t_s.dt.tz is None:
+                                t_s = t_s.dt.tz_localize(colombia_tz)
+                            else:
+                                t_s = t_s.dt.tz_convert(colombia_tz)
+                            df_sat_win = df_sat_y[(t_s >= f_ini_dt) & (t_s <= f_fin_dt)]
+                            p_sat_y = round(float(df_sat_win['precipitation'].sum() or 0.0), 1) if not df_sat_win.empty else 0.0
+                            if p_sat_y > 0.0:
+                                p_max_y = round(float(df_sat_win['precipitation'].max() or 0.0), 1)
+                                mask_y = df_res['id_estacion'] == 'Yerbabuena'
+                                if mask_y.any():
+                                    df_res.loc[mask_y, 'precip_total'] = p_sat_y
+                                    df_res.loc[mask_y, 'precip_max_evento'] = p_max_y
+                                    df_res.loc[mask_y, 'es_estimado_ia'] = True
+                                else:
+                                    nuevo_y = pd.DataFrame([{
+                                        'id_estacion': 'Yerbabuena',
+                                        'precip_total': p_sat_y,
+                                        'precip_max_evento': p_max_y,
+                                        'num_registros': len(df_sat_win),
+                                        'es_estimado_ia': True
+                                    }])
+                                    df_res = pd.concat([df_res, nuevo_y], ignore_index=True)
+                except Exception:
+                    pass
                     
         return df_res
     except Exception as e:
@@ -2518,12 +2550,25 @@ with tab_situacion:
             if not df_hist.empty and 'temperatura' in df_hist.columns:
                 t_series = pd.to_numeric(df_hist['temperatura'], errors='coerce').dropna()
                 t_series_valid = t_series[t_series > 0]
-                if not t_series_valid.empty:
+                if not t_series_valid.empty and salud["es_valido"]:
                     st.markdown("### 📊 Estadísticas del Período (Datos Válidos)")
                     col1, col2, col3 = st.columns(3)
                     with col1: st.metric("🔽 Temp Mínima", f"{t_series_valid.min():.1f}°C")
                     with col2: st.metric("🔼 Temp Máxima", f"{t_series_valid.max():.1f}°C")
                     with col3: st.metric("📊 Temp Promedio", f"{t_series_valid.mean():.1f}°C")
+                elif sensor_virt:
+                    meta_st_1 = METADATA_ESTACIONES_AMB.get(seleccion, {})
+                    df_sat_24 = obtener_pronostico_open_meteo(meta_st_1.get("lat", 7.195831), meta_st_1.get("lon", -72.914719), past_days=2, forecast_days=1)
+                    if not df_sat_24.empty and 'temperature_2m' in df_sat_24.columns:
+                        t_s24 = pd.to_datetime(df_sat_24['time'])
+                        t_s24 = t_s24.dt.tz_localize(colombia_tz) if t_s24.dt.tz is None else t_s24.dt.tz_convert(colombia_tz)
+                        df_ult24 = df_sat_24[(t_s24 >= ahora_col - timedelta(hours=24)) & (t_s24 <= ahora_col)]
+                        if not df_ult24.empty:
+                            st.markdown("### 📊 Estadísticas Últimas 24h (Sensor Virtual Satelital)")
+                            col1, col2, col3 = st.columns(3)
+                            with col1: st.metric("🔽 Temp Mínima (Virtual)", f"{df_ult24['temperature_2m'].min():.1f}°C")
+                            with col2: st.metric("🔼 Temp Máxima (Virtual)", f"{df_ult24['temperature_2m'].max():.1f}°C")
+                            with col3: st.metric("📊 Temp Promedio (Virtual)", f"{df_ult24['temperature_2m'].mean():.1f}°C")
                     
             renderizar_modulo_pronostico_horario_estacion(seleccion, row)
             mostrar_ficha_geografica_estacion(seleccion)
@@ -3177,40 +3222,122 @@ with tab_series:
                     st.markdown("#### 📅 Consolidado por Bloques de 24 Horas Exactas:")
                     st.dataframe(df_bal_24h_vista, use_container_width=True)
         else:
+            df_plot = df_hist.sort_values('timestamp').copy()
+            for col_n in ['temperatura', 'precipitacion', 'humedad', 'presion', 'velocidad_viento', 'direccion_viento']:
+                if col_n in df_plot.columns:
+                    df_plot[col_n] = pd.to_numeric(df_plot[col_n], errors='coerce')
+
+            # 1. Filtrar filas en 0,0,0 (reinicios transitorios del SCADA central como el 17-oct 16:05 o caída de canales)
+            if 'humedad' in df_plot.columns and 'temperatura' in df_plot.columns:
+                df_fisico_valido = df_plot[(df_plot['humedad'] > 1.0) & ~((df_plot['temperatura'] == 0.0) & (df_plot.get('presion', pd.Series(0, index=df_plot.index)) == 0.0))].copy()
+            else:
+                df_fisico_valido = df_plot.copy()
+
+            # Detectar si los datos físicos en la ventana están en 0,0,0 o congelados en Hold SCADA (sin variación real)
+            usar_serie_virtual = False
+            if len(df_fisico_valido) < 3:
+                usar_serie_virtual = True
+            elif seleccion in ["Yerbabuena", "La_Mariana"]:
+                std_t = float(df_fisico_valido['temperatura'].std() or 0.0)
+                std_v = float(df_fisico_valido['velocidad_viento'].std() or 0.0) if 'velocidad_viento' in df_fisico_valido.columns else 0.0
+                ult_ts_val = df_fisico_valido['timestamp'].max()
+                horas_sin_dato_sano = (datetime.now(colombia_tz) - ult_ts_val).total_seconds() / 3600.0 if pd.notna(ult_ts_val) else 999.0
+                if (std_t < 0.001 and std_v < 0.001) or horas_sin_dato_sano > 4.0:
+                    usar_serie_virtual = True
+
+            df_virt_serie = pd.DataFrame()
+            if usar_serie_virtual:
+                meta_st = METADATA_ESTACIONES_AMB.get(seleccion, {})
+                lat_st = meta_st.get("lat", 7.195831)
+                lon_st = meta_st.get("lon", -72.914719)
+                alt_st = meta_st.get("altitud_msnm", 3400.25)
+                df_sat_s = obtener_pronostico_open_meteo(lat_st, lon_st, past_days=14, forecast_days=1)
+                if not df_sat_s.empty:
+                    df_sat_s = df_sat_s.copy()
+                    t_sat = pd.to_datetime(df_sat_s['time'])
+                    if t_sat.dt.tz is None:
+                        df_sat_s['timestamp'] = t_sat.dt.tz_localize(colombia_tz)
+                    else:
+                        df_sat_s['timestamp'] = t_sat.dt.tz_convert(colombia_tz)
+                    t_min_w = df_plot['timestamp'].min() if not df_plot.empty else (datetime.now(colombia_tz) - timedelta(hours=24))
+                    t_max_w = datetime.now(colombia_tz)
+                    df_virt_serie = df_sat_s[(df_sat_s['timestamp'] >= t_min_w - timedelta(hours=1)) & (df_sat_s['timestamp'] <= t_max_w)].copy()
+                    if not df_virt_serie.empty:
+                        df_virt_serie.rename(columns={
+                            'temperature_2m': 'temperatura',
+                            'precipitation': 'precipitacion',
+                            'relative_humidity_2m': 'humedad',
+                            'wind_speed_10m': 'velocidad_viento',
+                            'wind_direction_10m': 'direccion_viento'
+                        }, inplace=True)
+                        # Presión barométrica dinámica modulada por temperatura horaria + marea barométrica semidiurna tropical
+                        horas_float = df_virt_serie['timestamp'].dt.hour + df_virt_serie['timestamp'].dt.minute / 60.0
+                        marea_hpa = 1.15 * np.sin(2.0 * np.pi * (horas_float - 4.0) / 12.0)
+                        pres_base_isa = calcular_presion_atmosferica_hpa(alt_st, 10.0)
+                        df_virt_serie['presion'] = np.round(pres_base_isa + marea_hpa + (df_virt_serie['temperatura'] - 10.0) * 0.08, 2)
+
+            if not df_virt_serie.empty and len(df_fisico_valido) < 3:
+                st.markdown(f"""
+                <div style="background: rgba(0, 204, 150, 0.10); border: 1px solid #00CC96; border-left: 5px solid #00CC96; padding: 10px 14px; border-radius: 8px; margin-bottom: 12px; font-size: 13px;">
+                    🛰️ <strong>Serie Horaria Reconstruida con Sensor Virtual Satelital (Open-Meteo + Modelo Barométrico ISA):</strong>
+                    Dado que las lecturas en BigQuery de <strong>{seleccion.replace('_', ' ')}</strong> en esta ventana están en <code>0.0</code>, se grafican las curvas físicas reconstruidas por satélite sobre las coordenadas exactas de la estación (<code>{lat_st:.4f}°N, {lon_st:.4f}°W</code>).
+                </div>
+                """, unsafe_allow_html=True)
+                df_graficar = df_virt_serie.sort_values('timestamp')
+                sufijo_titulo = " [Sensor Virtual Satelital]"
+            elif not df_virt_serie.empty and usar_serie_virtual:
+                st.markdown(f"""
+                <div style="background: rgba(0, 204, 150, 0.10); border: 1px solid #00CC96; border-left: 5px solid #00CC96; padding: 10px 14px; border-radius: 8px; margin-bottom: 12px; font-size: 13px;">
+                    🛰️ <strong>Continuidad Híbrida (Terreno + Sensor Virtual Satelital):</strong>
+                    Se empalman los datos físicos válidos de <strong>{seleccion.replace('_', ' ')}</strong> con el respaldo satelital durante las horas sin transmisión activa.
+                </div>
+                """, unsafe_allow_html=True)
+                ult_sano = df_fisico_valido[df_fisico_valido['temperatura'].diff().abs().fillna(0.1) > 0.0001]['timestamp'].max()
+                if pd.isna(ult_sano):
+                    ult_sano = df_fisico_valido['timestamp'].min()
+                df_f_tramo = df_fisico_valido[df_fisico_valido['timestamp'] <= ult_sano]
+                df_v_tramo = df_virt_serie[df_virt_serie['timestamp'] > ult_sano]
+                cols_comunes = ['timestamp', 'temperatura', 'precipitacion', 'humedad', 'presion', 'velocidad_viento', 'direccion_viento']
+                df_graficar = pd.concat([df_f_tramo[cols_comunes], df_v_tramo[cols_comunes]], ignore_index=True).sort_values('timestamp')
+                sufijo_titulo = " [Físico + Respaldo Virtual]"
+            else:
+                df_graficar = df_fisico_valido if not df_fisico_valido.empty else df_plot
+                sufijo_titulo = ""
+
             col_g1, col_g2 = st.columns(2)
             with col_g1:
-                fig_t = px.line(df_hist.sort_values('timestamp'), x='timestamp', y='temperatura', title='Temperatura (°C)')
+                fig_t = px.line(df_graficar.sort_values('timestamp'), x='timestamp', y='temperatura', title=f'Temperatura (°C){sufijo_titulo}')
                 fig_t.update_layout(height=280, template='plotly_white')
                 st.plotly_chart(fig_t, use_container_width=True)
             with col_g2:
-                fig_p = px.bar(df_hist.sort_values('timestamp'), x='timestamp', y='precipitacion', title='Precipitación (mm)', color='precipitacion', color_continuous_scale='Blues')
+                fig_p = px.bar(df_graficar.sort_values('timestamp'), x='timestamp', y='precipitacion', title=f'Precipitación (mm){sufijo_titulo}', color='precipitacion', color_continuous_scale='Blues')
                 fig_p.update_layout(height=280, template='plotly_white')
                 st.plotly_chart(fig_p, use_container_width=True)
                 
-            if 'humedad' in df_hist.columns:
-                fig_h = px.line(df_hist.sort_values('timestamp'), x='timestamp', y='humedad', title='Humedad Relativa (%)')
+            if 'humedad' in df_graficar.columns:
+                fig_h = px.line(df_graficar.sort_values('timestamp'), x='timestamp', y='humedad', title=f'Humedad Relativa (%){sufijo_titulo}')
                 fig_h.update_layout(height=250, template='plotly_white')
                 st.plotly_chart(fig_h, use_container_width=True)
                 
-            if 'presion' in df_hist.columns:
-                df_p_val = df_hist.dropna(subset=['presion']).copy()
+            if 'presion' in df_graficar.columns:
+                df_p_val = df_graficar.dropna(subset=['presion']).copy()
                 df_p_val['presion'] = pd.to_numeric(df_p_val['presion'], errors='coerce')
                 df_p_val = df_p_val[df_p_val['presion'] > 100]
                 if not df_p_val.empty:
-                    fig_pres = px.line(df_p_val.sort_values('timestamp'), x='timestamp', y='presion', title='Presión Atmosférica (hPa / mbar)')
+                    fig_pres = px.line(df_p_val.sort_values('timestamp'), x='timestamp', y='presion', title=f'Presión Atmosférica (hPa / mbar){sufijo_titulo}')
                     fig_pres.update_layout(height=250, template='plotly_white')
                     st.plotly_chart(fig_pres, use_container_width=True)
                 
-            if 'direccion_viento' in df_hist.columns and 'velocidad_viento' in df_hist.columns:
-                st.markdown("### 🧭 Rosa de los Vientos")
-                df_v = df_hist.copy()
+            if 'direccion_viento' in df_graficar.columns and 'velocidad_viento' in df_graficar.columns:
+                st.markdown(f"### 🧭 Rosa de los Vientos{sufijo_titulo}")
+                df_v = df_graficar.copy()
                 df_v['direccion_viento'] = pd.to_numeric(df_v['direccion_viento'], errors='coerce')
                 df_v['velocidad_viento'] = pd.to_numeric(df_v['velocidad_viento'], errors='coerce')
                 df_v = df_v.dropna(subset=['direccion_viento', 'velocidad_viento'])
                 df_v = df_v[(df_v['direccion_viento'] > 0) | (df_v['velocidad_viento'] > 0)]
                 
                 if not df_v.empty:
-                    fig_rosa = px.bar_polar(df_v, r="velocidad_viento", theta="direccion_viento", color="velocidad_viento", color_continuous_scale='Viridis', title=f"Rosa de Vientos — {seleccion}")
+                    fig_rosa = px.bar_polar(df_v, r="velocidad_viento", theta="direccion_viento", color="velocidad_viento", color_continuous_scale='Viridis', title=f"Rosa de Vientos — {seleccion}{sufijo_titulo}")
                     fig_rosa.update_layout(height=400, template='plotly_white')
                     st.plotly_chart(fig_rosa, use_container_width=True)
                     
@@ -3613,4 +3740,3 @@ with st.sidebar.expander("📏 Extensómetros (EDV)"):
 # ============================================================
 # FIN DEL CÓDIGO — SISTEMA MIMAT-C26 (amb)
 # ============================================================
-
