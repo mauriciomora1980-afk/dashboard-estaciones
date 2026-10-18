@@ -848,83 +848,143 @@ def evaluar_salud_estacion(df_hist, row, estacion):
     t_val = float(row.get('temperatura', 0)) if pd.notna(row.get('temperatura')) else 0.0
     h_val = float(row.get('humedad', 0)) if pd.notna(row.get('humedad')) else 0.0
     
-    # Evaluar persistencia en la ventana de las últimas 2 horas
-    es_cero_plano = (t_val == 0.0 and h_val == 0.0)
-    
-    es_cero_sostenido = False
-    if not df_hist.empty:
-        df_2h = df_hist[df_hist['timestamp'] >= (ahora - timedelta(hours=2))]
-        if not df_2h.empty and len(df_2h) >= 2:
-            t_hist_max = pd.to_numeric(df_2h['temperatura'], errors='coerce').max()
-            h_hist_max = pd.to_numeric(df_2h['humedad'], errors='coerce').max()
-            if (t_hist_max == 0.0 or pd.isna(t_hist_max)) and (h_hist_max == 0.0 or pd.isna(h_hist_max)):
-                es_cero_sostenido = True
-        else:
-            es_cero_sostenido = es_cero_plano
-    else:
-        es_cero_sostenido = es_cero_plano
-        
     if retraso_horas > 2.0:
         return {
             "estado": "OFFLINE_SOSTENIDO",
             "es_valido": False,
             "horas_retraso": retraso_horas,
-            "mensaje": f"📡 ALERTA DE TELEMETRÍA: Estación Fuera de Línea ({retraso_horas:.1f}h sin transmitir)",
-            "diagnostico": f"Interrupción de transmisión de datos en la estación ({METADATA_ESTACIONES_AMB.get(estacion, {}).get('altitud_msnm', 0):,.0f} msnm).",
-            "accion": "Verificar enlace celular / módem de comunicación y alimentación en campo."
+            "mensaje": f"📡 ALERTA DE TELEMETRÍA: Estación Sin Reporte ({retraso_horas:.1f}h sin datos)",
+            "diagnostico": f"No se reciben lecturas recientes de la estación ({METADATA_ESTACIONES_AMB.get(estacion, {}).get('altitud_msnm', 0):,.0f} msnm).",
+            "accion": "Programar revisión técnica en sitio para verificar el estado del equipo."
         }
-    elif es_cero_sostenido:
+
+    # Evaluación objetiva sensor por sensor (excluyendo precipitación 0.0 mm por tiempo seco)
+    sensores_en_falla = []
+    es_alta_montana = estacion in ["Yerbabuena", "Monsalve"]
+
+    if not df_hist.empty:
+        # 1. Humedad Relativa en 0.0% sostenido (> 2h): físicamente imposible
+        df_2h = df_hist[df_hist['timestamp'] >= (ahora - timedelta(hours=2))]
+        if not df_2h.empty and len(df_2h) >= 2:
+            h_s2 = pd.to_numeric(df_2h['humedad'], errors='coerce')
+            if (h_s2.max() == 0.0 or pd.isna(h_s2.max())):
+                sensores_en_falla.append("Humedad (0.0%)")
+
+            # 2. Temperatura en 0.0°C:
+            # - En Yerbabuena y Monsalve (alta montaña): solo si es un cero exacto prolongado (> 3h clavado en 0.0°C)
+            # - En estaciones medias (El Pajal, Vegas, La Mariana): > 2h en 0.0°C
+            if not es_alta_montana:
+                t_s2 = pd.to_numeric(df_2h['temperatura'], errors='coerce')
+                if (t_s2.max() == 0.0 and t_s2.min() == 0.0) or pd.isna(t_s2.max()):
+                    sensores_en_falla.append("Temperatura (0.0 °C)")
+
+        if es_alta_montana:
+            df_3h = df_hist[df_hist['timestamp'] >= (ahora - timedelta(hours=3))]
+            if not df_3h.empty and len(df_3h) >= 6:
+                t_s3 = pd.to_numeric(df_3h['temperatura'], errors='coerce')
+                if (t_s3.max() == 0.0 and t_s3.min() == 0.0) or pd.isna(t_s3.max()):
+                    sensores_en_falla.append("Temperatura (0.0 °C prolongado >3h)")
+
+        # 3. Barómetro / Presión Atmosférica pegada sin variación (> 6h) o en 0.0
+        if 'presion' in df_hist.columns:
+            df_6h = df_hist[df_hist['timestamp'] >= (ahora - timedelta(hours=6))]
+            if not df_6h.empty and len(df_6h) >= 10:
+                p_s6 = pd.to_numeric(df_6h['presion'], errors='coerce').dropna()
+                if p_s6.empty or p_s6.max() == 0.0 or (p_s6.max() == p_s6.min()):
+                    sensores_en_falla.append("Barómetro (valor pegado sin variación)")
+    else:
+        if h_val == 0.0:
+            sensores_en_falla.append("Humedad (0.0%)")
+        if t_val == 0.0 and not es_alta_montana:
+            sensores_en_falla.append("Temperatura (0.0 °C)")
+
+    if sensores_en_falla:
+        lista_txt = ", ".join(sensores_en_falla)
         return {
             "estado": "SENSORES_EN_CERO",
             "es_valido": False,
             "horas_retraso": retraso_horas,
-            "mensaje": "🚨 ALERTA DE ADQUISICIÓN: Canales Físicos en Cero Sostenido (> 2h)",
-            "diagnostico": "Transmisión activa en servidor pero sin lectura en las sondas meteorológicas.",
-            "accion": "Revisar cableado de sensores e instrumentación en campo."
+            "mensaje": f"🚨 ALERTA DE SENSORES EN CAMPO: {lista_txt}",
+            "diagnostico": f"Se detectan lecturas anómalas o congeladas en: {lista_txt}. (Precipitación y viento se excluyen de alerta por cero en tiempo seco/calma).",
+            "accion": "Se requiere inspección presencial en la estación para diagnosticar la causa exacta en sitio."
         }
         
     return {"estado": "OPERATIVO", "es_valido": True, "horas_retraso": retraso_horas}
 
 def obtener_sensor_virtual_resiliente(estacion):
-    if estacion == "La_Mariana":
-        df_pajal = get_last_reading("El_Pajal")
+    if estacion in ["La_Mariana", "Yerbabuena", "El_Pajal", "Vegas_del_Quemado", "Monsalve"]:
+        est_ref = "El_Pajal" if estacion != "El_Pajal" else "Vegas_del_Quemado"
+        alt_ref = METADATA_ESTACIONES_AMB.get(est_ref, {}).get("altitud_msnm", 2163.2)
+        df_ref = get_last_reading(est_ref)
         
-        t_pajal = float(df_pajal.iloc[0].get('temperatura', 17.5)) if not df_pajal.empty and float(df_pajal.iloc[0].get('temperatura', 0)) > 0 else 18.0
-        h_pajal = float(df_pajal.iloc[0].get('humedad', 85.0)) if not df_pajal.empty and float(df_pajal.iloc[0].get('humedad', 0)) > 0 else 88.0
-        v_pajal = float(df_pajal.iloc[0].get('velocidad_viento', 2.0)) if not df_pajal.empty and float(df_pajal.iloc[0].get('velocidad_viento', 0)) > 0 else 2.5
-        d_pajal = float(df_pajal.iloc[0].get('direccion_viento', 202.0)) if not df_pajal.empty and float(df_pajal.iloc[0].get('direccion_viento', 0)) > 0 else 202.0
+        t_ref = float(df_ref.iloc[0].get('temperatura', 17.5)) if not df_ref.empty and float(df_ref.iloc[0].get('temperatura', 0)) > 0 else 18.0
+        h_ref = float(df_ref.iloc[0].get('humedad', 85.0)) if not df_ref.empty and float(df_ref.iloc[0].get('humedad', 0)) > 0 else 88.0
+        v_ref = float(df_ref.iloc[0].get('velocidad_viento', 2.0)) if not df_ref.empty and float(df_ref.iloc[0].get('velocidad_viento', 0)) > 0 else 2.5
+        d_ref = float(df_ref.iloc[0].get('direccion_viento', 202.0)) if not df_ref.empty and float(df_ref.iloc[0].get('direccion_viento', 0)) > 0 else 202.0
         
-        # 1. Temperatura y Humedad por Gradiente Altimétrico Vertical (-0.65°C / 100m)
-        # Desnivel La Mariana (2,436m) vs El Pajal (2,163m) = +273m -> -1.77°C
-        t_virtual = max(8.0, t_pajal - (0.65 * (2436.0 - 2163.0) / 100.0))
-        h_virtual = min(100.0, max(75.0, h_pajal + 6.0)) # Mayor humedad por condensación en cresta
-        v_virtual = max(1.5, v_pajal * 1.25) # Mayor exposición al viento en filo divisorio
-        d_virtual = d_pajal
+        meta_est = METADATA_ESTACIONES_AMB.get(estacion, {})
+        alt_est = meta_est.get("altitud_msnm", 3380.82 if estacion == "Yerbabuena" else 2436.1)
+        lat_est = meta_est.get("lat", 7.163628 if estacion == "Yerbabuena" else 7.122739)
+        lon_est = meta_est.get("lon", -72.942169 if estacion == "Yerbabuena" else -73.007019)
+        nombre_corto = estacion.replace("_", " ")
         
-        # 2. Precipitación Satelital Dedicada (Cruce con Radar / Open-Meteo para evitar falsas lluvias de vecinos)
+        # 1. Estimación física base por Gradiente Altimétrico Vertical (-0.65°C / 100m) desde estación operativa
+        delta_alt = alt_est - alt_ref
+        t_grad = max(4.0, t_ref - (0.65 * delta_alt / 100.0))
+        h_grad = min(100.0, max(75.0, h_ref + (6.0 if delta_alt > 0 else 0.0)))
+        v_grad = max(1.5, v_ref * (1.25 if alt_est > 2400 else 1.0))
+        d_grad = d_ref
+        
+        # 2. Telemetría Satelital en Vivo en la Hora Actual Exacta (Open-Meteo en coordenadas de la estación)
         p_virtual = 0.0
-        meta_mar = METADATA_ESTACIONES_AMB.get("La_Mariana", {})
-        lat_mar = meta_mar.get("lat", 7.122739)
-        lon_mar = meta_mar.get("lon", -73.007019)
+        t_virtual = t_grad
+        h_virtual = h_grad
+        v_virtual = v_grad
+        d_virtual = d_grad
         
-        df_fc_mar = obtener_pronostico_open_meteo(lat_mar, lon_mar)
-        if not df_fc_mar.empty:
-            p_sat = float(df_fc_mar.iloc[0].get('precipitation', 0.0) or 0.0)
+        df_fc_est = obtener_pronostico_open_meteo(lat_est, lon_est, past_days=1, forecast_days=2)
+        if not df_fc_est.empty:
+            ahora_dt = datetime.now(colombia_tz)
+            df_fc_tmp = df_fc_est.copy()
+            if df_fc_tmp['time'].dt.tz is None:
+                df_fc_tmp['time_dt'] = df_fc_tmp['time'].dt.tz_localize(colombia_tz)
+            else:
+                df_fc_tmp['time_dt'] = df_fc_tmp['time'].dt.tz_convert(colombia_tz)
+            df_actual_sat = df_fc_tmp[df_fc_tmp['time_dt'] >= (ahora_dt - timedelta(minutes=55))]
+            row_sat = df_actual_sat.iloc[0] if not df_actual_sat.empty else df_fc_tmp.iloc[-1]
+            
+            p_sat = float(row_sat.get('precipitation', 0.0) or 0.0)
             p_virtual = p_sat
-            origen_lluvia = f"Radar Satelital en La Mariana ({p_virtual:.1f} mm)"
+            
+            # Fusión Satélite + Gradiente Altimétrico para máxima precisión en páramo (Yerbabuena 3,380 msnm)
+            t_sat = row_sat.get('temperature_2m')
+            h_sat = row_sat.get('relative_humidity_2m')
+            v_sat = row_sat.get('wind_speed_10m')
+            d_sat = row_sat.get('wind_direction_10m')
+            
+            if pd.notna(t_sat) and float(t_sat) > 0:
+                t_virtual = (0.6 * t_grad) + (0.4 * float(t_sat))
+            if pd.notna(h_sat) and float(h_sat) > 0:
+                h_virtual = min(100.0, (0.5 * h_grad) + (0.5 * float(h_sat)))
+            if pd.notna(v_sat) and float(v_sat) > 0:
+                v_virtual = float(v_sat)
+            if pd.notna(d_sat) and float(d_sat) > 0:
+                d_virtual = float(d_sat)
+                
+            origen_lluvia = f"Satélite Open-Meteo en {nombre_corto} ({p_virtual:.1f} mm/h)"
         else:
             p_virtual = 0.0
-            origen_lluvia = "Validación satelital (0.0 mm)"
+            origen_lluvia = "Validación satelital (0.0 mm/h)"
             
         return {
-            "temperatura": t_virtual,
-            "humedad": h_virtual,
-            "velocidad_viento": v_virtual,
-            "direccion_viento": d_virtual,
-            "precipitacion": p_virtual,
+            "temperatura": round(t_virtual, 1),
+            "humedad": round(h_virtual, 1),
+            "velocidad_viento": round(v_virtual, 1),
+            "direccion_viento": round(d_virtual, 0),
+            "precipitacion": round(p_virtual, 1),
             "voltaje_bateria": 12.6,
             "es_estimado": True,
-            "origen": f"Gradiente Altimétrico (-0.65°C/100m) desde El Pajal + {origen_lluvia}"
+            "origen": f"{origen_lluvia} + Gradiente Altimétrico (-0.65°C/100m desde {est_ref.replace('_', ' ')})"
         }
     return None
 
@@ -2354,18 +2414,21 @@ with tab_situacion:
             
             c1, c2, c3, c4, c5, c6, c7 = st.columns(7)
             if sensor_virt:
-                c1.metric("🌡️ Temp (Virtual)", f"{t_val:.1f} °C", help="Estimada por gradiente altimétrico vertical (-0.65°C/100m) desde El Pajal")
+                c1.metric("🌡️ Temp (Virtual)", f"{t_val:.1f} °C", help="Estimada por gradiente altimétrico vertical (-0.65°C/100m) desde estación de referencia")
                 c2.metric("🌧️ Precip (Virtual)", f"{p_val:.1f} mm", delta=f"{lluvia_1h:.1f} mm/h (1h)" if lluvia_1h > 0 else "0.0 mm/h")
                 c3.metric("💧 Humedad (Virtual)", f"{h_val:.1f} %")
-                c4.metric("🧭 Presión Atm.", f"{pres_val:.1f} hPa", delta=tendencia_baro['delta_display'], delta_color=tendencia_baro['color'], help=ayuda_pres)
+                c4.metric("🧭 Presión (ISA)", f"{pres_val:.1f} hPa", delta="⚠️ Valor Pegado (Ref. ISA)", delta_color="inverse", help=f"Referencia barométrica estándar ISA/OMM para {alt_est:,.0f} msnm mientras se inspecciona la estación en campo")
                 c5.metric("💨 Viento (Virtual)", f"{v_val:.1f} km/h")
                 c6.metric("🧭 Dir. Viento (Virtual)", f"{d_val:.0f}°")
-                c7.metric("🔋 Voltaje", "N/A", help="Sensor de batería pendiente de conexión en SCADA")
+                c7.metric("🔋 Voltaje", "N/A", help="Estación pendiente de revisión en campo")
             else:
                 c1.metric("🌡️ Temp", f"{t_val:.1f} °C")
                 c2.metric("🌧️ Precip", f"{p_val:.1f} mm", delta=f"{lluvia_1h:.1f} mm/h (1h)" if lluvia_1h > 0 else "0.0 mm/h", help=f"Último paquete 10 min: {p_val:.1f} mm | Acumulado última hora: {lluvia_1h:.1f} mm/h")
                 c3.metric("💧 Humedad", f"{h_val:.1f} %")
-                c4.metric("🧭 Presión Atm.", f"{pres_val:.1f} hPa", delta=tendencia_baro['delta_display'], delta_color=tendencia_baro['color'], help=ayuda_pres)
+                if not salud["es_valido"]:
+                    c4.metric("🧭 Presión Atm.", f"{pres_val:.1f} hPa", delta="⚠️ Valor Congelado (>2h)", delta_color="inverse", help="Valor estático sin variación real por bloqueo de datalogger / canales en 0.0")
+                else:
+                    c4.metric("🧭 Presión Atm.", f"{pres_val:.1f} hPa", delta=tendencia_baro['delta_display'], delta_color=tendencia_baro['color'], help=ayuda_pres)
                 c5.metric("💨 Viento", f"{v_val:.1f} km/h")
                 c6.metric("🧭 Dir. Viento", f"{d_val:.0f}°")
                 c7.metric("🔋 Voltaje", f"{b_val:.1f} V" if b_val > 0 else "N/A", help="Sensor de batería pendiente de integración SCADA")
@@ -3470,4 +3533,3 @@ with st.sidebar.expander("📏 Extensómetros (EDV)"):
 # ============================================================
 # FIN DEL CÓDIGO — SISTEMA MIMAT-C26 (amb)
 # ============================================================
-
