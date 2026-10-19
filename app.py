@@ -3120,30 +3120,69 @@ with tab_radar_72h:
         # SUBSECCIÓN: CENTRO DE NOTIFICACIONES SMS & ALERTAS EN VIVO (amb)
         # ------------------------------------------------------------
         st.markdown("---")
-        with st.expander("📲 Centro de Notificaciones SMS & Boletines Automatizados (SAT-IA)", expanded=False):
+        with st.expander("📲 Centro de Notificaciones SMS & Diagnóstico de Envío en Vivo (SAT-IA)", expanded=True):
             st.markdown("""
             <div style="background: rgba(0,80,115,0.05); padding: 12px 16px; border-radius: 8px; border-left: 4px solid #005073; font-size: 13px; line-height: 1.5; margin-bottom: 12px;">
                 <strong>📱 Protocolo de Mensajería SMS a Teléfonos Móviles de Campo:</strong><br>
-                • <strong>Boletín Semanal:</strong> Enviado todos los <strong>Lunes a las 07:00 AM COT</strong> a la Dirección de Producción (Ing. Diana Calderón e Ing. Carlos Angarita).<br>
-                • <strong>Avisos Diurnos:</strong> Monitoreo activo de lluvias significativas (P75) de <strong>07:00 AM a 05:00 PM COT</strong>.<br>
-                • <strong>Canal Crítico 24/7:</strong> Alertas Naranja y Roja (P90/P99) se despachan inmediatamente a cualquier hora.
+                • <strong>Boletín Matutino Diario (07:00 AM COT):</strong> Estado de cota del Embalse Tona, lluvias 24h y estaciones en respaldo virtual.<br>
+                • <strong>Avisos Diurnos (07:00 AM – 05:00 PM COT):</strong> Monitoreo activo de lluvias significativas (Amarilla).<br>
+                • <strong>Canal Crítico & Salud Técnica:</strong> Alertas Naranja/Roja y aviso único por falla de sensores en estación.
             </div>
             """, unsafe_allow_html=True)
             
+            CENTINELA_SMS_URL = "https://centinela-mimat-alertas-661926446380.us-central1.run.app"
+            cb_sms1, cb_sms2, cb_sms3 = st.columns(3)
+            with cb_sms1:
+                if st.button("📲 Enviar SMS Prueba (Mauricio)", use_container_width=True):
+                    with st.spinner("Contactando centinela-mimat-alertas y pasarela Twilio..."):
+                        try:
+                            r_t = requests.get(f"{CENTINELA_SMS_URL}?modo=test_mauricio", timeout=20)
+                            st.code(r_t.text, language="json")
+                        except Exception as ex_t:
+                            st.error(f"❌ Error conectando con {CENTINELA_SMS_URL}: {ex_t}")
+            with cb_sms2:
+                if st.button("🌅 Enviar Boletín 07:00 AM Ahora", use_container_width=True):
+                    with st.spinner("Ejecutando despacho de boletín matutino..."):
+                        try:
+                            r_b = requests.get(f"{CENTINELA_SMS_URL}?modo=07am", timeout=25)
+                            st.code(r_b.text, language="json")
+                        except Exception as ex_b:
+                            st.error(f"❌ Error conectando con {CENTINELA_SMS_URL}: {ex_b}")
+            with cb_sms3:
+                if st.button("🔍 Ejecutar Vigilancia Ahora", use_container_width=True):
+                    with st.spinner("Evaluando umbrales y salud de estaciones..."):
+                        try:
+                            r_v = requests.get(f"{CENTINELA_SMS_URL}?modo=vigilancia", timeout=25)
+                            st.code(r_v.text, language="json")
+                        except Exception as ex_v:
+                            st.error(f"❌ Error conectando con {CENTINELA_SMS_URL}: {ex_v}")
+
+            try:
+                q_ult_sms = """
+                SELECT SAFE_CAST(timestamp AS TIMESTAMP) as fecha_utc, id_estacion, nivel_alerta, lluvia_mm
+                FROM `gen-lang-client-0342049346.amb_hidrologia.log_alertas_sms`
+                ORDER BY SAFE_CAST(timestamp AS TIMESTAMP) DESC
+                LIMIT 8
+                """
+                df_logs_sms = pd.DataFrame([dict(r) for r in client.query(q_ult_sms).result()])
+                if not df_logs_sms.empty:
+                    df_logs_sms['Hora Colombia (COT)'] = pd.to_datetime(df_logs_sms['fecha_utc']).dt.tz_convert('America/Bogota').dt.strftime('%Y-%m-%d %H:%M:%S')
+                    st.caption("📋 **Últimos despachos registrados en `log_alertas_sms` (BigQuery):**")
+                    st.dataframe(df_logs_sms[['Hora Colombia (COT)', 'id_estacion', 'nivel_alerta', 'lluvia_mm']], use_container_width=True, hide_index=True)
+            except Exception:
+                pass
+            
             c_sms1, c_sms2 = st.columns(2)
             with c_sms1:
-                st.markdown("##### 🚀 1. Formato Boletín Semanal (1 Segmento Puro GSM-7)")
+                st.markdown("##### 🚀 1. Formato Boletín Matutino (1 Segmento GSM-7)")
                 sms_act_preview = (
-                    "MIMAT-C26 (5-11 oct)\n"
-                    "Vegas: 22mm\n"
-                    "Yerbabuena: 35mm\n"
-                    "Pajal: 18mm\n"
-                    "Mariana: 28mm\n"
-                    "Monsalve: 40mm\n"
-                    "Pronostico semanal amb"
+                    f"MIMAT-C26 ({datetime.now(colombia_tz).strftime('%d-%b').lower()} 7am)\n"
+                    f"Embalse: {get_cota_embalse_actual_segura():.2f}m Estable\n"
+                    f"Cuencas: Tiempo seco (0mm)\n"
+                    f"Yerbabuena: En 0.0 (Virtual)\n"
+                    f"Reporte matutino amb"
                 )
-                st.text_area("Texto SMS Ultra-Reducido (117 caracteres):", sms_act_preview, height=180)
-                st.caption("✅ 1 solo segmento (<160 chars). Sin caracteres especiales. Entrega directa sin buffer de red.")
+                st.text_area("Texto SMS Matutino:", sms_act_preview, height=160)
                 
             with c_sms2:
                 st.markdown(f"##### 🚨 2. Plantilla de Alerta en Vivo — {meta_sel['nombre_completo']}")
@@ -3153,11 +3192,9 @@ with tab_radar_72h:
                     f"Estacion: {seleccion.replace('_', ' ').upper()} ({meta_sel['microcuencas']})\n"
                     f"Lluvia: {p_sim:.1f} mm/h (ALERTA OPERATIVA)\n"
                     f"Tiempo Estimado de Llegada: {lag_estacion}\n"
-                    f"Accion: Estar pendiente de los niveles de la cuenca e inspeccion de rejillas.\n"
-                    f"Hora: {datetime.now(colombia_tz).strftime('%H:%M COT')}\n"
-                    f"MIMAT: https://dashboard-estaciones-sqzvqxabsxpvct3r63tka8.streamlit.app/"
+                    f"Hora: {datetime.now(colombia_tz).strftime('%H:%M COT')}"
                 )
-                st.text_area("Formato SMS de Alerta:", sms_alerta_preview, height=220)
+                st.text_area("Formato SMS de Alerta:", sms_alerta_preview, height=160)
 
 # ------------------------------------------------------------
 # TAB 4: SERIES DE TIEMPO, ROSA DE VIENTOS Y DESCARGAS
@@ -3430,15 +3467,17 @@ with tab_series:
 # ------------------------------------------------------------
 with tab_ia:
     st.subheader("🤖 Asistente Inteligente MIMAT-C26")
-    st.caption("Consultas hidrológicas, batimétricas y meteorológicas en lenguaje natural.")
+    st.caption("Consultas hidrológicas, batimétricas y meteorológicas en lenguaje natural conectadas a BigQuery.")
     try:
-        r_ping = requests.post(AGENTE_API_URL, json={"prompt": "ping"}, timeout=4)
+        r_ping = requests.post(AGENTE_API_URL, json={"prompt": "ping"}, timeout=12)
         ia_online = r_ping.status_code == 200
     except:
         ia_online = False
         
-    if ia_online: st.success("✅ Agente IA MIMAT-C conectado y operativo en Google Cloud Run")
-    else: st.warning("⚠️ Agente IA no disponible.")
+    if ia_online:
+        st.success("✅ Agente IA MIMAT-C conectado y operativo en Google Cloud Run")
+    else:
+        st.info("🤖 Motor Analítico Directo BigQuery Activo (Respaldo Local conectado a `amb_hidrologia.telemetria_estaciones`)")
     
     if "messages" not in st.session_state: st.session_state.messages = []
     for m in st.session_state.messages:
@@ -3449,14 +3488,39 @@ with tab_ia:
         st.session_state.messages.append({"role": "user", "content": p_user})
         with st.chat_message("user"): st.markdown(p_user)
         with st.chat_message("assistant"):
-            with st.spinner("🤔 Analizando en BigQuery..."):
+            with st.spinner("🤔 Analizando telemetría en BigQuery..."):
+                ans = None
                 try:
-                    res = requests.post(AGENTE_API_URL, json={"prompt": p_user}, timeout=20).json()
-                    ans = res.get("mensaje", "No se obtuvo respuesta.")
-                    st.markdown(ans)
-                    st.session_state.messages.append({"role": "assistant", "content": ans})
-                except Exception as ex:
-                    st.error(f"❌ Error: {ex}")
+                    res = requests.post(AGENTE_API_URL, json={"prompt": p_user}, timeout=25).json()
+                    ans = res.get("mensaje")
+                except Exception:
+                    ans = None
+                if not ans:
+                    try:
+                        cota_ia = get_cota_embalse_actual_segura()
+                        hid_ia = calcular_hidraulica_embalse(cota_ia, float(q_salida_crc_actual))
+                        q_res_ia = """
+                        SELECT id_estacion,
+                               ROUND(SUM(SAFE_CAST(precipitacion AS FLOAT64)), 1) as lluvia_24h,
+                               ROUND(AVG(NULLIF(SAFE_CAST(temperatura AS FLOAT64), 0)), 1) as temp_media
+                        FROM `gen-lang-client-0342049346.amb_hidrologia.telemetria_estaciones`
+                        WHERE id_estacion != 'Embalse'
+                          AND SAFE_CAST(timestamp AS TIMESTAMP) >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 24 HOUR)
+                        GROUP BY id_estacion
+                        """
+                        rows_ia = [f"- **{r['id_estacion'].replace('_', ' ')}:** Lluvia 24h = `{r['lluvia_24h'] or 0.0} mm` | Temp media = `{r['temp_media'] or 'En respaldo virtual'} °C`" for r in client.query(q_res_ia).result()]
+                        resumen_est_txt = "\n".join(rows_ia)
+                        ans = (
+                            f"### 📊 Estado Hidrológico en Tiempo Real (BigQuery)\n"
+                            f"- **Cota Calibrada Embalse Tona:** `{cota_ia:.2f} msnm` (Margen a rebose 885.75 msnm: `{(cota_ia - 885.75)*100:+.1f} cm`)\n"
+                            f"- **Volumen Útil Disponible:** `{hid_ia['volumen_util_hm3']:.2f} hm³` (`{hid_ia['porcentaje_util']:.1f}%`)\n"
+                            f"- **Extracción CRC Bosconia configurada:** `{q_salida_crc_actual:,.0f} L/s`\n\n"
+                            f"**🌧️ Reporte de Estaciones (Últimas 24h):**\n{resumen_est_txt}"
+                        )
+                    except Exception as ex_fb:
+                        ans = f"Error consultando BigQuery: {ex_fb}"
+                st.markdown(ans)
+                st.session_state.messages.append({"role": "assistant", "content": ans})
         st.rerun()
         
     if st.button("🗑️ Limpiar conversación", use_container_width=True):
