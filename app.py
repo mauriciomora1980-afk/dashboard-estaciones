@@ -580,13 +580,132 @@ def get_cota_embalse_actual_segura():
         pass
     return 885.32
 
+ESTACIONES_CONMUTACION_SATELITAL_CAMPO = {
+    "Monsalve": {
+        "lat": 7.441806,
+        "lon": -72.930917,
+        "nombre_corto": "Monsalve",
+        "motivo_campo": "OTT Pluvio² en verificación de campo con probeta Hellmann",
+        "cuenca_objetivo": "Pánaga / Río Suratá / Bocatoma PTAP Bosconia"
+    },
+    "Yerbabuena": {
+        "lat": 7.195831,
+        "lon": -72.914719,
+        "nombre_corto": "Yerbabuena",
+        "motivo_campo": "Sondas en revisión de campo (Páramo de Tona 3,400 msnm)",
+        "cuenca_objetivo": "Río Tona / Captación Carrizal (RQ30) / Embalse Tona"
+    },
+    "La_Mariana": {
+        "lat": 7.122739,
+        "lon": -73.007019,
+        "nombre_corto": "La Mariana",
+        "motivo_campo": "Sondas en revisión de campo (Divisoria Río Frío / Golondrinas)",
+        "cuenca_objetivo": "Río Frío (PTAP Florida) y Cabecera Golondrinas (RQ30)"
+    }
+}
+
+@st.cache_data(ttl=300, show_spinner=False)
+def obtener_alerta_satelital_campo(estacion: str):
+    """
+    Evalúa en vivo la precipitación satelital (Open-Meteo) para las estaciones en intervención de campo
+    (Monsalve, Yerbabuena y La Mariana) cuando el pluviómetro físico marque < 1.0 mm/h.
+    Activa el Semáforo Operativo (🚦) y las alertas tempranas con umbrales calibrados para grilla satelital (2 km):
+      - ROJA SATELITAL:     >= 7.0 mm/h (o >= 16.0 mm en 3h)
+      - NARANJA SATELITAL:  >= 3.5 mm/h (o >= 9.0 mm en 3h) -> Nivel que hoy generó la creciente en Pánaga (4.2 mm/h)
+      - AMARILLA SATELITAL: >= 1.8 mm/h (o >= 4.5 mm en 3h)
+      - VERDE SATELITAL:    >= 0.2 mm/h (o >= 0.8 mm en 3h)
+    """
+    if estacion not in ESTACIONES_CONMUTACION_SATELITAL_CAMPO:
+        return None
+    cfg = ESTACIONES_CONMUTACION_SATELITAL_CAMPO[estacion]
+    lat, lon = cfg["lat"], cfg["lon"]
+    p_1h = 0.0
+    p_max_3h = 0.0
+    p_sum_3h = 0.0
+    p_24h = 0.0
+    try:
+        url = (
+            f"https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}"
+            f"&hourly=precipitation&past_days=1&forecast_days=1&timezone=America/Bogota"
+        )
+        resp = requests.get(url, headers={'User-Agent': 'MIMAT-C26-amb/2.7'}, timeout=5)
+        if resp.status_code == 200:
+            data = resp.json()
+            if 'hourly' in data and 'time' in data['hourly']:
+                df_om = pd.DataFrame(data['hourly'])
+                df_om['time_dt'] = pd.to_datetime(df_om['time']).dt.tz_localize(colombia_tz)
+                ahora_loc = datetime.now(colombia_tz)
+                df_1h = df_om[(df_om['time_dt'] >= (ahora_loc - timedelta(minutes=65))) & (df_om['time_dt'] <= (ahora_loc + timedelta(minutes=35)))]
+                df_3h = df_om[(df_om['time_dt'] >= (ahora_loc - timedelta(hours=3))) & (df_om['time_dt'] <= ahora_loc)]
+                df_24h = df_om[(df_om['time_dt'] >= (ahora_loc - timedelta(hours=24))) & (df_om['time_dt'] <= ahora_loc)]
+                if not df_1h.empty:
+                    p_1h = float(pd.to_numeric(df_1h['precipitation'], errors='coerce').fillna(0.0).max())
+                if not df_3h.empty:
+                    s3 = pd.to_numeric(df_3h['precipitation'], errors='coerce').fillna(0.0)
+                    p_max_3h = float(s3.max())
+                    p_sum_3h = float(s3.sum())
+                if not df_24h.empty:
+                    p_24h = float(pd.to_numeric(df_24h['precipitation'], errors='coerce').fillna(0.0).sum())
+    except Exception:
+        pass
+
+    p_efectiva_1h = max(p_1h, p_max_3h)
+    nom = cfg["nombre_corto"]
+    cuenca = cfg["cuenca_objetivo"]
+    motivo = cfg["motivo_campo"]
+
+    if p_efectiva_1h >= 7.0 or p_sum_3h >= 16.0:
+        nivel = "ROJA (POR SATÉLITE)"
+        msg = f"🚨 ALERTA ROJA POR SATÉLITE EN {nom.upper()}: {p_efectiva_1h:.1f} mm/h ({p_sum_3h:.1f} mm en 3h) — Creciente Inminente hacia {cuenca}"
+        color = "#FF4B4B"
+        vel = "0.5s"
+        cintillo = f"🚨 <strong>ALERTA ROJA SATELITAL en {nom}</strong> ({p_efectiva_1h:.1f} mm/h • 3h: {p_sum_3h:.1f} mm) — Vigilar {cuenca}"
+    elif p_efectiva_1h >= 3.5 or p_sum_3h >= 9.0:
+        nivel = "NARANJA (POR SATÉLITE)"
+        msg = f"⚠️ ALERTA NARANJA POR SATÉLITE EN {nom.upper()}: {p_efectiva_1h:.1f} mm/h ({p_sum_3h:.1f} mm en 3h) — Tránsito de creciente hacia {cuenca}"
+        color = "#FF9933"
+        vel = "1s"
+        cintillo = f"⚠️ <strong>ALERTA NARANJA SATELITAL en {nom}</strong> ({p_efectiva_1h:.1f} mm/h • 3h: {p_sum_3h:.1f} mm) — Vigilar {cuenca}"
+    elif p_efectiva_1h >= 1.8 or p_sum_3h >= 4.5:
+        nivel = "AMARILLA (POR SATÉLITE)"
+        msg = f"🟡 AVISO AMARILLO POR SATÉLITE EN {nom.upper()}: {p_efectiva_1h:.1f} mm/h ({p_sum_3h:.1f} mm en 3h) — Monitoreo preventivo en {cuenca}"
+        color = "#FFFF00"
+        vel = "2s"
+        cintillo = f"🟡 <strong>Aviso Amarillo Satelital en {nom}</strong> ({p_efectiva_1h:.1f} mm/h • 3h: {p_sum_3h:.1f} mm)"
+    elif p_efectiva_1h >= 0.2 or p_sum_3h >= 0.8:
+        nivel = "VERDE (LLUVIA SATELITAL)"
+        msg = f"🌧️ LLUVIA ACTIVA POR SATÉLITE EN {nom.upper()}: {p_efectiva_1h:.1f} mm/h ({p_sum_3h:.1f} mm en 3h | 24h: {p_24h:.1f} mm) — {motivo}"
+        color = "#00CC96"
+        vel = "0s"
+        cintillo = f"🛰️ <strong>Lluvia Satelital en {nom}</strong> ({p_efectiva_1h:.1f} mm/h • 24h: {p_24h:.1f} mm)"
+    else:
+        nivel = "VIGILANCIA SATELITAL ACTIVA"
+        msg = f"🛰️ SIN LLUVIA ACTIVA EN SATÉLITE ({nom}): 0.0 mm/h (Acumulado 24h Satélite: {p_24h:.1f} mm) — {motivo}"
+        color = "#CCCCCC"
+        vel = "0s"
+        cintillo = None
+
+    return {
+        "nivel": nivel,
+        "msg": msg,
+        "color": color,
+        "vel": vel,
+        "p_1h": round(p_1h, 1),
+        "p_efectiva_1h": round(p_efectiva_1h, 1),
+        "p_sum_3h": round(p_sum_3h, 1),
+        "p_24h": round(p_24h, 1),
+        "motivo_campo": motivo,
+        "cuenca_objetivo": cuenca,
+        "cintillo": cintillo
+    }
+
 @st.cache_data(ttl=60)
 def obtener_novedades_sistema_en_vivo():
     """
     Despachador Inteligente de Novedades Hidrológicas en Vivo (SAT-IA / MIMAT-C26):
     1. Consulta cota en vivo del Embalse Tona y determina si está en rebose o descenso.
     2. Consulta precipitaciones acumuladas de las últimas 2 horas en todas las estaciones.
-    3. Detecta activación de alertas amarillas, naranjas o rojas según umbrales físicos.
+    3. Detecta activación de alertas amarillas, naranjas o rojas según umbrales físicos o conmutación satelital (Monsalve, Yerbabuena, La Mariana).
     4. Genera el cintillo informativo dinámico para la cabecera del sistema.
     """
     novedades = []
@@ -608,7 +727,7 @@ def obtener_novedades_sistema_en_vivo():
     except Exception:
         novedades.append(f"🌊 <strong>Embalse Tona:</strong> Cota de vertedero Morning Glory <strong>885.75 msnm</strong>")
 
-    # 2. DETECCIÓN DE LLUVIAS ACTIVAS Y ALERTAS EN ÚLTIMAS 2 HORAS
+    # 2. DETECCIÓN DE LLUVIAS ACTIVAS Y ALERTAS EN ÚLTIMAS 2 HORAS (FÍSICO + CONMUTACIÓN SATELITAL EN MONSALVE, YERBABUENA Y LA MARIANA)
     try:
         query_lluvias = """
         SELECT 
@@ -622,6 +741,7 @@ def obtener_novedades_sistema_en_vivo():
         """
         job = client.query(query_lluvias)
         rows = [dict(r) for r in job.result()]
+        mapa_fisico_2h = {}
         
         lluvias_activas = []
         alertas_disparadas = []
@@ -631,6 +751,7 @@ def obtener_novedades_sistema_en_vivo():
             p_tot = float(r.get('lluvia_reciente_mm', 0) or 0)
             p_max = float(r.get('p_max_evento', 0) or 0)
             p_ref = max(p_tot, p_max)
+            mapa_fisico_2h[est] = p_ref
             
             if est in umbrales:
                 u = umbrales[est]
@@ -643,6 +764,16 @@ def obtener_novedades_sistema_en_vivo():
                     alertas_disparadas.append(f"🟡 <strong>Alerta Amarilla en {nombre_est}</strong> ({p_ref:.1f} mm/h)")
                 elif p_ref >= 0.5:
                     lluvias_activas.append(f"🌧️ <strong>Lluvia activa en {nombre_est}</strong> ({p_ref:.1f} mm en últimas 2h)")
+        
+        # Respaldo de Alerta Satelital para Monsalve, Yerbabuena y La Mariana mientras se realiza mantenimiento en campo
+        for est_sat in ["Monsalve", "Yerbabuena", "La_Mariana"]:
+            if mapa_fisico_2h.get(est_sat, 0.0) < 1.0:
+                info_sat = obtener_alerta_satelital_campo(est_sat)
+                if info_sat and info_sat.get("cintillo"):
+                    if "ALERTA" in info_sat["nivel"] or "AVISO" in info_sat["nivel"]:
+                        alertas_disparadas.append(info_sat["cintillo"])
+                    else:
+                        lluvias_activas.append(info_sat["cintillo"])
         
         if alertas_disparadas:
             novedades.extend(alertas_disparadas)
@@ -1397,12 +1528,13 @@ def obtener_precipitacion_cuenca_tona(fecha_inicio, fecha_fin):
         if not df_res.empty:
             df_res['es_estimado_ia'] = False
         
-        # Resiliencia & Imputación Orográfica / Satelital Inteligente para La Mariana y Yerbabuena:
+        # Resiliencia & Imputación Orográfica / Satelital Inteligente para La Mariana, Yerbabuena y Monsalve (en revisión de campo):
         if not df_res.empty:
             map_p = {r['id_estacion']: float(r.get('precip_total', 0) or 0) for _, r in df_res.iterrows()}
             p_pajal = map_p.get('El_Pajal', 0.0)
             p_mariana = map_p.get('La_Mariana', 0.0)
             p_yerba = map_p.get('Yerbabuena', 0.0)
+            p_monsalve = map_p.get('Monsalve', 0.0)
             
             if p_mariana == 0.0 and p_pajal > 0.0:
                 if p_pajal <= 40.0:
@@ -1428,39 +1560,41 @@ def obtener_precipitacion_cuenca_tona(fecha_inicio, fecha_fin):
                     }])
                     df_res = pd.concat([df_res, nuevo], ignore_index=True)
 
-            # Si Yerbabuena reporta 0.0 mm por estar con sensores en 0/Hold, respaldar con satélite Open-Meteo sobre Yerbabuena
-            if p_yerba == 0.0:
-                try:
-                    df_last_y = get_last_reading('Yerbabuena')
-                    y_en_falla = (df_last_y.empty or float(df_last_y.iloc[0].get('humedad', 0) or 0) == 0.0 or float(df_last_y.iloc[0].get('presion', 0) or 0) == 0.0)
-                    if y_en_falla:
-                        df_sat_y = obtener_pronostico_open_meteo(7.195831, -72.914719, past_days=7, forecast_days=1)
-                        if not df_sat_y.empty:
-                            t_s = pd.to_datetime(df_sat_y['time'])
+            # Respaldo Satelital Open-Meteo para Yerbabuena, Monsalve y La Mariana si su lectura física es < 1.0 mm
+            for est_sat_id, (lat_s, lon_s, p_fis_actual) in {
+                'Yerbabuena': (7.195831, -72.914719, p_yerba),
+                'Monsalve': (7.441806, -72.930917, p_monsalve),
+                'La_Mariana': (7.122739, -73.007019, float(df_res.loc[df_res['id_estacion'] == 'La_Mariana', 'precip_total'].iloc[0]) if (df_res['id_estacion'] == 'La_Mariana').any() else 0.0)
+            }.items():
+                if p_fis_actual < 1.0:
+                    try:
+                        df_sat_est = obtener_pronostico_open_meteo(lat_s, lon_s, past_days=7, forecast_days=1)
+                        if not df_sat_est.empty:
+                            t_s = pd.to_datetime(df_sat_est['time'])
                             if t_s.dt.tz is None:
                                 t_s = t_s.dt.tz_localize(colombia_tz)
                             else:
                                 t_s = t_s.dt.tz_convert(colombia_tz)
-                            df_sat_win = df_sat_y[(t_s >= f_ini_dt) & (t_s <= f_fin_dt)]
-                            p_sat_y = round(float(df_sat_win['precipitation'].sum() or 0.0), 1) if not df_sat_win.empty else 0.0
-                            if p_sat_y > 0.0:
-                                p_max_y = round(float(df_sat_win['precipitation'].max() or 0.0), 1)
-                                mask_y = df_res['id_estacion'] == 'Yerbabuena'
-                                if mask_y.any():
-                                    df_res.loc[mask_y, 'precip_total'] = p_sat_y
-                                    df_res.loc[mask_y, 'precip_max_evento'] = p_max_y
-                                    df_res.loc[mask_y, 'es_estimado_ia'] = True
+                            df_sat_win = df_sat_est[(t_s >= f_ini_dt) & (t_s <= f_fin_dt)]
+                            p_sat_val = round(float(df_sat_win['precipitation'].sum() or 0.0), 1) if not df_sat_win.empty else 0.0
+                            if p_sat_val > p_fis_actual:
+                                p_max_val = round(float(df_sat_win['precipitation'].max() or 0.0), 1)
+                                mask_s = df_res['id_estacion'] == est_sat_id
+                                if mask_s.any():
+                                    df_res.loc[mask_s, 'precip_total'] = p_sat_val
+                                    df_res.loc[mask_s, 'precip_max_evento'] = p_max_val
+                                    df_res.loc[mask_s, 'es_estimado_ia'] = True
                                 else:
-                                    nuevo_y = pd.DataFrame([{
-                                        'id_estacion': 'Yerbabuena',
-                                        'precip_total': p_sat_y,
-                                        'precip_max_evento': p_max_y,
+                                    nuevo_s = pd.DataFrame([{
+                                        'id_estacion': est_sat_id,
+                                        'precip_total': p_sat_val,
+                                        'precip_max_evento': p_max_val,
                                         'num_registros': len(df_sat_win),
                                         'es_estimado_ia': True
                                     }])
-                                    df_res = pd.concat([df_res, nuevo_y], ignore_index=True)
-                except Exception:
-                    pass
+                                    df_res = pd.concat([df_res, nuevo_s], ignore_index=True)
+                    except Exception:
+                        pass
                     
         return df_res
     except Exception as e:
@@ -1911,7 +2045,7 @@ def mostrar_modulo_atribucion_cuenca(df_cuenca, q_afluente_ls, horas):
     st.markdown("#### 📋 Matriz Hidrológica de Cuenca Tona & Tiempos de Tránsito (Lag Time):")
     df_tabla = df_atrib[['id_estacion', 'nombre', 'zona', 'microcuencas', 'subsistema', 'precipitacion_mm', 'es_estimado_ia', 'lag_horas', 'porcentaje_atribucion', 'caudal_estimado_ls']].copy()
     df_tabla['Lluvia (mm)'] = df_tabla.apply(
-        lambda r: f"{r['precipitacion_mm']:.1f} mm (IA)" if (r['id_estacion'] == 'La_Mariana' and bool(r.get('es_estimado_ia') is True)) else f"{r['precipitacion_mm']:.1f} mm",
+        lambda r: f"{r['precipitacion_mm']:.1f} mm (Satélite/IA)" if bool(r.get('es_estimado_ia') is True) else f"{r['precipitacion_mm']:.1f} mm",
         axis=1
     )
     df_tabla['Aporte (%)'] = df_tabla['porcentaje_atribucion'].apply(lambda x: f"{x:.1f} %")
@@ -1925,17 +2059,19 @@ def mostrar_modulo_atribucion_cuenca(df_cuenca, q_afluente_ls, horas):
     st.markdown("#### ⛰️ Monitoreo Hidrometeorológico Eje Norte — Cuenca Alta Río Suratá (Fuente Primaria PTAP Bosconia):")
     st.caption("Monitoreo estratégico en el Páramo de Santurbán / Sisavita (3,339.79 msnm) en la cabecera del Río Suratá (afluentes Vetas y Charta). El Río Suratá es la fuente primaria habitual de captación de PTAP Bosconia. Cuando su caudal disminuye por estiaje, se activa la bifurcación del Embalse Tona (vía válvula CRC Bosconia a ~400 L/s) como sistema de resiliencia y respaldo hídrico, mientras entra en operación la futura PTAP Los Angelinos (para la cual fue concebido el embalse).")
     
-    p_mons = mapa_precip.get('Monsalve', {'total': 0.0, 'max': 0.0})['total']
+    info_mons = mapa_precip.get('Monsalve', {'total': 0.0, 'max': 0.0, 'es_estimado_ia': False})
+    p_mons = info_mons['total']
+    es_sat_mons = bool(info_mons.get('es_estimado_ia', False))
     meta_mon = METADATA_ESTACIONES_AMB['Monsalve']
     df_mon_tabla = pd.DataFrame([{
         'Estación': meta_mon['nombre_completo'],
         'Zona Cuenca': meta_mon['zona'],
         'Microcuencas / Quebradas': meta_mon['microcuencas'],
         'Subsistema Abastecido': meta_mon['subsistema_abastecimiento'],
-        'Lluvia (mm)': f"{p_mons:.1f} mm",
+        'Lluvia (mm)': f"{p_mons:.1f} mm (Satélite - Pluvio² en revisión)" if es_sat_mons else f"{p_mons:.1f} mm",
         'Retardo (Lag)': meta_mon['lag_horas'],
         'Aporte (%)': "0.0 % (Eje Norte)",
-        'Q Estimado (L/s)': "Fuente Primaria Bosconia (Río Suratá)"
+        'Q Estimado (L/s)': "Fuente Primaria Bosconia (Río Suratá / Pánaga)"
     }])
     st.dataframe(df_mon_tabla, use_container_width=True, hide_index=True)
     
@@ -2117,7 +2253,17 @@ def preparar_df_para_exportar(df, nombre_estacion=None):
                 df_res['Estado_Sensor'] = df_enr['estado_bateria']
             return df_res
         
-    # Exportación especializada para Estaciones Meteorológicas con unidades claras
+    # Exportación especializada para Estaciones Meteorológicas con unidades claras y Bandera de Calidad SCADA
+    df_clean = df_export.copy()
+    t_num = pd.to_numeric(df_clean.get('temperatura', pd.Series(dtype=float)), errors='coerce').fillna(0.0)
+    h_num = pd.to_numeric(df_clean.get('humedad', pd.Series(dtype=float)), errors='coerce').fillna(0.0)
+    p_num = pd.to_numeric(df_clean.get('presion', pd.Series(dtype=float)), errors='coerce').fillna(0.0)
+    mask_ceros_scada = (t_num == 0.0) & (h_num == 0.0) & (p_num == 0.0)
+
+    for col_s in ['temperatura', 'precipitacion', 'humedad', 'presion', 'velocidad_viento', 'direccion_viento']:
+        if col_s in df_clean.columns:
+            df_clean.loc[mask_ceros_scada, col_s] = np.nan
+
     mapa_renombrar = {
         'id_estacion': 'Estacion',
         'temperatura': 'Temperatura_C',
@@ -2130,17 +2276,18 @@ def preparar_df_para_exportar(df, nombre_estacion=None):
         'estado_bateria': 'Estado_Bateria'
     }
     df_res = pd.DataFrame()
-    if 'timestamp' in df_export.columns:
-        df_res['Fecha_Hora_COT'] = pd.to_datetime(df_export['timestamp']).dt.strftime('%Y-%m-%d %H:%M:%S')
+    if 'timestamp' in df_clean.columns:
+        df_res['Fecha_Hora_COT'] = pd.to_datetime(df_clean['timestamp']).dt.strftime('%Y-%m-%d %H:%M:%S')
         
     for col_orig, col_nueva in mapa_renombrar.items():
-        if col_orig in df_export.columns:
+        if col_orig in df_clean.columns:
             if col_orig in ['temperatura', 'precipitacion', 'humedad', 'presion', 'velocidad_viento', 'voltaje_bateria']:
-                df_res[col_nueva] = pd.to_numeric(df_export[col_orig], errors='coerce').round(2)
+                df_res[col_nueva] = pd.to_numeric(df_clean[col_orig], errors='coerce').round(2)
             elif col_orig == 'direccion_viento':
-                df_res[col_nueva] = pd.to_numeric(df_export[col_orig], errors='coerce').round(0)
+                df_res[col_nueva] = pd.to_numeric(df_clean[col_orig], errors='coerce').round(0)
             else:
-                df_res[col_nueva] = df_export[col_orig]
+                df_res[col_nueva] = df_clean[col_orig]
+    df_res['Calidad_Dato'] = np.where(mask_ceros_scada, 'NULL_CAIDA_SCADA', 'OK_VALIDO')
     return df_res
 
 def generar_excel_con_formato(df, nombre_estacion, periodo_descripcion):
@@ -2298,17 +2445,30 @@ def generar_resumen_estadistico(df, nombre_estacion=""):
         resumen.append("ℹ️ NOTA TÉCNICA: La estación Embalse registra exclusivamente niveles hidrométricos (msnm) y volúmenes hídricos.")
         return "\n".join(resumen)
         
+    # Saneamiento automático de ceros SCADA (0, 0, 0) para no contaminar promedios ni mínimos
+    df_stat = df.copy()
+    t_s = pd.to_numeric(df_stat.get('temperatura', pd.Series(dtype=float)), errors='coerce').fillna(0.0)
+    h_s = pd.to_numeric(df_stat.get('humedad', pd.Series(dtype=float)), errors='coerce').fillna(0.0)
+    p_s = pd.to_numeric(df_stat.get('presion', pd.Series(dtype=float)), errors='coerce').fillna(0.0)
+    mask_ceros = (t_s == 0.0) & (h_s == 0.0) & (p_s == 0.0)
+    n_ceros_excluidos = int(mask_ceros.sum())
+    df_valido = df_stat[~mask_ceros].copy()
+
+    if n_ceros_excluidos > 0:
+        resumen.append(f"🛡️ CONTROL DE CALIDAD SCADA: Se convirtieron a NULL y excluyeron del promedio {n_ceros_excluidos} registros en cero (0,0,0) por reinicio/caída de enlace.")
+        resumen.append("")
+
     # Para estaciones meteorológicas (La Mariana, Yerbabuena, etc.)
     cols = ['temperatura', 'precipitacion', 'humedad', 'presion', 'velocidad_viento', 'direccion_viento', 'voltaje_bateria']
     for col in cols:
-        if col in df.columns:
-            datos = pd.to_numeric(df[col], errors='coerce').dropna()
+        if col in df_valido.columns:
+            datos = pd.to_numeric(df_valido[col], errors='coerce').dropna()
             if not datos.empty and (datos.abs().max() > 0 or col in ['temperatura', 'precipitacion']):
                 resumen.append(f"📈 {col.upper()}:")
                 resumen.append(f"   • Promedio: {datos.mean():.2f}")
                 resumen.append(f"   • Máximo:  {datos.max():.2f}")
                 resumen.append(f"   • Mínimo:  {datos.min():.2f}")
-                resumen.append(f"   • Registros: {len(datos)}")
+                resumen.append(f"   • Registros válidos: {len(datos)}")
                 resumen.append("")
     return "\n".join(resumen)
 
@@ -2561,7 +2721,36 @@ with tab_situacion:
             else:
                 lluvia_1h = p_val
                 
-            if not salud["es_valido"]:
+            alerta_sat_campo = None
+            if seleccion in ESTACIONES_CONMUTACION_SATELITAL_CAMPO and lluvia_1h < 1.0:
+                alerta_sat_campo = obtener_alerta_satelital_campo(seleccion)
+
+            if alerta_sat_campo:
+                if seleccion == "Monsalve":
+                    st.markdown(f"""
+                    <div style="background: rgba(255, 153, 51, 0.12); border: 1px solid #FF9933; border-left: 5px solid #FF9933; padding: 12px 16px; border-radius: 10px; margin-bottom: 12px;">
+                        <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap;">
+                            <strong style="color: #B35900; font-size: 13.5px;">🛰️ CONMUTACIÓN SATELITAL ACTIVA EN MONSALVE (OTT Pluvio² en Revisión de Campo)</strong>
+                            <span class="badge-status" style="background: rgba(255,153,51,0.25); color: #804000; border: 1px solid #FF9933;">SEMÁFORO & ALERTAS POR SATÉLITE</span>
+                        </div>
+                        <div style="font-size: 12.5px; color: #222; margin-top: 4px; line-height: 1.45;">
+                            Mientras se realiza la inspección en campo y la prueba volumétrica con <strong>probeta graduada Hellmann (relación 1:1 = 200 cm²)</strong> en el pluviómetro gravimétrico <strong>OTT Pluvio²</strong>, el <strong>Semáforo Operativo (🚦)</strong> y las alertas SMS vigilan directamente la lluvia satelital sobre <strong>Monsalve</strong> (Acumulado 24h Satélite: <strong>{alerta_sat_campo['p_24h']:.1f} mm</strong> | Últimas 3h: <strong>{alerta_sat_campo['p_sum_3h']:.1f} mm</strong>) para proteger <strong>Pánaga, Río Suratá y Bocatoma PTAP Bosconia</strong>.
+                        </div>
+                    </div>
+                    """, unsafe_allow_html=True)
+
+                st.markdown(f'''
+                <div style="background-color:{alerta_sat_campo['color']}; padding:16px; border-radius:12px; text-align:center; color:black; animation: blink {alerta_sat_campo['vel']} infinite; border: 2px solid #333;">
+                    <h3 style="margin:0;">🚦 {alerta_sat_campo['nivel']}</h3>
+                    <b>{alerta_sat_campo['msg']}</b><br>
+                    <span style="font-size:12px; color:#222; font-weight:600;">(🛰️ Satélite última hora: {alerta_sat_campo['p_efectiva_1h']:.1f} mm/h | Acumulado 3h: {alerta_sat_campo['p_sum_3h']:.1f} mm | 24h Satélite: {alerta_sat_campo['p_24h']:.1f} mm | Pluviómetro físico: {lluvia_1h:.1f} mm/h)</span>
+                </div>
+                <style>
+                @keyframes blink {{ 0%{{opacity:1}} 50%{{opacity:0.3}} 100%{{opacity:1}} }}
+                </style>
+                ''', unsafe_allow_html=True)
+                st.write("")
+            elif not salud["es_valido"]:
                 pass
             else:
                 nombre, msg, color, vel = obtener_alerta(lluvia_1h, seleccion)
@@ -2587,7 +2776,10 @@ with tab_situacion:
             c1, c2, c3, c4, c5, c6, c7 = st.columns(7)
             if sensor_virt:
                 c1.metric("🌡️ Temp (Virtual)", f"{t_val:.1f} °C", help="Estimada por gradiente altimétrico vertical (-0.65°C/100m) desde estación de referencia")
-                c2.metric("🌧️ Precip (Virtual)", f"{p_val:.1f} mm", delta=f"{lluvia_1h:.1f} mm/h (1h)" if lluvia_1h > 0 else "0.0 mm/h")
+                if alerta_sat_campo:
+                    c2.metric("🌧️ Precip (Satélite)", f"{alerta_sat_campo['p_efectiva_1h']:.1f} mm/h", delta=f"24h Sat: {alerta_sat_campo['p_24h']:.1f} mm", help=f"Conmutación satelital activa mientras se revisa la estación en campo. Acumulado 3h: {alerta_sat_campo['p_sum_3h']:.1f} mm | 24h: {alerta_sat_campo['p_24h']:.1f} mm")
+                else:
+                    c2.metric("🌧️ Precip (Virtual)", f"{p_val:.1f} mm", delta=f"{lluvia_1h:.1f} mm/h (1h)" if lluvia_1h > 0 else "0.0 mm/h")
                 c3.metric("💧 Humedad (Virtual)", f"{h_val:.1f} %")
                 c4.metric("🧭 Presión (ISA)", f"{pres_val:.1f} hPa", delta="⚠️ Valor Pegado (Ref. ISA)", delta_color="inverse", help=f"Referencia barométrica estándar ISA/OMM para {alt_est:,.0f} msnm mientras se inspecciona la estación en campo")
                 c5.metric("💨 Viento (Virtual)", f"{v_val:.1f} km/h")
@@ -2595,7 +2787,10 @@ with tab_situacion:
                 c7.metric("🔋 Voltaje", "N/A", help="Estación pendiente de revisión en campo")
             else:
                 c1.metric("🌡️ Temp", f"{t_val:.1f} °C")
-                c2.metric("🌧️ Precip", f"{p_val:.1f} mm", delta=f"{lluvia_1h:.1f} mm/h (1h)" if lluvia_1h > 0 else "0.0 mm/h", help=f"Último paquete 10 min: {p_val:.1f} mm | Acumulado última hora: {lluvia_1h:.1f} mm/h")
+                if alerta_sat_campo:
+                    c2.metric("🌧️ Precip (Satélite)", f"{alerta_sat_campo['p_efectiva_1h']:.1f} mm/h", delta=f"24h Sat: {alerta_sat_campo['p_24h']:.1f} mm", help=f"OTT Pluvio² en revisión de campo (lectura física: {p_val:.1f} mm). Respaldo satelital Open-Meteo: {alerta_sat_campo['p_efectiva_1h']:.1f} mm/h | 3h: {alerta_sat_campo['p_sum_3h']:.1f} mm | 24h: {alerta_sat_campo['p_24h']:.1f} mm")
+                else:
+                    c2.metric("🌧️ Precip", f"{p_val:.1f} mm", delta=f"{lluvia_1h:.1f} mm/h (1h)" if lluvia_1h > 0 else "0.0 mm/h", help=f"Último paquete 10 min: {p_val:.1f} mm | Acumulado última hora: {lluvia_1h:.1f} mm/h")
                 c3.metric("💧 Humedad", f"{h_val:.1f} %")
                 if not salud["es_valido"]:
                     c4.metric("🧭 Presión Atm.", f"{pres_val:.1f} hPa", delta="⚠️ Valor Congelado (>2h)", delta_color="inverse", help="Valor estático sin variación real por bloqueo de datalogger / canales en 0.0")
@@ -2987,11 +3182,29 @@ with tab_radar_72h:
         )
         st.plotly_chart(fig_comp, use_container_width=True)
         
-        # 4. Diagnóstico Técnico de Interventoría
-        if res_interv['pod_pct'] >= 75.0:
+        # 4. Diagnóstico Técnico de Interventoría (Específico para OTT Pluvio² Gravimétrico por Celda de Carga)
+        ll_sat_eval = float(res_interv.get('lluvia_tot_sat', 0.0))
+        ll_obs_eval = float(res_interv.get('lluvia_tot_obs', 0.0))
+        h_sat_eval = int(res_interv.get('horas_con_lluvia_sat', 0))
+        
+        if ll_sat_eval >= 15.0 and h_sat_eval >= 8 and ll_obs_eval <= max(1.0, 0.05 * ll_sat_eval):
+            diag_estado = "🚨 ALERTA INSTRUMENTAL OTT PLUVIO²: POSIBLE OBSTRUCCIÓN O TRABAMIENTO EN CUBETA DE PESAJE"
+            diag_color = "#FF4B4B"
+            diag_txt = (
+                f"El modelo satelital registra <strong>{ll_sat_eval:.2f} mm acumulados ({h_sat_eval}h con lluvia)</strong> sobre <strong>{meta_sel['nombre_completo']}</strong>, "
+                f"mientras que el sensor gravimétrico <strong>OTT Pluvio²</strong> en terreno solo reportó <strong>{ll_obs_eval:.2f} mm</strong>. "
+                f"Dado que la cubeta colectora fue vaciada recientemente en agosto (capacidad anual), este sub-registro indica como hipótesis principal una "
+                f"<strong>obstrucción física en la boca/rejilla colectora por material vegetal de páramo (frailejón/sedimento) o rozamiento mecánico entre la cubeta interna y la carcasa</strong> "
+                f"que impide que la celda de carga registre libremente el incremento de peso, explicando la creciente real del Río Suratá en Pánaga sin marcación proporcional en la estación."
+            )
+        elif res_interv['pod_pct'] >= 75.0 and res_interv['csi_pct'] >= 40.0 and res_interv['far_pct'] <= 50.0:
             diag_estado = "ALTA CONFIABILIDAD SATELITAL"
             diag_color = "#00CC96"
-            diag_txt = f"Excelente calibración del modelo numérico sobre <strong>{meta_sel['nombre_completo']}</strong>. El satélite capturó el {res_interv['pod_pct']:.1f}% de las lluvias ocurridas en suelo con un error medio de {res_interv['mae_mm']:.2f} mm/h."
+            diag_txt = f"Excelente calibración del modelo numérico sobre <strong>{meta_sel['nombre_completo']}</strong>. El satélite capturó el {res_interv['pod_pct']:.1f}% de las lluvias ocurridas en suelo (CSI: {res_interv['csi_pct']:.1f}%) con un error medio de {res_interv['mae_mm']:.2f} mm/h."
+        elif res_interv['pod_pct'] >= 40.0 and res_interv['far_pct'] > 50.0:
+            diag_estado = "SOBREESTIMACIÓN SATELITAL O SUB-REGISTRO EN OTT PLUVIO² (FAR ELEVADO)"
+            diag_color = "#FF8000"
+            diag_txt = f"Aunque el satélite detectó los pulsos en suelo ({res_interv['pod_pct']:.1f}% POD), registra un <strong>{res_interv['far_pct']:.1f}% de discrepancia ({ll_sat_eval:.1f} mm satélite vs. {ll_obs_eval:.1f} mm en OTT Pluvio²)</strong>. Verificar si corresponde a nubosidad alta sin precipitación efectiva (virga) o a obstrucción/fricción parcial en el colector del OTT Pluvio²."
         elif res_interv['pod_pct'] >= 40.0:
             diag_estado = "CONFIABILIDAD MODERADA (EVIDENCIA MICROCLIMÁTICA)"
             diag_color = "#FFBB00"
@@ -3966,3 +4179,4 @@ with st.sidebar.expander("📏 Extensómetros (EDV)"):
 # ============================================================
 # FIN DEL CÓDIGO — SISTEMA MIMAT-C26 (amb)
 # ============================================================
+
