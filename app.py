@@ -366,47 +366,62 @@ def calcular_nivel_desde_caudal_majadas(q_ls: float) -> float:
     except Exception:
         return 0.991
 
-def obtener_semaforo_hidrologico_surata(q_ls: float, h_m: float, delta_h_30m: float = 0.0):
+def obtener_semaforo_hidrologico_surata(q_ls: float, h_m: float, delta_h_30m: float = 0.0) -> dict:
     """
     Semáforo Hidrológico Operativo para la Estación Río Suratá — Sector Las Majadas
     (Ubicada ~1.8 km aguas arriba de la Toma Bosconia, tiempo de tránsito: 15 a 25 min).
     """
     if q_ls >= 8000.0 or h_m >= 1.43 or delta_h_30m >= 0.25:
-        return (
-            "ALERTA ROJA — CRECIENTE SÚBITA / AVENIDA TORRENCIAL",
-            f"🚨 Creciente severa en Las Majadas: {q_ls:,.0f} L/s ({q_ls/1000.0:.2f} m³/s | Mira: {h_m:.2f} m). Arribo estimado a Toma Bosconia en 15–25 min. Activar protocolo de protección de bocatoma y cierre preventivo de compuertas.",
-            "#FF4B4B",
-            "0.5s"
-        )
+        return {
+            "icono": "🚨",
+            "titulo": "ALERTA ROJA — CRECIENTE SÚBITA / AVENIDA TORRENCIAL",
+            "mensaje": f"Creciente severa en Las Majadas: {q_ls:,.0f} L/s ({q_ls/1000.0:.2f} m³/s | Mira: {h_m:.2f} m). Arribo estimado a Toma Bosconia en 15–25 min.",
+            "accion": "Activar protocolo de protección de bocatoma Bosconia, cierre preventivo de compuertas y purga continua.",
+            "color": "#FF4B4B",
+            "text_color": "#FFFFFF",
+            "vel": "0.6s"
+        }
     elif q_ls >= 4500.0 or h_m >= 1.23 or delta_h_30m >= 0.15:
-        return (
-            "ALERTA NARANJA — CRECIENTE IMPORTANTE EN TRÁNSITO",
-            f"⚠️ Ascenso fuerte de caudal en Las Majadas: {q_ls:,.0f} L/s ({q_ls/1000.0:.2f} m³/s | Mira: {h_m:.2f} m). Inspección preventiva de rejillas, desarenadores y alistamiento por turbiedad en Toma Bosconia (15–25 min).",
-            "#FF9933",
-            "1s"
-        )
+        return {
+            "icono": "⚠️",
+            "titulo": "ALERTA NARANJA — CRECIENTE IMPORTANTE EN TRÁNSITO",
+            "mensaje": f"Ascenso fuerte de caudal en Las Majadas: {q_ls:,.0f} L/s ({q_ls/1000.0:.2f} m³/s | Mira: {h_m:.2f} m).",
+            "accion": "Inspección inmediata de rejillas, alistamiento de desarenadores y dosificación por alta turbiedad en Toma Bosconia (15–25 min).",
+            "color": "#FF9933",
+            "text_color": "#111111",
+            "vel": "1.2s"
+        }
     elif q_ls >= 3000.0 or h_m >= 1.11:
-        return (
-            "AVISO AMARILLO — CAUDAL ALTO / VIGILANCIA DE TURBIEDAD",
-            f"🟡 Caudal superior al promedio en Las Majadas: {q_ls:,.0f} L/s ({q_ls/1000.0:.2f} m³/s | Mira: {h_m:.2f} m). Mayor escorrentía en cuenca del Río Suratá; monitorear color y turbiedad en Toma Bosconia.",
-            "#FFBB00",
-            "2s"
-        )
-    elif q_ls >= 1400.0:
+        return {
+            "icono": "🟡",
+            "titulo": "AVISO AMARILLO — CAUDAL ALTO / VIGILANCIA DE TURBIEDAD",
+            "mensaje": f"Caudal superior al promedio en Las Majadas: {q_ls:,.0f} L/s ({q_ls/1000.0:.2f} m³/s | Mira: {h_m:.2f} m).",
+            "accion": "Mayor escorrentía en la cuenca del Río Suratá; monitorear evolución de color y turbiedad en Toma Bosconia.",
+            "color": "#FFBB00",
+            "text_color": "#111111",
+            "vel": "2.0s"
+        }
+    elif q_ls >= 1300.0:
         rem_ls = max(0.0, q_ls - DEMANDA_MEDIA_TOMA_BOSCONIA_LS)
-        return (
-            "VERDE — CAUDAL CONFIABLE ÓPTIMO (OPERACIÓN NORMAL)",
-            f"✅ Caudal estable en Las Majadas: {q_ls:,.0f} L/s ({q_ls/1000.0:.2f} m³/s | Mira: {h_m:.2f} m). Cubre al 100% la captación de PTAP Bosconia (900–1,200 L/s) dejando ~{rem_ls:,.0f} L/s de caudal remanente aguas abajo.",
-            "#00CC96",
-            "0s"
-        )
+        return {
+            "icono": "🟢",
+            "titulo": "VERDE — CAUDAL CONFIABLE ÓPTIMO (OPERACIÓN NORMAL)",
+            "mensaje": f"Caudal estable en Las Majadas: {q_ls:,.0f} L/s ({q_ls/1000.0:.2f} m³/s | Mira: {h_m:.2f} m | Promedio base ~2,000 L/s).",
+            "accion": f"Cubre al 100% la captación de PTAP Bosconia (900–1,200 L/s) dejando ~{rem_ls:,.0f} L/s de caudal remanente aguas abajo.",
+            "color": "#00CC96",
+            "text_color": "#111111",
+            "vel": "0s"
+        }
     else:
-        return (
-            "AVISO AZUL — ESTIAJE / CAUDAL REDUCIDO",
-            f"🔵 Caudal bajo en Las Majadas: {q_ls:,.0f} L/s ({q_ls/1000.0:.2f} m³/s | Mira: {h_m:.2f} m) frente a la demanda habitual de PTAP Bosconia (900–1,200 L/s). Mantener suplemento activo por Válvula CRC Embalse Tona.",
-            "#00B4D8",
-            "0s"
-        )
+        return {
+            "icono": "🔵",
+            "titulo": "AVISO AZUL — ESTIAJE / CAUDAL REDUCIDO",
+            "mensaje": f"Caudal bajo en Las Majadas: {q_ls:,.0f} L/s ({q_ls/1000.0:.2f} m³/s | Mira: {h_m:.2f} m) frente a la demanda habitual de PTAP Bosconia (900–1,200 L/s).",
+            "accion": "Vigilar niveles mínimos en bocatoma Bosconia y mantener suplemento activo por Válvula CRC del Embalse de Tona.",
+            "color": "#00B4D8",
+            "text_color": "#FFFFFF",
+            "vel": "0s"
+        }
 
 def filtrar_nivel_ott_majadas_robusto(df_sur_hist):
     """
@@ -2639,10 +2654,12 @@ def generar_excel_con_formato(df, nombre_estacion, periodo_descripcion):
             meta_rows = [
                 ['Sistema de Información', SISTEMA],
                 ['Proyecto Institucional', 'MIMAT-C26 • amb s.a. e.s.p.'],
-                ['Estación Hidrológica', 'Río Suratá — Sector Las Majadas (Primera Estación Fluvial MIMAT-C26)'],
+                ['Estación Hidrológica', 'Río Suratá — Sector Las Majadas (CNE IDEAM 0023197700 • Primera Estación Fluvial MIMAT-C26)'],
                 ['Instrumentación', 'Radar Hidrométrico OTT (Generación Anterior) + Mira Limnimétrica — FEWS IDEAM / amb'],
                 ['Coordenadas Oficiales', '7°09\'18.50"N 73°03\'42.20"W (7.155139, -73.061722) • ~765.00 msnm'],
-                ['Ubicación Topológica', 'Aguas abajo de Puente Tona (confluencia Río Suratá + Río Tona) y ~1.8 km aguas arriba de Toma Bosconia'],
+                ['Ubicación Topológica', 'Aguas abajo de Puente Tona (confluencia Río Suratá + Río Tona) y ~1.8 km aguas arriba de Toma Bosconia (Tránsito: 15-25 min)'],
+                ['Frecuencia y Lag FEWS IDEAM', 'Muestreo datalogger 10-15 min; transmisión por lotes (GOES/GPRS) con rezago (lag) de publicación web de 30 a 90 min e intermitencias'],
+                ['Compensación Resiliente MIMAT-C26', 'Persistencia continua en BigQuery + acoplamiento con lluvia en tiempo real de Monsalve (0 min lag) y satélite sobre Las Majadas'],
                 ['Ecuación Oficial de la Mira', 'Q (m³/s) = 1.2455 * (H + 0.13)^4.1635  |  Q (L/s) = Q (m³/s) * 1,000'],
                 ['Caudal Base Promedio Majadas', '~2,000 L/s (H ≈ 0.991 m)'],
                 ['Demanda Media PTAP Bosconia', '900 a 1,200 L/s (~1,050 L/s promedio captado en Toma Bosconia)'],
@@ -3008,18 +3025,20 @@ with tab_situacion:
             </style>
             """, unsafe_allow_html=True)
 
-            # 2. Banner de Continuidad Hidrológica (FEWS IDEAM vs Resiliencia en BigQuery)
+            # 2. Banner de Continuidad Hidrológica y Aclaración de Lags (FEWS IDEAM vs Resiliencia en BigQuery)
             if es_fews_vivo:
                 st.markdown("""
-                <div style="background: rgba(0, 204, 150, 0.10); border: 1px solid #00CC96; border-left: 5px solid #00CC96; padding: 10px 16px; border-radius: 8px; margin-bottom: 14px; font-size: 13px;">
-                    📡 <strong>Enlace Telemetría FEWS IDEAM Activo + Persistido en BigQuery:</strong> Lectura directa del <strong>Radar OTT (versión anterior)</strong> en el sector Las Majadas filtrada contra espuma superficial y almacenada automáticamente en <code>amb_hidrologia.telemetria_estaciones</code>.
+                <div style="background: rgba(0, 204, 150, 0.10); border: 1px solid #00CC96; border-left: 5px solid #00CC96; padding: 11px 16px; border-radius: 8px; margin-bottom: 14px; font-size: 13px; line-height: 1.5;">
+                    📡 <strong>Enlace Telemetría FEWS IDEAM Activo (<code>CNE 0023197700</code>) + Persistido en BigQuery:</strong> Lectura directa del <strong>Radar OTT (versión anterior)</strong> en Las Majadas filtrada contra espuma superficial.<br>
+                    ⏱️ <strong>Nota sobre Latencia (<em>Lag</em>) de Publicación IDEAM:</strong> El datalogger del IDEAM muestrea cada <strong>10–15 min</strong> en campo, pero transmite por lotes (ventana satelital GOES / GPRS) y el visor web <code>FEWS IDEAM</code> publica con un <strong>rezago (<em>lag</em>) habitual de 30 a 90 minutos</strong>. Como el agua tarda solo <strong>15 a 25 min</strong> de Las Majadas a Toma Bosconia, <strong>MIMAT-C26</strong> complementa la lectura con la pluviosidad en tiempo real de <code>Monsalve</code> y radar satelital.
                 </div>
                 """, unsafe_allow_html=True)
             else:
                 st.markdown("""
                 <div style="background: rgba(0, 80, 115, 0.08); border: 1px solid #005073; border-left: 5px solid #005073; padding: 11px 16px; border-radius: 8px; margin-bottom: 14px; font-size: 13px; line-height: 1.5;">
-                    🛡️ <strong>Motor de Continuidad Hidrológica Resiliente Activo en BigQuery (Tolerancia a Caídas de FEWS IDEAM):</strong><br>
-                    Dado que el portal externo de FEWS IDEAM para la estación <strong>Suratá (Las Majadas)</strong> presenta intermitencias frecuentes o tramas vacías, <strong>MIMAT-C26</strong> mantiene el registro continuo en <code>BigQuery</code> modulando el caudal base real observado en el sector (<strong>~2,000 L/s</strong> • Mira <strong>~0.99 m</strong>) con la pluviosidad de la cuenca alta (<code>Monsalve</code> + satélite en Las Majadas). En cuanto FEWS IDEAM restablece paquete válido, se sincroniza de forma transparente.
+                    🛡️ <strong>Motor de Continuidad Hidrológica Resiliente Activo en BigQuery (Compensación de Caídas y <em>Lags</em> de FEWS IDEAM):</strong><br>
+                    • <strong>Frecuencia y Rezago (<em>Lag</em>) del IDEAM (<code>CNE 0023197700</code>):</strong> El visor público <code>FEWS IDEAM</code> de la estación <strong>Las Majadas</strong> opera con transmisión por lotes (<em>batch</em> GOES/GPRS) que introduce un <strong>rezago de publicación de 30 a 90 minutos</strong> (mayor que los <strong>15 a 25 minutos</strong> que tarda el agua en llegar a Toma Bosconia) y sufre apagones frecuentes o tramas en <code>null</code>.<br>
+                    • <strong>Solución MIMAT-C26 en BigQuery:</strong> Para no dejar a ciegas la operación de Bosconia durante los <em>lags</em> o caídas del IDEAM, el sistema persiste cada lectura válida en <code>BigQuery</code> y, durante las ventanas sin reporte, mantiene la continuidad sobre el caudal base real del sector (<strong>~2,000 L/s</strong> • Mira <strong>~0.99 m</strong>) modulado en tiempo real con la lluvia de <code>Monsalve</code> (0 min de lag) y el satélite sobre Las Majadas.
                 </div>
                 """, unsafe_allow_html=True)
 
@@ -3064,7 +3083,8 @@ with tab_situacion:
                     <strong>H actual = {h_m_act:.3f} m</strong> ➔ <strong>Q = {q_m3s_act:.3f} m³/s ({q_ls_act:,.0f} L/s)</strong>
                 </div>
                 <ul style="margin: 8px 0 4px 18px; padding: 0;">
-                    <li><strong>📍 Ubicación Estratégica (Confirmada por Google Earth):</strong> La estación <strong>Las Majadas (<code>7°09'18.50"N, 73°03'42.20"W</code> • ~765 msnm)</strong> está situada <strong>aguas abajo de la confluencia del Río Suratá con el Río Tona (Puente Tona)</strong> y <strong>~1.8 a 2.0 km aguas arriba de la Toma Bosconia</strong> (pasando por el sector Chitota, con tiempo de tránsito hidráulico de <strong>15 a 25 minutos</strong>).</li>
+                    <li><strong>📍 Ubicación Estratégica (Confirmada por Google Earth):</strong> La estación <strong>Las Majadas (<code>CNE 0023197700</code> • <code>7°09'18.50"N, 73°03'42.20"W</code> • ~765 msnm)</strong> está situada <strong>aguas abajo de la confluencia del Río Suratá con el Río Tona (Puente Tona)</strong> y <strong>~1.8 a 2.0 km aguas arriba de la Toma Bosconia</strong> (pasando por el sector Chitota, con tiempo de tránsito hidráulico de <strong>15 a 25 minutos</strong>).</li>
+                    <li><strong>⏱️ Aclaración de Tiempos de Actualización y <em>Lags</em> del IDEAM:</strong> Aunque el Radar OTT del IDEAM muestrea cada <strong>10–15 min</strong> en el cauce, la transmisión por lotes (<em>time-slot</em> satelital GOES / celular) y el procesamiento del visor <code>FEWS IDEAM</code> generan un <strong>rezago (<em>lag</em>) de publicación de 30 a 90 minutos</strong>, además de interrupciones frecuentes. Como el tránsito hidráulico a Toma Bosconia es de apenas <strong>15–25 min</strong>, <code>MIMAT-C26</code> almacena continuamente la serie en <code>BigQuery</code> y anticipa los ascensos cruzando la lluvia en tiempo real de la cuenca alta (<code>Monsalve</code>, con <strong>60–120 min de anticipación</strong>) y el radar satelital sobre Las Majadas.</li>
                     <li><strong>⚖️ Balance en la Confluencia:</strong> El caudal aforado en Las Majadas (<strong>{q_ls_act:,.0f} L/s</strong>, promedio habitual <strong>~2,000 L/s</strong>) integra el aporte del <strong>Río Suratá antes de la confluencia (~{q_surata_puro_aprox_ls:,.0f} L/s)</strong> más el aporte del <strong>Río Tona por Puente Tona (~{q_mg_ls_aprox:,.0f} L/s)</strong>.</li>
                     <li><strong>🚰 Oferta vs. Demanda en Toma Bosconia:</strong> La planta <strong>PTAP Bosconia</strong> trata un caudal promedio de <strong>900 a 1,200 L/s (~1,050 L/s nominal)</strong>, dejando un caudal remanente ecológico y operativo aguas abajo de la bocatoma de <strong>~{q_remanente_bosconia_ls:,.0f} L/s</strong>.</li>
                     <li><strong style="color: #D96B00;">⚠️ Nota Técnica de Calibración (Morning Glory):</strong> Se deja constancia explícita de que el caudal de rebose del vertedero <em>Morning Glory</em> del Embalse de Tona (<strong>~{q_mg_ls_aprox:,.0f} L/s</strong> a cota <strong>{cota_emb_s:.2f} msnm</strong>) es un <strong>valor aproximado mientras se termina de calibrar empíricamente esa ecuación mediante aforos en Puente Tona y Las Majadas</strong>.</li>
@@ -4665,6 +4685,11 @@ with tab_matematica:
 
         4. **Aclaración de Auditoría sobre la Ecuación del *Morning Glory*:**
            Se deja constancia expresa en la ingeniería del proyecto que el caudal de rebose del *Morning Glory* ($885,75\text{ msnm}$) empleado en el balance de Puente Tona es un **valor aproximado mientras se termina de calibrar empíricamente dicha ecuación** con los registros simultáneos de la mira de Las Majadas.
+
+        5. **Auditoría de Tiempos de Actualización y Desfase de Latencia (*Lag*) en `FEWS IDEAM` (`CNE 0023197700`):**
+           * **Muestreo vs. Transmisión por Lotes (*Batch*):** Aunque el datalogger del Radar OTT en Las Majadas registra el nivel cada $\Delta t_{\text{muestreo}} \in [10, \, 15]\text{ min}$, la transmisión hacia el IDEAM opera por ventanas satelitales GOES o paquetes diferidos GPRS, y el motor *Delft-FEWS Colombia* introduce un **rezago de publicación web ($\tau_{\text{lag, FEWS}}$) de $30\text{ a }90\text{ minutos}$**, además de caídas frecuentes con tramas en `null`.
+           * **Condición Crítica deTiempo de Tránsito ($\tau_{\text{tránsito}} < \tau_{\text{lag, FEWS}}$):** Dado que el tiempo de viaje hidráulico desde Las Majadas hasta las rejillas de **Toma Bosconia** ($\sim 1,8\text{ km}$) es de solo **$\tau_{\text{tránsito}} \in [15, \, 25]\text{ min}$**, se cumple que $\tau_{\text{tránsito}} < \tau_{\text{lag, FEWS}}$; es decir, una creciente súbita arribaría a la bocatoma antes de verse reflejada en el visor público del IDEAM.
+           * **Compensación Predictiva en `BigQuery` (`MIMAT-C26`):** El sistema resuelve esta asimetría almacenando permanentemente cada paquete válido en `BigQuery` y acoplando la estimación en tiempo real ($\tau_{\text{lag}} \approx 0\text{ min}$) con la precipitación medida en la cuenca alta del Suratá (`Monsalve`, con $\Delta t_{\text{anticipación}} \in [60, \, 120]\text{ min}$) y el radar satelital sobre el sector Las Majadas.
         """)
         df_tabla_maj = pd.DataFrame({
             "Nivel Mira H (m)": ["0.65 m", "0.80 m", "0.90 m", "0.991 m (Promedio Base)", "1.05 m", "1.11 m (Umbral Amarillo)", "1.23 m (Alerta Naranja)", "1.43 m (Alerta Roja)"],
