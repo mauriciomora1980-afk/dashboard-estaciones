@@ -450,9 +450,13 @@ def filtrar_nivel_ott_majadas_robusto(df_sur_hist):
                 h_prev = h
 
     df_s['nivel_crudo_m'] = h_raw.round(3)
+    df_s['nivel_m_crudo'] = df_s['nivel_crudo_m']
     df_s['nivel_mira_m'] = [round(float(x), 3) for x in niveles_limpios]
+    df_s['nivel_m_filtrado'] = df_s['nivel_mira_m']
     df_s['caudal_m3s'] = [calcular_caudal_mira_majadas(x)[0] for x in df_s['nivel_mira_m']]
+    df_s['caudal_m3s_filtrado'] = df_s['caudal_m3s']
     df_s['caudal_ls'] = [calcular_caudal_mira_majadas(x)[1] for x in df_s['nivel_mira_m']]
+    df_s['caudal_ls_filtrado'] = df_s['caudal_ls']
     return df_s
 
 def filtrar_cota_embalse_robusta(df_emb_hist):
@@ -656,8 +660,9 @@ def sincronizar_fews_ideam_surata_bigquery():
     origen_dato = "RESPALDO_HIDROLOGICO_AMB"
     h_actual_m = None
 
-    # 1. Intentar lectura en vivo desde endpoints públicos JSON de FEWS IDEAM
+    # 1. Intentar lectura en vivo desde endpoints públicos JSON de FEWS IDEAM (CNE 23197700 = Majadas)
     urls_fews_candidatas = [
+        "https://fews.ideam.gov.co/colombia/jsonH/0023197700Hobs.json",
         "https://fews.ideam.gov.co/colombia/jsonH/0023197050Hobs.json",
         "https://fews.ideam.gov.co/colombia/jsonH/0023197060Hobs.json",
         "https://fews.ideam.gov.co/colombia/jsonH/0023197030Hobs.json"
