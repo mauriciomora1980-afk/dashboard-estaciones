@@ -123,13 +123,113 @@ st.markdown("""
     .alert-orange { background: rgba(255, 128, 0, 0.15); color: #FF8000; border: 1px solid #FF8000; }
     .alert-red { background: rgba(255, 75, 75, 0.15); color: #FF4B4B; border: 1px solid #FF4B4B; }
     
-    .badge-status {
-        display: inline-block;
-        padding: 4px 10px;
-        border-radius: 20px;
-        font-size: 11px;
-        font-weight: 700;
-        text-transform: uppercase;
+    /* Animaciones Luminosas y Parpadeantes para Pantalla SCADA / Alerta Temprana */
+    @keyframes pulse-red-glow {
+        0% { box-shadow: 0 0 8px rgba(255, 75, 75, 0.4), inset 0 0 6px rgba(255, 75, 75, 0.2); border-color: #FF4B4B; }
+        50% { box-shadow: 0 0 28px rgba(255, 75, 75, 0.95), inset 0 0 16px rgba(255, 75, 75, 0.5); border-color: #FF0000; }
+        100% { box-shadow: 0 0 8px rgba(255, 75, 75, 0.4), inset 0 0 6px rgba(255, 75, 75, 0.2); border-color: #FF4B4B; }
+    }
+    @keyframes pulse-orange-glow {
+        0% { box-shadow: 0 0 6px rgba(255, 128, 0, 0.4); border-color: #FF8000; }
+        50% { box-shadow: 0 0 22px rgba(255, 128, 0, 0.9); border-color: #FFA500; }
+        100% { box-shadow: 0 0 6px rgba(255, 128, 0, 0.4); border-color: #FF8000; }
+    }
+    @keyframes pulse-yellow-glow {
+        0% { box-shadow: 0 0 5px rgba(255, 187, 0, 0.35); border-color: #FFBB00; }
+        50% { box-shadow: 0 0 18px rgba(255, 187, 0, 0.85); border-color: #FFD700; }
+        100% { box-shadow: 0 0 5px rgba(255, 187, 0, 0.35); border-color: #FFBB00; }
+    }
+    @keyframes pulse-cyan-glow {
+        0% { box-shadow: 0 0 6px rgba(0, 200, 255, 0.4); border-color: #00BFFF; }
+        50% { box-shadow: 0 0 22px rgba(0, 200, 255, 0.9); border-color: #64FFDA; }
+        100% { box-shadow: 0 0 6px rgba(0, 200, 255, 0.4); border-color: #00BFFF; }
+    }
+    .card-scada-red {
+        background: linear-gradient(145deg, rgba(60, 10, 10, 0.92), rgba(30, 5, 5, 0.96)) !important;
+        border: 2px solid #FF4B4B !important;
+        animation: pulse-red-glow 1.1s infinite ease-in-out !important;
+        border-radius: 14px;
+        padding: 18px;
+        margin-bottom: 14px;
+    }
+    .card-scada-orange {
+        background: linear-gradient(145deg, rgba(55, 25, 5, 0.92), rgba(28, 12, 2, 0.96)) !important;
+        border: 2px solid #FF8000 !important;
+        animation: pulse-orange-glow 1.5s infinite ease-in-out !important;
+        border-radius: 14px;
+        padding: 18px;
+        margin-bottom: 14px;
+    }
+    .card-scada-yellow {
+        background: linear-gradient(145deg, rgba(48, 42, 5, 0.92), rgba(24, 20, 2, 0.96)) !important;
+        border: 2px solid #FFBB00 !important;
+        animation: pulse-yellow-glow 2.0s infinite ease-in-out !important;
+        border-radius: 14px;
+        padding: 18px;
+        margin-bottom: 14px;
+    }
+    .card-scada-cyan {
+        background: linear-gradient(145deg, rgba(5, 40, 60, 0.92), rgba(2, 20, 35, 0.96)) !important;
+        border: 2px solid #00BFFF !important;
+        animation: pulse-cyan-glow 1.8s infinite ease-in-out !important;
+        border-radius: 14px;
+        padding: 18px;
+        margin-bottom: 14px;
+    }
+    .card-scada-green {
+        background: linear-gradient(145deg, rgba(6, 36, 26, 0.90), rgba(2, 20, 14, 0.96)) !important;
+        border: 1.5px solid #00CC96 !important;
+        box-shadow: 0 0 12px rgba(0, 204, 150, 0.25);
+        border-radius: 14px;
+        padding: 18px;
+        margin-bottom: 14px;
+    }
+    .card-scada-blue {
+        background: linear-gradient(145deg, rgba(8, 28, 48, 0.90), rgba(4, 15, 28, 0.96)) !important;
+        border: 1.5px solid #38BDF8 !important;
+        box-shadow: 0 0 12px rgba(56, 189, 248, 0.25);
+        border-radius: 14px;
+        padding: 18px;
+        margin-bottom: 14px;
+    }
+    /* Faros Parpadeantes (Beacon) de Semáforo Luminoso */
+    @keyframes blink-beacon {
+        0%, 100% { opacity: 1; transform: scale(1); filter: drop-shadow(0 0 8px currentColor); }
+        50% { opacity: 0.25; transform: scale(0.85); filter: drop-shadow(0 0 1px currentColor); }
+    }
+    .beacon-red {
+        display: inline-block; width: 14px; height: 14px; border-radius: 50%;
+        background: #FF4B4B; color: #FF4B4B;
+        animation: blink-beacon 0.7s infinite ease-in-out;
+        box-shadow: 0 0 12px #FF4B4B;
+    }
+    .beacon-orange {
+        display: inline-block; width: 14px; height: 14px; border-radius: 50%;
+        background: #FF8000; color: #FF8000;
+        animation: blink-beacon 1.0s infinite ease-in-out;
+        box-shadow: 0 0 10px #FF8000;
+    }
+    .beacon-yellow {
+        display: inline-block; width: 14px; height: 14px; border-radius: 50%;
+        background: #FFBB00; color: #FFBB00;
+        animation: blink-beacon 1.5s infinite ease-in-out;
+        box-shadow: 0 0 10px #FFBB00;
+    }
+    .beacon-cyan {
+        display: inline-block; width: 14px; height: 14px; border-radius: 50%;
+        background: #00BFFF; color: #00BFFF;
+        animation: blink-beacon 1.4s infinite ease-in-out;
+        box-shadow: 0 0 12px #00BFFF;
+    }
+    .beacon-green {
+        display: inline-block; width: 13px; height: 13px; border-radius: 50%;
+        background: #00CC96; color: #00CC96;
+        box-shadow: 0 0 8px #00CC96;
+    }
+    .beacon-blue {
+        display: inline-block; width: 13px; height: 13px; border-radius: 50%;
+        background: #38BDF8; color: #38BDF8;
+        box-shadow: 0 0 8px #38BDF8;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -3031,9 +3131,429 @@ def mostrar_seccion_edv():
         if fig: st.plotly_chart(fig, use_container_width=True)
 
 # ============================================================
-# 8. PESTAÑAS PRINCIPALES DEL SISTEMA (6 PESTAÑAS)
+# 7.5 PANEL CONSOLIDADO DE ALERTA TEMPRANA & VIGILANCIA DE CUENCAS (SCADA / PMU)
 # ============================================================
-tab_situacion, tab_embalse_2026, tab_radar_72h, tab_series, tab_ia, tab_matematica = st.tabs([
+def render_panel_alertas_tempranas_sat():
+    """
+    Vista consolidada de alta visibilidad tipo Video Wall SCADA y Sala de Crisis (PMU / Alcaldías).
+    Presenta los semáforos en tiempo real con animaciones luminosas parpadeantes, estado técnico de cada
+    estación (operativa / virtual satelital en mantenimiento) y recomendaciones directas hacia Toma Bosconia.
+    """
+    ahora_dt = datetime.now(colombia_tz)
+    ahora_str = ahora_dt.strftime('%Y-%m-%d %H:%M:%S')
+
+    # 1. Consultar estado en vivo del Río Suratá (Majadas - IDEAM 0023197700)
+    info_maj = sincronizar_fews_ideam_surata_bigquery()
+    q_sur_ls = float(info_maj.get('caudal_ls', 6194.0) or 6194.0)
+    h_sur_m = float(info_maj.get('nivel_m', 1.34) or 1.34)
+    q_sur_max1h = float(info_maj.get('caudal_max_1h_ls', q_sur_ls) or q_sur_ls)
+    q_sur_prom24h = float(info_maj.get('caudal_prom_24h_ls', q_sur_ls) or q_sur_ls)
+
+    if q_sur_ls >= 14000.0 or h_sur_m >= 1.66:
+        sur_semaforo = "ROJA"
+        sur_card_class = "card-scada-red"
+        sur_beacon_class = "beacon-red"
+        sur_badge_color = "#FF4B4B"
+        sur_titulo = "🚨 ALERTA ROJA — CRECIENTE CRÍTICA"
+        sur_accion = "Proteger y cerrar compuerta Toma Bosconia (Tránsito inminente: 15–25 min)"
+    elif q_sur_ls >= 9500.0 or h_sur_m >= 1.50:
+        sur_semaforo = "NARANJA"
+        sur_card_class = "card-scada-orange"
+        sur_beacon_class = "beacon-orange"
+        sur_badge_color = "#FF8000"
+        sur_titulo = "⚠️ ALERTA NARANJA — CRECIENTE MAYOR"
+        sur_accion = "Alistar purga en desarenadores y monitoreo de turbiedad en Bosconia"
+    elif q_sur_ls >= 7500.0 or h_sur_m >= 1.41:
+        sur_semaforo = "AMARILLA"
+        sur_card_class = "card-scada-yellow"
+        sur_beacon_class = "beacon-yellow"
+        sur_badge_color = "#FFBB00"
+        sur_titulo = "⚡ AVISO AMARILLO — ASCENSO MODERADO"
+        sur_accion = "Vigilancia limnimétrica preventiva hacia Toma Bosconia"
+    else:
+        sur_semaforo = "VERDE"
+        sur_card_class = "card-scada-green"
+        sur_beacon_class = "beacon-green"
+        sur_badge_color = "#00CC96"
+        sur_titulo = "🟢 CONDICIÓN ESTABLE — CAUDAL BASE"
+        sur_accion = "Operación normal de captación (Tratamiento nominal: 900–1,200 L/s)"
+
+    # 2. Consultar estado en vivo del Embalse de Tona (Radar OTT & Rebosadero)
+    cota_emb = get_cota_embalse_actual_segura()
+    h_rebose = max(0.0, cota_emb - NIVEL_REBOSE_EMBALSE)
+    q_mg_m3s, q_mg_ls = calcular_caudal_morning_glory(cota_emb)
+
+    if cota_emb >= NIVEL_REBOSE_EMBALSE:
+        cm_reb = int(round(h_rebose * 100.0))
+        emb_semaforo = "REBOSE"
+        emb_card_class = "card-scada-cyan"
+        emb_beacon_class = "beacon-cyan"
+        emb_badge_color = "#00BFFF"
+        emb_titulo = f"🌊 REBOSE ACTIVO MORNING GLORY (+{cm_reb} cm)"
+        emb_accion = f"Vertimiento de ~{q_mg_ls:,.0f} L/s por cascadas a piscina de aquietamiento ➔ Puente Tona ➔ Río Suratá"
+    elif cota_emb >= 885.73:
+        cm_falta = max(1, int(round((NIVEL_REBOSE_EMBALSE - cota_emb) * 100.0)))
+        emb_semaforo = "PRE_REBOSE"
+        emb_card_class = "card-scada-yellow"
+        emb_beacon_class = "beacon-yellow"
+        emb_badge_color = "#FFBB00"
+        emb_titulo = f"⚠️ PRE-REBOSE (A {cm_falta} cm de vertedero)"
+        emb_accion = "Llenado acelerado hacia corona de rebose (885.75 msnm)"
+    else:
+        cm_falta = int(round((NIVEL_REBOSE_EMBALSE - cota_emb) * 100.0))
+        emb_semaforo = "NORMAL"
+        emb_card_class = "card-scada-green"
+        emb_beacon_class = "beacon-green"
+        emb_badge_color = "#00CC96"
+        emb_titulo = "🟢 OPERACIÓN NORMAL (AMORTIGUANDO)"
+        emb_accion = f"Vaso detiene y amortigua crecientes de Cuenca Tona (Faltan {cm_falta} cm a rebose)"
+
+    # 3. Consultar lecturas de estaciones meteorológicas
+    def evaluar_estacion_met(id_est, nombre_largo, altitud, cuenca_txt, es_libre_surata=False):
+        df_est = get_last_reading(id_est)
+        lluvia_val = 0.0
+        temp_val = 18.0
+        hum_val = 75.0
+        estado_red = "OPERATIVA"
+        origen_txt = "Transmitiendo en vivo"
+        
+        if not df_est.empty:
+            r = df_est.iloc[0]
+            lluvia_val = float(r.get('precipitacion', 0.0) or 0.0)
+            temp_val = float(r.get('temperatura', 18.0) or 18.0)
+            hum_val = float(r.get('humedad', 75.0) or 75.0)
+            
+            # Detectar si está en ceros / caída física de sensores
+            if (temp_val == 0.0 and hum_val == 0.0) or (id_est in ["La_Mariana", "Yerbabuena"]):
+                sat_info = estimar_sensores_virtuales_satelitales(id_est)
+                if sat_info:
+                    lluvia_val = float(sat_info.get('precipitacion', 0.0) or 0.0)
+                    temp_val = float(sat_info.get('temperatura', temp_val) or temp_val)
+                    hum_val = float(sat_info.get('humedad', hum_val) or hum_val)
+                estado_red = "VIRTUAL_SATELITAL"
+                origen_txt = "Sensor Virtual Satelital Open-Meteo Activo"
+        else:
+            sat_info = estimar_sensores_virtuales_satelitales(id_est)
+            if sat_info:
+                lluvia_val = float(sat_info.get('precipitacion', 0.0) or 0.0)
+                temp_val = float(sat_info.get('temperatura', 18.0) or 18.0)
+                hum_val = float(sat_info.get('humedad', 75.0) or 75.0)
+            estado_red = "VIRTUAL_SATELITAL"
+            origen_txt = "Sensor Virtual Satelital Open-Meteo Activo"
+
+        u = umbrales.get(id_est, {"amarilla": 15.0, "naranja": 25.0, "roja": 40.0})
+        if lluvia_val >= u["roja"]:
+            sem = "ROJA"
+            css = "card-scada-red"
+            beacon_class = "beacon-red"
+            txt_sem = f"🚨 LLUVIA CRÍTICA ({lluvia_val:.1f} mm/h)"
+        elif lluvia_val >= u["naranja"]:
+            sem = "NARANJA"
+            css = "card-scada-orange"
+            beacon_class = "beacon-orange"
+            txt_sem = f"⚠️ LLUVIA FUERTE ({lluvia_val:.1f} mm/h)"
+        elif lluvia_val >= u["amarilla"]:
+            sem = "AMARILLA"
+            css = "card-scada-yellow"
+            beacon_class = "beacon-yellow"
+            txt_sem = f"⚡ LLUVIA SIGNIFICATIVA ({lluvia_val:.1f} mm/h)"
+        else:
+            sem = "VERDE"
+            css = "card-scada-blue" if estado_red == "VIRTUAL_SATELITAL" else "card-scada-green"
+            beacon_class = "beacon-blue" if estado_red == "VIRTUAL_SATELITAL" else "beacon-green"
+            txt_sem = f"🟢 TIEMPO SECO ({lluvia_val:.1f} mm/h)"
+
+        if es_libre_surata:
+            impacto = "⛰️ Drenaje directo a Río Suratá (cauce libre sin presa) ➔ Majadas ➔ Bosconia"
+        elif cota_emb >= NIVEL_REBOSE_EMBALSE:
+            impacto = "🌊 Embalse en rebose: escorrentía pasa sobre vertedero hacia Bosconia"
+        else:
+            impacto = "🛡️ Cuenca Tona amortiguada en vaso del Embalse (Sin impacto aguas abajo)"
+
+        return {
+            "id": id_est,
+            "nombre": nombre_largo,
+            "altitud": altitud,
+            "cuenca": cuenca_txt,
+            "lluvia": lluvia_val,
+            "temp": temp_val,
+            "hum": hum_val,
+            "estado_red": estado_red,
+            "origen_txt": origen_txt,
+            "sem": sem,
+            "css": css,
+            "beacon_class": beacon_class,
+            "txt_sem": txt_sem,
+            "impacto": impacto
+        }
+
+    info_mon = evaluar_estacion_met("Monsalve", "Monsalve (Páramo Santurbán)", "3,339 msnm", "Cuenca Alta Río Suratá", es_libre_surata=True)
+    info_paj = evaluar_estacion_met("El_Pajal", "El Pajal (Ladera Sur Tona)", "2,163 msnm", "Microcuenca Golondrinas / Embalse")
+    info_veg = evaluar_estacion_met("Vegas_del_Quemado", "Vegas del Quemado (Ladera Norte)", "1,759 msnm", "Valle de Arnania / Embalse")
+    info_mar = evaluar_estacion_met("La_Mariana", "La Mariana (Cresta Divisoria)", "2,436 msnm", "Filo Divisorio Río Frío - Tona")
+    info_yer = evaluar_estacion_met("Yerbabuena", "Yerbabuena (Alta Montaña)", "3,380 msnm", "Divisoria Tona / Charta / Vetas")
+
+    # Diagnóstico territorial general más severo
+    estados_red = [sur_semaforo, emb_semaforo, info_mon["sem"], info_paj["sem"], info_veg["sem"]]
+    if "ROJA" in estados_red:
+        banner_bg = "linear-gradient(135deg, rgba(80, 10, 10, 0.95), rgba(40, 5, 5, 0.98))"
+        banner_border = "#FF4B4B"
+        banner_icono = "🚨"
+        banner_titulo = "CONDICIÓN CRÍTICA EN RED DE CUENCAS — ALERTA ROJA ACTIVA"
+        banner_sub = "Creciente confirmada en Río Suratá o precipitaciones extremas. Coordinación inmediata con Puesto de Mando Unificado (PMU) y Bocatoma Bosconia."
+    elif "NARANJA" in estados_red or emb_semaforo == "REBOSE":
+        banner_bg = "linear-gradient(135deg, rgba(70, 35, 5, 0.95), rgba(35, 15, 2, 0.98))"
+        banner_border = "#FF8000"
+        banner_icono = "⚠️"
+        banner_titulo = "VIGILANCIA HIDROLÓGICA ACTIVA — ALERTA NARANJA / REBOSE"
+        banner_sub = "Embalse en cota de rebose o lluvias de consideración en cuencas aportantes. Alistar purga en desarenadores e inspección de rejillas."
+    elif "AMARILLA" in estados_red or emb_semaforo == "PRE_REBOSE":
+        banner_bg = "linear-gradient(135deg, rgba(60, 50, 5, 0.95), rgba(30, 25, 2, 0.98))"
+        banner_border = "#FFBB00"
+        banner_icono = "⚡"
+        banner_titulo = "AVISO DE PRECAUCIÓN — MONITOREO RUTINARIO REFORZADO"
+        banner_sub = "Ascenso moderado de caudales o proximidad a cota de vertimiento. Sin afectación inmediata sobre captaciones."
+    else:
+        banner_bg = "linear-gradient(135deg, rgba(5, 45, 30, 0.92), rgba(2, 25, 15, 0.98))"
+        banner_border = "#00CC96"
+        banner_icono = "🟢"
+        banner_titulo = "CONDICIÓN HIDROLÓGICA NORMAL — TIEMPO SECO EN CUENCAS"
+        banner_sub = "Caudales en régimen base estable, captación óptima en Toma Bosconia y red de telemetría operando 24/7."
+
+    st.markdown(f"""
+    <div style="background: {banner_bg}; border-left: 6px solid {banner_border}; border-radius: 12px; padding: 18px 22px; margin-bottom: 20px; box-shadow: 0 4px 18px rgba(0,0,0,0.35);">
+        <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;">
+            <div style="display: flex; align-items: center; gap: 14px;">
+                <span style="font-size: 32px;">{banner_icono}</span>
+                <div>
+                    <h3 style="color: #FFFFFF; margin: 0; font-size: 19px; font-weight: 800; letter-spacing: -0.3px;">
+                        {banner_titulo}
+                    </h3>
+                    <div style="color: #E2E8F0; font-size: 13px; margin-top: 3px;">
+                        {banner_sub}
+                    </div>
+                </div>
+            </div>
+            <div style="text-align: right;">
+                <span style="background: rgba(255,255,255,0.15); color: #FFFFFF; padding: 4px 12px; border-radius: 20px; font-size: 11px; font-weight: 800; border: 1px solid rgba(255,255,255,0.3);">
+                    amb • GESTIÓN DEL RIESGO
+                </span>
+                <div style="color: #CBD5E1; font-size: 11.5px; margin-top: 4px;">
+                    🕐 Actualizado: {ahora_str} COT
+                </div>
+            </div>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    # -------------------------------------------------------------
+    # FILA 1: NODOS FLUVIALES PRINCIPALES (SURATÁ MAJADAS & EMBALSE TONA)
+    # -------------------------------------------------------------
+    st.markdown("### 🌊 1. Nodos Hidrológicos Estratégicos (Río Suratá & Embalse Tona)")
+    col_sur, col_emb = st.columns(2)
+
+    with col_sur:
+        st.markdown(f"""
+        <div class="{sur_card_class}">
+            <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 10px;">
+                <div>
+                    <div style="color: #64FFDA; font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: 1px;">
+                        ESTACIÓN FLUVIAL PRINCIPAL • FEWS IDEAM 0023197700
+                    </div>
+                    <h3 style="color: #FFFFFF; margin: 2px 0 0 0; font-size: 20px; font-weight: 800;">
+                        🏞️ Río Suratá — Majadas
+                    </h3>
+                    <div style="color: #94A3B8; font-size: 11.5px;">Sector Majadas • Aguas abajo Puente Tona • ~1.8 km a Toma Bosconia</div>
+                </div>
+                <span class="badge-status" style="background: rgba(0, 204, 150, 0.2); color: #00CC96; border: 1px solid #00CC96; font-size: 10px; display: inline-flex; align-items: center; gap: 6px;">
+                    <span class="{sur_beacon_class}"></span> OPERATIVA (En vivo)
+                </span>
+            </div>
+            <div style="background: rgba(0,0,0,0.35); border-radius: 10px; padding: 12px; margin-bottom: 12px; display: grid; grid-template-columns: 1fr 1fr; gap: 10px; border: 1px solid rgba(255,255,255,0.08);">
+                <div>
+                    <div style="color: #94A3B8; font-size: 11px; text-transform: uppercase;">⚡ Caudal Actual (amb)</div>
+                    <div style="color: #FFFFFF; font-size: 26px; font-weight: 900; line-height: 1.1;">{q_sur_ls:,.0f} <span style="font-size: 14px; font-weight: 600; color: #64FFDA;">L/s</span></div>
+                    <div style="color: #64FFDA; font-size: 11px;">{q_sur_ls/1000.0:.2f} m³/s • Mira: <strong>{h_sur_m:.2f} m</strong></div>
+                </div>
+                <div>
+                    <div style="color: #94A3B8; font-size: 11px; text-transform: uppercase;">🔼 Pico Máx. Hora [0231]</div>
+                    <div style="color: #FFFFFF; font-size: 26px; font-weight: 900; line-height: 1.1;">{q_sur_max1h:,.0f} <span style="font-size: 14px; font-weight: 600; color: #F59E0B;">L/s</span></div>
+                    <div style="color: #94A3B8; font-size: 11px;">Promedio 24h: <strong>{q_sur_prom24h:,.0f} L/s</strong></div>
+                </div>
+            </div>
+            <div style="display: flex; align-items: center; justify-content: space-between; padding: 8px 12px; border-radius: 8px; background: rgba(0,0,0,0.25); border-left: 4px solid {sur_badge_color};">
+                <div>
+                    <div style="display: flex; align-items: center; gap: 8px;">
+                        <span class="{sur_beacon_class}"></span>
+                        <strong style="color: {sur_badge_color}; font-size: 12.5px;">{sur_titulo}</strong>
+                    </div>
+                    <div style="color: #CBD5E1; font-size: 11.5px; margin-top: 2px;">{sur_accion}</div>
+                </div>
+                <div style="text-align: right; color: #64FFDA; font-size: 11px; font-weight: 700; white-space: nowrap;">
+                    ⏱️ Tránsito Bosconia: 15–25 min
+                </div>
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+
+    with col_emb:
+        st.markdown(f"""
+        <div class="{emb_card_class}">
+            <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 10px;">
+                <div>
+                    <div style="color: #38BDF8; font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: 1px;">
+                        ESTRUCTURA DE REGULACIÓN • RADAR OTT
+                    </div>
+                    <h3 style="color: #FFFFFF; margin: 2px 0 0 0; font-size: 20px; font-weight: 800;">
+                        🌊 Embalse de Tona & Rebosadero
+                    </h3>
+                    <div style="color: #94A3B8; font-size: 11.5px;">Cresta Morning Glory: 885.75 msnm • Entrega a Cascadas y Piscina de Aquietamiento</div>
+                </div>
+                <span class="badge-status" style="background: rgba(0, 204, 150, 0.2); color: #00CC96; border: 1px solid #00CC96; font-size: 10px; display: inline-flex; align-items: center; gap: 6px;">
+                    <span class="{emb_beacon_class}"></span> OPERATIVA (En vivo)
+                </span>
+            </div>
+            <div style="background: rgba(0,0,0,0.35); border-radius: 10px; padding: 12px; margin-bottom: 12px; display: grid; grid-template-columns: 1fr 1fr; gap: 10px; border: 1px solid rgba(255,255,255,0.08);">
+                <div>
+                    <div style="color: #94A3B8; font-size: 11px; text-transform: uppercase;">🌊 Cota Calibrada (-4 cm)</div>
+                    <div style="color: #FFFFFF; font-size: 26px; font-weight: 900; line-height: 1.1;">{cota_emb:.2f} <span style="font-size: 14px; font-weight: 600; color: #38BDF8;">msnm</span></div>
+                    <div style="color: #38BDF8; font-size: 11px;">{f'+{h_rebose*100:.1f} cm vs Rebose' if h_rebose > 0 else f'a -{abs(885.75-cota_emb)*100:.1f} cm de rebose'}</div>
+                </div>
+                <div>
+                    <div style="color: #94A3B8; font-size: 11px; text-transform: uppercase;">🌊 Rebose Morning Glory</div>
+                    <div style="color: #FFFFFF; font-size: 26px; font-weight: 900; line-height: 1.1;">{q_mg_ls:,.0f} <span style="font-size: 14px; font-weight: 600; color: #38BDF8;">L/s</span></div>
+                    <div style="color: #94A3B8; font-size: 11px;">Salida CRC Bosconia: <strong>200 L/s</strong></div>
+                </div>
+            </div>
+            <div style="display: flex; align-items: center; justify-content: space-between; padding: 8px 12px; border-radius: 8px; background: rgba(0,0,0,0.25); border-left: 4px solid {emb_badge_color};">
+                <div>
+                    <div style="display: flex; align-items: center; gap: 8px;">
+                        <span class="{emb_beacon_class}"></span>
+                        <strong style="color: {emb_badge_color}; font-size: 12.5px;">{emb_titulo}</strong>
+                    </div>
+                    <div style="color: #CBD5E1; font-size: 11.5px; margin-top: 2px;">{emb_accion}</div>
+                </div>
+                <div style="text-align: right; color: #38BDF8; font-size: 11px; font-weight: 700; white-space: nowrap;">
+                    {f'Descarga Activa: ~{q_mg_m3s:.2f} m³/s' if q_mg_ls > 0 else 'Capacidad 100% útil'}
+                </div>
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+
+    # -------------------------------------------------------------
+    # FILA 2: ESTACIONES PLUVIOMÉTRICAS DE CUENCA (SURATÁ ALTO & CUENCA TONA)
+    # -------------------------------------------------------------
+    st.markdown("### 🌧️ 2. Red Meteorológica & Subcuencas Aportantes")
+    col_m1, col_m2, col_m3 = st.columns(3)
+
+    for col_target, info_i in [(col_m1, info_mon), (col_m2, info_paj), (col_m3, info_veg)]:
+        with col_target:
+            st.markdown(f"""
+            <div class="{info_i['css']}">
+                <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 8px;">
+                    <div>
+                        <div style="color: #94A3B8; font-size: 10px; font-weight: 800; text-transform: uppercase;">{info_i['cuenca']}</div>
+                        <h4 style="color: #FFFFFF; margin: 2px 0 0 0; font-size: 16px; font-weight: 800;">{info_i['nombre']}</h4>
+                        <div style="color: #64748B; font-size: 11px;">Altitud: {info_i['altitud']}</div>
+                    </div>
+                    <span class="badge-status" style="background: rgba(0, 204, 150, 0.2); color: #00CC96; border: 1px solid #00CC96; font-size: 9.5px; display: inline-flex; align-items: center; gap: 6px;">
+                        <span class="{info_i['beacon_class']}"></span> {info_i['estado_red']}
+                    </span>
+                </div>
+                <div style="background: rgba(0,0,0,0.3); border-radius: 8px; padding: 10px; margin-bottom: 10px; display: flex; justify-content: space-between; align-items: center;">
+                    <div>
+                        <div style="color: #94A3B8; font-size: 10.5px;">Lluvia Última Hora</div>
+                        <div style="color: #FFFFFF; font-size: 22px; font-weight: 900;">{info_i['lluvia']:.1f} <span style="font-size: 12px; color: #64FFDA;">mm/h</span></div>
+                    </div>
+                    <div style="text-align: right;">
+                        <div style="color: #94A3B8; font-size: 10.5px;">Temperatura / Hum</div>
+                        <div style="color: #CBD5E1; font-size: 13px; font-weight: 700;">{info_i['temp']:.1f}°C • {info_i['hum']:.0f}%</div>
+                    </div>
+                </div>
+                <div style="font-size: 11px; color: #CBD5E1; background: rgba(0,0,0,0.2); padding: 6px 10px; border-radius: 6px;">
+                    <div style="display: flex; align-items: center; gap: 6px;">
+                        <span class="{info_i['beacon_class']}"></span>
+                        <strong>Semáforo:</strong> {info_i['txt_sem']}
+                    </div>
+                    <div style="color: #94A3B8; margin-top: 2px;">{info_i['impacto']}</div>
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+
+    # -------------------------------------------------------------
+    # FILA 3: ESTACIONES CON RESPALDO VIRTUAL SATELITAL (OPEN-METEO)
+    # -------------------------------------------------------------
+    st.markdown("### 🛰️ 3. Estaciones en Mantenimiento con Sensor Virtual Satelital Activo (Open-Meteo)")
+    col_sat1, col_sat2 = st.columns(2)
+
+    for col_s_target, info_s in [(col_sat1, info_mar), (col_sat2, info_yer)]:
+        with col_s_target:
+            st.markdown(f"""
+            <div class="{info_s['css']}">
+                <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 8px;">
+                    <div>
+                        <div style="color: #38BDF8; font-size: 10px; font-weight: 800; text-transform: uppercase;">RESPALDO METEOROLÓGICO SATELITAL</div>
+                        <h4 style="color: #FFFFFF; margin: 2px 0 0 0; font-size: 16px; font-weight: 800;">{info_s['nombre']}</h4>
+                        <div style="color: #94A3B8; font-size: 11px;">{info_s['cuenca']} • Altitud: {info_s['altitud']}</div>
+                    </div>
+                    <span class="badge-status" style="background: rgba(56, 189, 248, 0.2); color: #38BDF8; border: 1px solid #38BDF8; font-size: 9.5px; display: inline-flex; align-items: center; gap: 6px;">
+                        <span class="{info_s['beacon_class']}"></span> EN MANTENIMIENTO (Sensor Virtual Satelital Open-Meteo Activo)
+                    </span>
+                </div>
+                <div style="background: rgba(0,0,0,0.3); border-radius: 8px; padding: 10px; margin-bottom: 10px; display: flex; justify-content: space-between; align-items: center;">
+                    <div>
+                        <div style="color: #94A3B8; font-size: 10.5px;">Precipitación Satelital Estimada</div>
+                        <div style="color: #FFFFFF; font-size: 22px; font-weight: 900;">{info_s['lluvia']:.1f} <span style="font-size: 12px; color: #38BDF8;">mm/h</span></div>
+                    </div>
+                    <div style="text-align: right;">
+                        <div style="color: #94A3B8; font-size: 10.5px;">Modelo Satelital</div>
+                        <div style="color: #CBD5E1; font-size: 13px; font-weight: 700;">{info_s['temp']:.1f}°C • {info_s['hum']:.0f}%</div>
+                    </div>
+                </div>
+                <div style="font-size: 11px; color: #CBD5E1; background: rgba(0,0,0,0.2); padding: 6px 10px; border-radius: 6px;">
+                    <div style="display: flex; align-items: center; gap: 6px;">
+                        <span class="{info_s['beacon_class']}"></span>
+                        <strong>Condición:</strong> {info_s['txt_sem']}
+                    </div>
+                    <div style="color: #38BDF8; margin-top: 2px;">{info_s['impacto']}</div>
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+
+    # -------------------------------------------------------------
+    # FILA 4: PROTOCOLO OPERATIVO PMU / SALA DE CONTROL SCADA
+    # -------------------------------------------------------------
+    st.markdown("### 📋 4. Protocolo Operativo y Recomendaciones Institucionales (PMU / Sala de Control)")
+    st.markdown(f"""
+    <div style="background: #0B192C; border: 1px solid #1E3A8A; border-radius: 12px; padding: 16px 20px; font-size: 12.5px; color: #E2E8F0;">
+        <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px;">
+            <div>
+                <strong style="color: #64FFDA;">🚰 BOCATOMA BOSCONIA (PTAP):</strong><br>
+                • Demanda nominal: <strong>900 a 1,200 L/s</strong>.<br>
+                • Estado de captación actual: <strong>{sur_accion}</strong>.<br>
+                • Tiempo de viaje desde Majadas: <strong>15 a 25 minutos</strong>.
+            </div>
+            <div>
+                <strong style="color: #38BDF8;">🌊 EMBALSE DE TONA:</strong><br>
+                • Extracción confirmada CRC: <strong>200 L/s</strong>.<br>
+                • Vertimiento Morning Glory: <strong>~{q_mg_ls:,.0f} L/s ({q_mg_m3s:.2f} m³/s)</strong>.<br>
+                • Capacidad de retención: <strong>{'En rebose (Sin déficit)' if cota_emb >= 885.75 else f'Amortiguando (-{abs(885.75-cota_emb)*100:.1f} cm)'}</strong>.
+            </div>
+            <div>
+                <strong style="color: #F59E0B;">📞 LÍNEAS DE COORDINACIÓN:</strong><br>
+                • Contact Center amb: <strong>(607) 6898080</strong> / <strong>3330333356</strong>.<br>
+                • Coordinación Sala de Control SCADA: Canal telemétrico 24/7.<br>
+                • Notificación SMS: <strong>07:00 AM diario & Vigilancia cada 10 min</strong>.
+            </div>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+# ============================================================
+# 8. PESTAÑAS PRINCIPALES DEL SISTEMA (7 PESTAÑAS)
+# ============================================================
+tab_resumen_alertas, tab_situacion, tab_embalse_2026, tab_radar_72h, tab_series, tab_ia, tab_matematica = st.tabs([
+    "🌐 Panel de Alerta Temprana y Vigilancia de Cuencas",
     "📊 Situación Actual", 
     "🌊 Gestión Embalse & Sequía 2026", 
     "🛰️ Radar Satelital & Pronóstico 72h",
@@ -3041,6 +3561,12 @@ tab_situacion, tab_embalse_2026, tab_radar_72h, tab_series, tab_ia, tab_matemati
     "🤖 Asistente IA MIMAT-C",
     "📐 Fundamento Matemático & Auditoría"
 ])
+
+# ------------------------------------------------------------
+# TAB 0: PANEL DE ALERTA TEMPRANA Y VIGILANCIA DE CUENCAS
+# ------------------------------------------------------------
+with tab_resumen_alertas:
+    render_panel_alertas_tempranas_sat()
 
 # ------------------------------------------------------------
 # TAB 1: SITUACIÓN ACTUAL
