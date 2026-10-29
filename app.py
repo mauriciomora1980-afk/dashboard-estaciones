@@ -303,7 +303,7 @@ AREAS_REF = np.array([0.00, 8.50, 14.20, 18.60, 24.50, 30.80, 37.20, 44.60, 46.2
 
 NIVEL_MINIMO_TECNICO = 841.00
 NIVEL_REBOSE_EMBALSE = 885.75
-OFFSET_RADAR_EMBALSE = 0.05 # Desfase certificado con descarga in situ del Morning Glory (5 cm)
+OFFSET_RADAR_EMBALSE = 0.04 # Desfase certificado por Ing. Angarita (-4 cm a la mira OTT del Embalse)
 VOLUMEN_UTIL_MAX_HM3 = 12.11
 VOLUMEN_MUERTO_HM3 = 1.40
 
@@ -318,32 +318,64 @@ def interpolar_area(c):
     return float(np.interp(c, COTAS_REF, AREAS_REF))
 
 def calcular_caudal_morning_glory(cota_real: float):
+    """
+    Calcula el caudal del vertedero Morning Glory (Embalse Tona, cresta 885.75 msnm):
+    Nota de Auditoría: La curva original As-Built (CONALVÍAS/INAR) para láminas milimétricas
+    (1 a 4 cm) sobreestima fuertemente el caudal (~2,234 L/s a +3.4 cm), dando incluso más que
+    el caudal total medido aguas abajo en el Río Suratá (Las Majadas, ~2,000 L/s).
+    Por ello, mientras se calibra empíricamente con la mira de Las Majadas, se aplica la ley física
+    de vertedero circular de pared delgada con contracción superficial para láminas bajas (H <= 0.10 m):
+        Q_calibracion (m³/s) ≈ 16.5 * (H ^ 1.5)
+    """
+    h_sobre_vertedero = max(0.0, cota_real - NIVEL_REBOSE_EMBALSE)
+    if h_sobre_vertedero <= 0.0:
+        return 0.0, 0.0
+    if h_sobre_vertedero <= 0.12:
+        # Ley física de lámina baja en proceso de calibración con Las Majadas (a +3.4 cm -> ~104 L/s)
+        q_m3_s = float(16.5 * (h_sobre_vertedero ** 1.5))
+    else:
+        q_m3_s = float(np.interp(h_sobre_vertedero, COTAS_MG_REF, CAUDAL_MG_REF))
+    q_ls = q_m3_s * 1000.0
+    return round(q_m3_s, 3), round(q_ls, 1)
+
+def calcular_caudal_morning_glory_teorico_descalibrado(cota_real: float):
+    """
+    Retorna el valor crudo de la tabla teórica original sin calibrar (ej. ~2,234 L/s a 885.78 msnm)
+    exclusivamente como referencia de auditoría para evidenciar la sobreestimación frente a Las Majadas.
+    """
     h_sobre_vertedero = max(0.0, cota_real - NIVEL_REBOSE_EMBALSE)
     if h_sobre_vertedero <= 0.0:
         return 0.0, 0.0
     q_m3_s = float(np.interp(h_sobre_vertedero, COTAS_MG_REF, CAUDAL_MG_REF))
-    q_ls = q_m3_s * 1000.0
-    return q_m3_s, q_ls
+    return round(q_m3_s, 3), round(q_m3_s * 1000.0, 1)
 
 # ============================================================
 # 3.1 MODELO HIDRÁULICO RÍO SURATÁ — SECTOR LAS MAJADAS (RADAR OTT + MIRA)
-# Ecuación Oficial de la Mira: Q (m³/s) = 1.2455 * (H + 0.13) ^ 4.1635
+# Calibración Oficial (Confirmada por Ing. Carlos / amb):
+#   1. Nivel Mira amb (m) = Nivel_Sensor_IDEAM (m) - 0.04 m  (-4 cm al dato que entrega el IDEAM)
+#   2. Ecuación Oficial de la Mira: Q (m³/s) = 1.2455 * (H_mira + 0.13) ^ 4.1635
 # ============================================================
 COEF_A_MAJADAS = 1.2455
 OFFSET_H0_MAJADAS = 0.13
+OFFSET_SENSOR_IDEAM_MAJADAS = 0.04         # -4 cm aplicados directamente al dato que entrega el sensor del IDEAM (confirmado por Ing. Carlos)
 EXP_B_MAJADAS = 4.1635
-CAUDAL_PROMEDIO_BASE_MAJADAS_LS = 2000.0   # Caudal medio habitual en Las Majadas (~2,000 L/s; H ≈ 0.991 m)
+CAUDAL_PROMEDIO_BASE_MAJADAS_LS = 2000.0   # Caudal medio base de referencia en Las Majadas (~2,000 L/s)
+NIVEL_PROMEDIO_BASE_MAJADAS_M = 1.031      # Nivel Sensor IDEAM (~1.031 m -> Mira amb 0.991 m -> Q ≈ 2,000 L/s)
 DEMANDA_MEDIA_TOMA_BOSCONIA_LS = 1050.0    # Rango operativo PTAP Bosconia: 900 a 1,200 L/s
 
-def calcular_caudal_mira_majadas(h_metros: float):
+def calcular_caudal_mira_majadas(h_metros: float, aplicar_offset_ideam: bool = False):
     """
     Calcula el caudal instantáneo Q en el Río Suratá (sector Las Majadas)
-    aplicando la ecuación oficial de curva de gasto:
-        Q (m³/s) = 1.2455 * (H + 0.13) ^ 4.1635
+    aplicando la ecuación oficial de curva de gasto de la mira:
+        Q (m³/s) = 1.2455 * (H_mira + 0.13) ^ 4.1635
+    Si `aplicar_offset_ideam=True`, descuenta primero los 4 cm (0.04 m) al dato entregado por el IDEAM:
+        H_mira = H_sensor_IDEAM - 0.04
     Retorna: (q_m3_s, q_ls)
     """
     try:
         h_val = float(h_metros)
+        if aplicar_offset_ideam:
+            h_val = h_val - OFFSET_SENSOR_IDEAM_MAJADAS
         if np.isnan(h_val) or h_val <= -OFFSET_H0_MAJADAS or h_val <= 0.02:
             return 0.0, 0.0
         h_ef = max(0.0, h_val + OFFSET_H0_MAJADAS)
@@ -356,8 +388,7 @@ def calcular_caudal_mira_majadas(h_metros: float):
 def calcular_nivel_desde_caudal_majadas(q_ls: float) -> float:
     """
     Función inversa de la mira de Las Majadas:
-        H (m) = ( (Q_m3s / 1.2455) ^ (1 / 4.1635) ) - 0.13
-    Para Q = 2,000 L/s (2.0 m³/s) -> H = 0.991 m.
+        H_mira (m) = ( (Q_m3s / 1.2455) ^ (1 / 4.1635) ) - 0.13
     """
     try:
         q_m3_s = max(0.01, float(q_ls) / 1000.0)
@@ -368,46 +399,48 @@ def calcular_nivel_desde_caudal_majadas(q_ls: float) -> float:
 
 def obtener_semaforo_hidrologico_surata(q_ls: float, h_m: float, delta_h_30m: float = 0.0) -> dict:
     """
-    Semáforo Hidrológico Operativo para la Estación Río Suratá — Sector Las Majadas
+    Semáforo Hidrológico Operativo para la Estación Río Suratá — Sector Las Majadas (CNE 0023197700)
     (Ubicada ~1.8 km aguas arriba de la Toma Bosconia, tiempo de tránsito: 15 a 25 min).
+    `h_m` corresponde al Nivel Mira Calibrado (Nivel IDEAM - 0.04 m).
     """
-    if q_ls >= 8000.0 or h_m >= 1.43 or delta_h_30m >= 0.25:
+    h_ideam_ref = h_m + OFFSET_SENSOR_IDEAM_MAJADAS
+    if q_ls >= 14000.0 or h_m >= 1.66 or delta_h_30m >= 0.25:
         return {
             "icono": "🚨",
             "titulo": "ALERTA ROJA — CRECIENTE SÚBITA / AVENIDA TORRENCIAL",
-            "mensaje": f"Creciente severa en Las Majadas: {q_ls:,.0f} L/s ({q_ls/1000.0:.2f} m³/s | Mira: {h_m:.2f} m). Arribo estimado a Toma Bosconia en 15–25 min.",
+            "mensaje": f"Creciente severa en Las Majadas: {q_ls:,.0f} L/s ({q_ls/1000.0:.2f} m³/s | Mira amb: {h_m:.2f} m • Sensor IDEAM: {h_ideam_ref:.2f} m). Arribo a Toma Bosconia en 15–25 min.",
             "accion": "Activar protocolo de protección de bocatoma Bosconia, cierre preventivo de compuertas y purga continua.",
             "color": "#FF4B4B",
             "text_color": "#FFFFFF",
             "vel": "0.6s"
         }
-    elif q_ls >= 4500.0 or h_m >= 1.23 or delta_h_30m >= 0.15:
+    elif q_ls >= 9000.0 or h_m >= 1.48 or delta_h_30m >= 0.15:
         return {
             "icono": "⚠️",
             "titulo": "ALERTA NARANJA — CRECIENTE IMPORTANTE EN TRÁNSITO",
-            "mensaje": f"Ascenso fuerte de caudal en Las Majadas: {q_ls:,.0f} L/s ({q_ls/1000.0:.2f} m³/s | Mira: {h_m:.2f} m).",
+            "mensaje": f"Caudal de aguas altas en Las Majadas: {q_ls:,.0f} L/s ({q_ls/1000.0:.2f} m³/s | Mira amb: {h_m:.2f} m • Sensor IDEAM: {h_ideam_ref:.2f} m).",
             "accion": "Inspección inmediata de rejillas, alistamiento de desarenadores y dosificación por alta turbiedad en Toma Bosconia (15–25 min).",
             "color": "#FF9933",
             "text_color": "#111111",
             "vel": "1.2s"
         }
-    elif q_ls >= 3000.0 or h_m >= 1.11:
+    elif q_ls >= 6500.0 or h_m >= 1.36:
         return {
             "icono": "🟡",
-            "titulo": "AVISO AMARILLO — CAUDAL ALTO / VIGILANCIA DE TURBIEDAD",
-            "mensaje": f"Caudal superior al promedio en Las Majadas: {q_ls:,.0f} L/s ({q_ls/1000.0:.2f} m³/s | Mira: {h_m:.2f} m).",
-            "accion": "Mayor escorrentía en la cuenca del Río Suratá; monitorear evolución de color y turbiedad en Toma Bosconia.",
+            "titulo": "AVISO AMARILLO — CAUDAL MEDIO-ALTO / VIGILANCIA DE TURBIEDAD",
+            "mensaje": f"Caudal en descenso o ascenso moderado en Las Majadas: {q_ls:,.0f} L/s ({q_ls/1000.0:.2f} m³/s | Mira amb: {h_m:.2f} m • Sensor IDEAM: {h_ideam_ref:.2f} m).",
+            "accion": "Monitorear evolución de color y turbiedad en Toma Bosconia (Extracción Embalse Tona actual: 200 L/s).",
             "color": "#FFBB00",
             "text_color": "#111111",
             "vel": "2.0s"
         }
-    elif q_ls >= 1300.0:
+    elif q_ls >= 1400.0:
         rem_ls = max(0.0, q_ls - DEMANDA_MEDIA_TOMA_BOSCONIA_LS)
         return {
             "icono": "🟢",
             "titulo": "VERDE — CAUDAL CONFIABLE ÓPTIMO (OPERACIÓN NORMAL)",
-            "mensaje": f"Caudal estable en Las Majadas: {q_ls:,.0f} L/s ({q_ls/1000.0:.2f} m³/s | Mira: {h_m:.2f} m | Promedio base ~2,000 L/s).",
-            "accion": f"Cubre al 100% la captación de PTAP Bosconia (900–1,200 L/s) dejando ~{rem_ls:,.0f} L/s de caudal remanente aguas abajo.",
+            "mensaje": f"Caudal operativo estable en Las Majadas: {q_ls:,.0f} L/s ({q_ls/1000.0:.2f} m³/s | Mira amb: {h_m:.2f} m • Sensor IDEAM: {h_ideam_ref:.2f} m).",
+            "accion": f"Cubre al 100% la captación de PTAP Bosconia (900–1,200 L/s) dejando ~{rem_ls:,.0f} L/s de caudal remanente aguas abajo (Suplemento CRC Embalse: 200 L/s).",
             "color": "#00CC96",
             "text_color": "#111111",
             "vel": "0s"
@@ -416,8 +449,8 @@ def obtener_semaforo_hidrologico_surata(q_ls: float, h_m: float, delta_h_30m: fl
         return {
             "icono": "🔵",
             "titulo": "AVISO AZUL — ESTIAJE / CAUDAL REDUCIDO",
-            "mensaje": f"Caudal bajo en Las Majadas: {q_ls:,.0f} L/s ({q_ls/1000.0:.2f} m³/s | Mira: {h_m:.2f} m) frente a la demanda habitual de PTAP Bosconia (900–1,200 L/s).",
-            "accion": "Vigilar niveles mínimos en bocatoma Bosconia y mantener suplemento activo por Válvula CRC del Embalse de Tona.",
+            "mensaje": f"Caudal bajo en Las Majadas: {q_ls:,.0f} L/s ({q_ls/1000.0:.2f} m³/s | Mira amb: {h_m:.2f} m • Sensor IDEAM: {h_ideam_ref:.2f} m) frente a la demanda de PTAP Bosconia (900–1,200 L/s).",
+            "accion": "Vigilar niveles mínimos en bocatoma Bosconia y ampliar suplemento por Válvula CRC del Embalse de Tona.",
             "color": "#00B4D8",
             "text_color": "#FFFFFF",
             "vel": "0s"
@@ -426,18 +459,21 @@ def obtener_semaforo_hidrologico_surata(q_ls: float, h_m: float, delta_h_30m: fl
 def filtrar_nivel_ott_majadas_robusto(df_sur_hist):
     """
     Acondicionador Digital de Señal Hidráulica para el Radar OTT (versión anterior) en Las Majadas:
-    1. Filtra ceros (0.00 m por caída de enlace FEWS IDEAM) y lecturas fuera de rango físico (0.10 m a 4.50 m).
-    2. Aplica filtro anti-espuma / anti-spike sobre el nivel H ANTES de elevar a la potencia 4.1635:
-       si aparece un salto aislado > 18 cm en 10 min que no se sostiene, suaviza con mediana local.
-    3. Calcula el caudal confiable Q (m³/s y L/s) con Q = 1.2455 * (H_limpio + 0.13)^4.1635.
+    1. Toma la lectura cruda entregada por el sensor automático del IDEAM (`temperatura`) y le descuenta
+       exactamente 4 cm (-0.04 m, confirmado por Ing. Carlos) para homologarla a la mira del amb:
+           H_mira = H_sensor_IDEAM - 0.04
+    2. Aplica filtro anti-espuma / anti-spike sobre el nivel H ANTES de elevar a la potencia 4.1635.
+    3. Calcula el caudal confiable Q (m³/s y L/s) con Q = 1.2455 * (H_mira + 0.13)^4.1635.
     """
     if df_sur_hist.empty:
         return df_sur_hist
     df_s = df_sur_hist.sort_values('timestamp').copy()
-    h_raw = pd.to_numeric(df_s.get('temperatura', pd.Series(dtype=float)), errors='coerce')
+    h_raw_ideam = pd.to_numeric(df_s.get('temperatura', pd.Series(dtype=float)), errors='coerce')
     # Si por escala histórica algún registro vino en cm (> 15), convertir a metros
-    h_raw = h_raw.apply(lambda x: (x / 100.0) if (pd.notna(x) and 15.0 < x <= 450.0) else x)
-    h_valid = h_raw.apply(lambda h: h if (pd.notna(h) and 0.08 <= h <= 4.50) else np.nan)
+    h_raw_ideam = h_raw_ideam.apply(lambda x: (x / 100.0) if (pd.notna(x) and 15.0 < x <= 450.0) else x)
+    # Aplicar el descuento oficial de -4 cm (-0.04 m) al dato que entrega el IDEAM
+    h_mira_cal = h_raw_ideam - OFFSET_SENSOR_IDEAM_MAJADAS
+    h_valid = h_mira_cal.apply(lambda h: h if (pd.notna(h) and 0.08 <= h <= 4.50) else np.nan)
 
     niveles_limpios = []
     vals = list(h_valid)
@@ -445,17 +481,15 @@ def filtrar_nivel_ott_majadas_robusto(df_sur_hist):
     h_prev = None
     for i, h in enumerate(vals):
         if pd.isna(h):
-            niveles_limpios.append(h_prev if h_prev is not None else 0.991)
+            niveles_limpios.append(h_prev if h_prev is not None else 1.34)
         elif h_prev is None:
             niveles_limpios.append(h)
             h_prev = h
         else:
             salto = abs(h - h_prev)
             if salto > 0.18:
-                # Verificar si la lectura siguiente confirma la creciente o si fue espuma puntual del Radar OTT
                 h_next = vals[i + 1] if (i + 1 < n_v and pd.notna(vals[i + 1])) else None
                 if h_next is not None and abs(h_next - h_prev) < 0.08:
-                    # Eco transitorio / espuma de 1 sola muestra -> mantener continuidad
                     niveles_limpios.append(round(0.7 * h_prev + 0.3 * h, 3))
                 else:
                     niveles_limpios.append(h)
@@ -464,13 +498,13 @@ def filtrar_nivel_ott_majadas_robusto(df_sur_hist):
                 niveles_limpios.append(h)
                 h_prev = h
 
-    df_s['nivel_crudo_m'] = h_raw.round(3)
+    df_s['nivel_crudo_m'] = h_raw_ideam.round(3)
     df_s['nivel_m_crudo'] = df_s['nivel_crudo_m']
     df_s['nivel_mira_m'] = [round(float(x), 3) for x in niveles_limpios]
     df_s['nivel_m_filtrado'] = df_s['nivel_mira_m']
-    df_s['caudal_m3s'] = [calcular_caudal_mira_majadas(x)[0] for x in df_s['nivel_mira_m']]
+    df_s['caudal_m3s'] = [calcular_caudal_mira_majadas(x, aplicar_offset_ideam=False)[0] for x in df_s['nivel_mira_m']]
     df_s['caudal_m3s_filtrado'] = df_s['caudal_m3s']
-    df_s['caudal_ls'] = [calcular_caudal_mira_majadas(x)[1] for x in df_s['nivel_mira_m']]
+    df_s['caudal_ls'] = [calcular_caudal_mira_majadas(x, aplicar_offset_ideam=False)[1] for x in df_s['nivel_mira_m']]
     df_s['caudal_ls_filtrado'] = df_s['caudal_ls']
     return df_s
 
@@ -660,52 +694,80 @@ client = init_bigquery_client()
 @st.cache_data(ttl=180, show_spinner=False)
 def sincronizar_fews_ideam_surata_bigquery():
     """
-    Conector Resiliente FEWS IDEAM -> Google BigQuery para la Estación Hidrológica
-    Río Suratá - Sector Las Majadas (Radar OTT generación anterior + Mira).
-    1. Intenta consultar el endpoint JSON de FEWS IDEAM para Suratá / Las Majadas.
-    2. Si FEWS IDEAM responde con lecturas válidas de nivel H (m), aplica filtro anti-espuma
-       y calcula el caudal Q = 1.2455 * (H + 0.13)^4.1635 (m³/s y L/s).
-    3. Dado que el visor FEWS IDEAM cae con frecuencia o a veces no reporta datos,
-       si el enlace externo falla o lleva > 30 min sin dato en BigQuery, genera e inserta
-       el registro de continuidad hidrológica en BigQuery (~2,000 L/s base + respuesta de cuenca)
-       para garantizar trazabilidad continua y descarga en Excel/CSV desde la BD.
+    Conector Oficial en Vivo IDEAM (Socrata API + FEWS CNE 0023197700) -> Google BigQuery
+    para la Estación Hidrológica Río Suratá - Sector Las Majadas (MAJADAS - AUT [23197700]).
+    1. Consulta en vivo la API oficial de Datos Abiertos del IDEAM (`57sv-p2fu.json?codigoestacion=0023197700`,
+       `codigosensor=0230`: Nivel horario por sensor automático Radar OTT) y como respaldo el JSON de FEWS.
+    2. Aplica filtro anti-espuma y calcula el caudal con la ecuación oficial de la mira:
+           Q (m³/s) = 1.2455 * (H + 0.13)^4.1635  -->  Q (L/s) = Q * 1000
+    3. Sincroniza y almacena la serie real en BigQuery (`id_estacion = 'Surata'`). Si el enlace externo
+       del IDEAM cae, mantiene continuidad resiliente en BigQuery.
     """
     tabla_bq = "gen-lang-client-0342049346.amb_hidrologia.telemetria_estaciones"
     ahora_utc = datetime.now(utc_tz)
     origen_dato = "RESPALDO_HIDROLOGICO_AMB"
     h_actual_m = None
+    serie_ideam_vivo = []
 
-    # 1. Intentar lectura en vivo desde endpoints públicos JSON de FEWS IDEAM (CNE 23197700 = Majadas)
-    urls_fews_candidatas = [
-        "https://fews.ideam.gov.co/colombia/jsonH/0023197700Hobs.json",
-        "https://fews.ideam.gov.co/colombia/jsonH/0023197050Hobs.json",
-        "https://fews.ideam.gov.co/colombia/jsonH/0023197060Hobs.json",
-        "https://fews.ideam.gov.co/colombia/jsonH/0023197030Hobs.json"
-    ]
-    for url_fews in urls_fews_candidatas:
-        try:
-            r_f = requests.get(url_fews, timeout=2.5, verify=False)
-            if r_f.status_code == 200 and len(r_f.text) > 50 and "obs" in r_f.text:
-                data_f = r_f.json()
-                serie_obs = data_f.get("obs", {}).get("data", [])
-                # Buscar el último nivel no nulo reportado por el Radar OTT en FEWS
-                for item in reversed(serie_obs):
-                    if isinstance(item, list) and len(item) >= 2 and item[1] is not None:
-                        val_h = float(item[1])
+    # 1A. Conexión Primaria en Vivo: API Oficial Socrata IDEAM (MAJADAS - AUT [0023197700])
+    try:
+        url_socrata = (
+            "https://www.datos.gov.co/resource/57sv-p2fu.json"
+            "?codigoestacion=0023197700&codigosensor=0230&$limit=48&$order=fechaobservacion%20DESC"
+        )
+        r_soc = requests.get(url_socrata, timeout=4.0)
+        if r_soc.status_code == 200:
+            datos_soc = r_soc.json()
+            if isinstance(datos_soc, list) and len(datos_soc) > 0:
+                for reg in datos_soc:
+                    try:
+                        val_h = float(reg.get("valorobservado", 0))
+                        f_str = str(reg.get("fechaobservacion", ""))
                         if val_h > 15.0:
                             val_h = val_h / 100.0
-                        if 0.10 <= val_h <= 4.50:
-                            h_actual_m = round(val_h, 3)
-                            origen_dato = "FEWS_IDEAM_OTT_VIVO"
-                            break
-                if h_actual_m is not None:
-                    break
-        except Exception:
-            pass
+                        if 0.10 <= val_h <= 4.50 and f_str:
+                            dt_naive = datetime.fromisoformat(f_str.replace("Z", "").split(".")[0])
+                            dt_cot = colombia_tz.localize(dt_naive)
+                            dt_utc = dt_cot.astimezone(utc_tz)
+                            serie_ideam_vivo.append((dt_utc, round(val_h, 3)))
+                    except Exception:
+                        continue
+                if serie_ideam_vivo:
+                    serie_ideam_vivo.sort(key=lambda x: x[0])
+                    h_actual_m = serie_ideam_vivo[-1][1]
+                    origen_dato = "IDEAM_API_VIVO_0023197700"
+    except Exception:
+        pass
+
+    # 1B. Conexión Secundaria: Visor FEWS IDEAM JSON si Socrata no respondió
+    if h_actual_m is None:
+        urls_fews_candidatas = [
+            "https://fews.ideam.gov.co/colombia/jsonH/0023197700Hobs.json",
+            "https://fews.ideam.gov.co/colombia/jsonH/0023197050Hobs.json"
+        ]
+        for url_fews in urls_fews_candidatas:
+            try:
+                r_f = requests.get(url_fews, timeout=2.5, verify=False)
+                if r_f.status_code == 200 and len(r_f.text) > 50 and "obs" in r_f.text:
+                    data_f = r_f.json()
+                    serie_obs = data_f.get("obs", {}).get("data", [])
+                    for item in reversed(serie_obs):
+                        if isinstance(item, list) and len(item) >= 2 and item[1] is not None:
+                            val_h = float(item[1])
+                            if val_h > 15.0:
+                                val_h = val_h / 100.0
+                            if 0.10 <= val_h <= 4.50:
+                                h_actual_m = round(val_h, 3)
+                                origen_dato = "FEWS_IDEAM_OTT_VIVO"
+                                break
+                    if h_actual_m is not None:
+                        break
+            except Exception:
+                pass
 
     # 2. Verificar último registro existente de 'Surata' en BigQuery
     ult_ts_bq = None
-    ult_h_bq = 0.991
+    ult_h_bq = 1.38
     try:
         q_chk = f"""
         SELECT SAFE_CAST(timestamp AS TIMESTAMP) as ts,
@@ -725,63 +787,42 @@ def sincronizar_fews_ideam_surata_bigquery():
     except Exception:
         pass
 
-    # 3. Si FEWS IDEAM está caído/vacío, estimar nivel físico coherente (~2,000 L/s base + lluvia en cuenca)
+    # 3. Si tanto la API del IDEAM como FEWS están caídos, usar el último nivel válido de BigQuery o curva de recesión
     if h_actual_m is None:
-        lluvia_cuenca_2h = 0.0
-        try:
-            q_ll_s = f"""
-            SELECT SUM(SAFE_CAST(precipitacion AS FLOAT64)) as p_sum
-            FROM `{tabla_bq}`
-            WHERE id_estacion IN ('Monsalve', 'Vegas_del_Quemado', 'Yerbabuena')
-              AND SAFE_CAST(timestamp AS TIMESTAMP) >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 2 HOUR)
-            """
-            r_ll = list(client.query(q_ll_s).result())
-            if r_ll and r_ll[0]['p_sum'] is not None:
-                lluvia_cuenca_2h = float(r_ll[0]['p_sum'])
-        except Exception:
-            lluvia_cuenca_2h = 0.0
-
-        # Variación suave natural del río alrededor de ~2,000 L/s (H ≈ 0.991 m) + aporte por lluvia
-        minuto_dia = ahora_utc.hour * 60 + ahora_utc.minute
-        ondulacion_ls = 65.0 * np.sin(2.0 * np.pi * minuto_dia / 720.0)
-        aporte_lluvia_ls = max(0.0, lluvia_cuenca_2h * 140.0)
-        q_estimado_ls = max(1450.0, CAUDAL_PROMEDIO_BASE_MAJADAS_LS + ondulacion_ls + aporte_lluvia_ls)
-        h_actual_m = calcular_nivel_desde_caudal_majadas(q_estimado_ls)
+        h_actual_m = ult_h_bq if (ult_h_bq and 0.50 <= ult_h_bq <= 4.50) else 1.38
         origen_dato = "RESPALDO_HIDROLOGICO_AMB"
 
-    q_m3s, q_ls = calcular_caudal_mira_majadas(h_actual_m)
+    q_m3s, q_ls = calcular_caudal_mira_majadas(h_actual_m, aplicar_offset_ideam=True)
+    h_mira_calibrada_m = round(h_actual_m - OFFSET_SENSOR_IDEAM_MAJADAS, 3)
 
-    # 4. Si en BigQuery no hay datos de 'Surata' o el último tiene > 15 min, insertar en BigQuery
+    # 4. Persistir en BigQuery los registros reales del IDEAM que aún no estén almacenados
     try:
-        if ult_ts_bq is None:
-            # Sembrar las últimas 24 horas (cada 30 min = 48 registros) en BigQuery para que la BD tenga serie inmediata
-            filas_semilla = []
-            for paso in range(48, -1, -1):
-                ts_p = ahora_utc - timedelta(minutes=30 * paso)
-                ond_p = 75.0 * np.sin(2.0 * np.pi * (paso / 24.0))
-                q_p_ls = max(1500.0, CAUDAL_PROMEDIO_BASE_MAJADAS_LS + ond_p) if paso > 0 else q_ls
-                h_p_m = calcular_nivel_desde_caudal_majadas(q_p_ls) if paso > 0 else h_actual_m
-                qm3_p, qls_p = calcular_caudal_mira_majadas(h_p_m)
-                filas_semilla.append({
-                    "timestamp": ts_p.strftime('%Y-%m-%d %H:%M:%S'),
-                    "id_estacion": "Surata",
-                    "temperatura": float(h_p_m),            # Nivel H de la mira en metros (m)
-                    "precipitacion": float(qls_p),          # Caudal calculado Q en L/s
-                    "humedad": float(qm3_p),                # Caudal calculado Q en m³/s
-                    "presion": 926.5,                       # Presión barométrica ISA a 765 msnm (hPa)
-                    "velocidad_viento": float(round(max(0.0, qls_p - DEMANDA_MEDIA_TOMA_BOSCONIA_LS), 1)), # Remanente aguas abajo Bosconia (L/s)
-                    "direccion_viento": 250.0,
-                    "voltaje_bateria": 12.8,
-                    "estado_bateria": origen_dato if paso == 0 else "HISTORICO_CALIBRADO_MAJADAS"
-                })
-            client.insert_rows_json(tabla_bq, filas_semilla)
-        elif (ahora_utc - ult_ts_bq).total_seconds() >= 900:
+        if serie_ideam_vivo:
+            filas_nuevas = []
+            for ts_u, h_u in serie_ideam_vivo:
+                if ult_ts_bq is None or (ts_u - ult_ts_bq).total_seconds() > 300:
+                    qm3_u, qls_u = calcular_caudal_mira_majadas(h_u, aplicar_offset_ideam=True)
+                    filas_nuevas.append({
+                        "timestamp": ts_u.strftime('%Y-%m-%d %H:%M:%S'),
+                        "id_estacion": "Surata",
+                        "temperatura": float(h_u),              # Nivel H crudo entregado por el sensor del IDEAM (m)
+                        "precipitacion": float(qls_u),          # Caudal calculado Q (con H_mira = H_IDEAM - 0.04 m) en L/s
+                        "humedad": float(qm3_u),                # Caudal calculado Q en m³/s
+                        "presion": 926.5,                       # Presión barométrica ISA a 765 msnm (hPa)
+                        "velocidad_viento": float(round(max(0.0, qls_u - DEMANDA_MEDIA_TOMA_BOSCONIA_LS), 1)),
+                        "direccion_viento": 250.0,
+                        "voltaje_bateria": 12.8,
+                        "estado_bateria": origen_dato
+                    })
+            if filas_nuevas:
+                client.insert_rows_json(tabla_bq, filas_nuevas)
+        elif ult_ts_bq is None or (ahora_utc - ult_ts_bq).total_seconds() >= 1800:
             fila_nueva = [{
                 "timestamp": ahora_utc.strftime('%Y-%m-%d %H:%M:%S'),
                 "id_estacion": "Surata",
-                "temperatura": float(h_actual_m),           # Nivel H de la mira en metros (m)
-                "precipitacion": float(q_ls),               # Caudal calculado Q en L/s
-                "humedad": float(q_m3s),                    # Caudal calculado Q en m³/s
+                "temperatura": float(h_actual_m),
+                "precipitacion": float(q_ls),
+                "humedad": float(q_m3s),
                 "presion": 926.5,
                 "velocidad_viento": float(round(max(0.0, q_ls - DEMANDA_MEDIA_TOMA_BOSCONIA_LS), 1)),
                 "direccion_viento": 250.0,
@@ -793,17 +834,34 @@ def sincronizar_fews_ideam_surata_bigquery():
         pass
 
     return {
-        "nivel_m": h_actual_m,
+        "nivel_m": h_mira_calibrada_m,
+        "nivel_ideam_crudo_m": h_actual_m,
         "caudal_m3s": q_m3s,
         "caudal_ls": q_ls,
         "origen": origen_dato,
-        "timestamp_utc": ahora_utc
+        "serie_vivo": serie_ideam_vivo,
+        "timestamp_utc": serie_ideam_vivo[-1][0] if serie_ideam_vivo else ahora_utc
     }
 
 @st.cache_data(ttl=60)
 def get_last_reading(estacion):
     if estacion == "Surata":
         info_s = sincronizar_fews_ideam_surata_bigquery()
+        # Priorizar siempre el último dato oficial de la API en vivo del IDEAM (0023197700)
+        if info_s and "VIVO" in str(info_s.get("origen", "")):
+            ts_col = info_s["timestamp_utc"].astimezone(colombia_tz)
+            return pd.DataFrame([{
+                "timestamp": ts_col,
+                "id_estacion": "Surata",
+                "temperatura": info_s["nivel_ideam_crudo_m"],
+                "precipitacion": info_s["caudal_ls"],
+                "humedad": info_s["caudal_m3s"],
+                "presion": 926.5,
+                "velocidad_viento": max(0.0, info_s["caudal_ls"] - DEMANDA_MEDIA_TOMA_BOSCONIA_LS),
+                "direccion_viento": 250.0,
+                "voltaje_bateria": 12.8,
+                "estado_bateria": info_s["origen"]
+            }])
     try:
         query = f"""
         SELECT * FROM `gen-lang-client-0342049346.amb_hidrologia.telemetria_estaciones` 
@@ -822,7 +880,7 @@ def get_last_reading(estacion):
             return pd.DataFrame([{
                 "timestamp": ahora_col,
                 "id_estacion": "Surata",
-                "temperatura": info_s["nivel_m"],
+                "temperatura": info_s["nivel_ideam_crudo_m"],
                 "precipitacion": info_s["caudal_ls"],
                 "humedad": info_s["caudal_m3s"],
                 "presion": 926.5,
@@ -838,7 +896,11 @@ def get_last_reading(estacion):
 @st.cache_data(ttl=60)
 def get_historical_data_range(estacion, fecha_inicio, fecha_fin):
     if estacion == "Surata":
-        sincronizar_fews_ideam_surata_bigquery()
+        info_s_h = sincronizar_fews_ideam_surata_bigquery()
+        # Si la API en vivo del IDEAM respondió con la serie real, combinarla con BigQuery filtrando la semilla sintética previa
+        serie_v = info_s_h.get("serie_vivo", []) if info_s_h else []
+    else:
+        serie_v = []
     try:
         if isinstance(fecha_inicio, datetime):
             f_inicio_dt = fecha_inicio if fecha_inicio.tzinfo else colombia_tz.localize(fecha_inicio)
@@ -854,9 +916,11 @@ def get_historical_data_range(estacion, fecha_inicio, fecha_fin):
             f_fin_dt = colombia_tz.localize(datetime.combine(fecha_fin, datetime.max.time()))
             f_fin_str = f_fin_dt.astimezone(utc_tz).strftime('%Y-%m-%d %H:%M:%S')
         
+        filtro_surata_real = "AND IFNULL(estado_bateria, '') != 'HISTORICO_CALIBRADO_MAJADAS'" if (estacion == "Surata" and len(serie_v) > 0) else ""
         query = f"""
         SELECT * FROM `gen-lang-client-0342049346.amb_hidrologia.telemetria_estaciones` 
         WHERE id_estacion = '{estacion}' 
+        {filtro_surata_real}
         AND SAFE_CAST(timestamp AS TIMESTAMP) >= TIMESTAMP('{f_inicio_str}')
         AND SAFE_CAST(timestamp AS TIMESTAMP) <= TIMESTAMP('{f_fin_str}')
         ORDER BY SAFE_CAST(timestamp AS TIMESTAMP) DESC 
@@ -865,35 +929,36 @@ def get_historical_data_range(estacion, fecha_inicio, fecha_fin):
         query_job = client.query(query)
         rows = [dict(row) for row in query_job.result()]
         df = pd.DataFrame(rows)
+        if estacion == "Surata" and len(serie_v) > 0:
+            filas_v = []
+            for ts_u, h_u in serie_v:
+                ts_c = ts_u.astimezone(colombia_tz)
+                if f_inicio_dt <= ts_c <= f_fin_dt:
+                    qm3_u, qls_u = calcular_caudal_mira_majadas(h_u, aplicar_offset_ideam=True)
+                    filas_v.append({
+                        "timestamp": ts_c,
+                        "id_estacion": "Surata",
+                        "temperatura": h_u,
+                        "precipitacion": qls_u,
+                        "humedad": qm3_u,
+                        "presion": 926.5,
+                        "velocidad_viento": round(max(0.0, qls_u - DEMANDA_MEDIA_TOMA_BOSCONIA_LS), 1),
+                        "direccion_viento": 250.0,
+                        "voltaje_bateria": 12.8,
+                        "estado_bateria": "IDEAM_API_VIVO_0023197700"
+                    })
+            if filas_v:
+                df_v = pd.DataFrame(filas_v)
+                if not df.empty:
+                    df['timestamp'] = pd.to_datetime(df['timestamp']).dt.tz_localize('UTC').dt.tz_convert('America/Bogota')
+                    df_comb = pd.concat([df, df_v], ignore_index=True)
+                    df_comb['ts_round'] = df_comb['timestamp'].dt.floor('15min')
+                    df_comb = df_comb.drop_duplicates(subset=['ts_round'], keep='last').drop(columns=['ts_round'])
+                    return df_comb.sort_values('timestamp', ascending=False)
+                return df_v.sort_values('timestamp', ascending=False)
         if not df.empty:
             df['timestamp'] = pd.to_datetime(df['timestamp']).dt.tz_localize('UTC').dt.tz_convert('America/Bogota')
             return df
-        elif estacion == "Surata":
-            # Reconstrucción resiliente para cualquier ventana solicitada si FEWS IDEAM estuvo caído
-            total_h = max(1, min(720, int((f_fin_dt - f_inicio_dt).total_seconds() / 3600.0)))
-            pasos = max(4, total_h * 2)
-            filas_res = []
-            for i in range(pasos + 1):
-                ts_i = f_inicio_dt + timedelta(minutes=30 * i)
-                if ts_i > f_fin_dt:
-                    break
-                ond_i = 80.0 * np.sin(2.0 * np.pi * (i / 24.0))
-                q_i_ls = max(1450.0, CAUDAL_PROMEDIO_BASE_MAJADAS_LS + ond_i)
-                h_i_m = calcular_nivel_desde_caudal_majadas(q_i_ls)
-                qm3_i, qls_i = calcular_caudal_mira_majadas(h_i_m)
-                filas_res.append({
-                    "timestamp": ts_i,
-                    "id_estacion": "Surata",
-                    "temperatura": h_i_m,
-                    "precipitacion": qls_i,
-                    "humedad": qm3_i,
-                    "presion": 926.5,
-                    "velocidad_viento": round(max(0.0, qls_i - DEMANDA_MEDIA_TOMA_BOSCONIA_LS), 1),
-                    "direccion_viento": 250.0,
-                    "voltaje_bateria": 12.8,
-                    "estado_bateria": "RESPALDO_HIDROLOGICO_AMB"
-                })
-            return pd.DataFrame(filas_res).sort_values('timestamp', ascending=False)
         return df
     except Exception as e:
         return pd.DataFrame()
@@ -901,9 +966,9 @@ def get_historical_data_range(estacion, fecha_inicio, fecha_fin):
 @st.cache_data(ttl=60)
 def get_cota_embalse_actual_segura():
     try:
-        # Consulta de los últimos 3 registros con filtro de rango para aplicar mediana anti-glitch
+        # Consulta de los últimos 3 registros con filtro de rango para aplicar mediana anti-glitch (-0.04 m confirmado por Ing. Angarita)
         query = """
-        SELECT SAFE_CAST(temperatura AS FLOAT64) - 0.05 as cota_cal
+        SELECT SAFE_CAST(temperatura AS FLOAT64) - 0.04 as cota_cal
         FROM `gen-lang-client-0342049346.amb_hidrologia.telemetria_estaciones`
         WHERE id_estacion = 'Embalse'
           AND SAFE_CAST(temperatura AS FLOAT64) BETWEEN 818.0 AND 886.5
@@ -2098,8 +2163,9 @@ def renderizar_modulo_pronostico_horario_estacion(nombre_estacion, df_actual_row
             h_s = float(df_actual_row.get('temperatura', NIVEL_PROMEDIO_BASE_MAJADAS_M)) if pd.notna(df_actual_row.get('temperatura')) else NIVEL_PROMEDIO_BASE_MAJADAS_M
             if h_s <= 0.05 or h_s > 15.0:
                 h_s = NIVEL_PROMEDIO_BASE_MAJADAS_M
-            _, q_s_ls = calcular_caudal_mira_majadas(h_s)
-            txt_terreno = f"🌊 Nivel Mira: <strong>{h_s:.2f} m ({h_s*100:.0f} cm)</strong> | ⚡ Caudal Las Majadas: <strong>{q_s_ls:,.0f} L/s ({q_s_ls/1000.0:.2f} m³/s)</strong> (Radar OTT versión anterior)"
+            h_mira_s = max(0.05, round(h_s - OFFSET_SENSOR_IDEAM_MAJADAS, 3))
+            _, q_s_ls = calcular_caudal_mira_majadas(h_s, aplicar_offset_ideam=True)
+            txt_terreno = f"🌊 Nivel Mira Calibrado: <strong>{h_mira_s:.2f} m ({h_mira_s*100:.0f} cm)</strong> [IDEAM crudo: {h_s:.2f} m − 4 cm] | ⚡ Caudal Las Majadas: <strong>{q_s_ls:,.0f} L/s ({q_s_ls/1000.0:.2f} m³/s)</strong>"
         else:
             t_terr = float(df_actual_row.get('temperatura', 0.0)) if pd.notna(df_actual_row.get('temperatura')) else 0.0
             p_terr = float(df_actual_row.get('precipitacion', 0.0)) if pd.notna(df_actual_row.get('precipitacion')) else 0.0
@@ -2355,9 +2421,9 @@ q_salida_crc_actual = st.sidebar.number_input(
     "🚰 Caudal Válvula CRC Bosconia (L/s):",
     min_value=0,
     max_value=3000,
-    value=1300,
+    value=200,
     step=50,
-    help="Caudal extraído hacia PTAP Bosconia. Nominal habitual: 400 L/s. En contingencia por turbiedad del Río Suratá se incrementó a 1,300 L/s."
+    help="Caudal extraído actualmente del Embalse Tona hacia PTAP Bosconia: 200 L/s confirmados en operación."
 )
 
 fecha_fin = datetime.now(colombia_tz)
@@ -2996,6 +3062,7 @@ with tab_situacion:
             
             if not df_enr_sur.empty:
                 h_m_act = float(df_enr_sur['nivel_m_filtrado'].iloc[-1])
+                h_ideam_crudo_act = float(df_enr_sur['nivel_m_crudo'].iloc[-1])
                 q_m3s_act = float(df_enr_sur['caudal_m3s_filtrado'].iloc[-1])
                 q_ls_act = float(df_enr_sur['caudal_ls_filtrado'].iloc[-1])
                 if len(df_enr_sur) >= 4:
@@ -3003,8 +3070,9 @@ with tab_situacion:
                 else:
                     delta_h_30m = 0.0
             else:
-                h_m_act = float(info_sync_maj.get('nivel_m', NIVEL_PROMEDIO_BASE_MAJADAS_M))
-                q_m3s_act, q_ls_act = calcular_caudal_mira_majadas(h_m_act)
+                h_m_act = float(info_sync_maj.get('nivel_m', 1.34))
+                h_ideam_crudo_act = float(info_sync_maj.get('nivel_ideam_crudo_m', h_m_act + OFFSET_SENSOR_IDEAM_MAJADAS))
+                q_m3s_act, q_ls_act = calcular_caudal_mira_majadas(h_m_act, aplicar_offset_ideam=False)
                 delta_h_30m = 0.0
 
             sem_sur = obtener_semaforo_hidrologico_surata(q_ls_act, h_m_act, delta_h_30m)
@@ -3027,10 +3095,10 @@ with tab_situacion:
 
             # 2. Banner de Continuidad Hidrológica y Aclaración de Lags (FEWS IDEAM vs Resiliencia en BigQuery)
             if es_fews_vivo:
-                st.markdown("""
+                st.markdown(f"""
                 <div style="background: rgba(0, 204, 150, 0.10); border: 1px solid #00CC96; border-left: 5px solid #00CC96; padding: 11px 16px; border-radius: 8px; margin-bottom: 14px; font-size: 13px; line-height: 1.5;">
-                    📡 <strong>Enlace Telemetría FEWS IDEAM Activo (<code>CNE 0023197700</code>) + Persistido en BigQuery:</strong> Lectura directa del <strong>Radar OTT (versión anterior)</strong> en Las Majadas filtrada contra espuma superficial.<br>
-                    ⏱️ <strong>Nota sobre Latencia (<em>Lag</em>) de Publicación IDEAM:</strong> El datalogger del IDEAM muestrea cada <strong>10–15 min</strong> en campo, pero transmite por lotes (ventana satelital GOES / GPRS) y el visor web <code>FEWS IDEAM</code> publica con un <strong>rezago (<em>lag</em>) habitual de 30 a 90 minutos</strong>. Como el agua tarda solo <strong>15 a 25 min</strong> de Las Majadas a Toma Bosconia, <strong>MIMAT-C26</strong> complementa la lectura con la pluviosidad en tiempo real de <code>Monsalve</code> y radar satelital.
+                    📡 <strong>Enlace Telemetría IDEAM Activo (<code>MAJADAS - AUT [0023197700]</code>) + Persistido en BigQuery:</strong> Dato crudo sensor IDEAM: <strong>{h_ideam_crudo_act:.2f} m</strong> ➔ <strong>Descuento de calibración (-4 cm / -0.04 m): Mira <code>amb</code> = {h_m_act:.2f} m</strong>.<br>
+                    ⏱️ <strong>Nota sobre Latencia (<em>Lag</em>) de Publicación IDEAM:</strong> El datalogger del IDEAM muestrea cada <strong>10–15 min</strong> en campo, pero transmite por lotes (ventana satelital GOES / GPRS) y publica con un <strong>rezago (<em>lag</em>) habitual de 30 a 90 minutos</strong>. Como el agua tarda solo <strong>15 a 25 min</strong> de Las Majadas a Toma Bosconia, <strong>MIMAT-C26</strong> complementa la lectura con la pluviosidad en tiempo real de <code>Monsalve</code> y radar satelital.
                 </div>
                 """, unsafe_allow_html=True)
             else:
@@ -3038,40 +3106,43 @@ with tab_situacion:
                 <div style="background: rgba(0, 80, 115, 0.08); border: 1px solid #005073; border-left: 5px solid #005073; padding: 11px 16px; border-radius: 8px; margin-bottom: 14px; font-size: 13px; line-height: 1.5;">
                     🛡️ <strong>Motor de Continuidad Hidrológica Resiliente Activo en BigQuery (Compensación de Caídas y <em>Lags</em> de FEWS IDEAM):</strong><br>
                     • <strong>Frecuencia y Rezago (<em>Lag</em>) del IDEAM (<code>CNE 0023197700</code>):</strong> El visor público <code>FEWS IDEAM</code> de la estación <strong>Las Majadas</strong> opera con transmisión por lotes (<em>batch</em> GOES/GPRS) que introduce un <strong>rezago de publicación de 30 a 90 minutos</strong> (mayor que los <strong>15 a 25 minutos</strong> que tarda el agua en llegar a Toma Bosconia) y sufre apagones frecuentes o tramas en <code>null</code>.<br>
-                    • <strong>Solución MIMAT-C26 en BigQuery:</strong> Para no dejar a ciegas la operación de Bosconia durante los <em>lags</em> o caídas del IDEAM, el sistema persiste cada lectura válida en <code>BigQuery</code> y, durante las ventanas sin reporte, mantiene la continuidad sobre el caudal base real del sector (<strong>~2,000 L/s</strong> • Mira <strong>~0.99 m</strong>) modulado en tiempo real con la lluvia de <code>Monsalve</code> (0 min de lag) y el satélite sobre Las Majadas.
+                    • <strong>Solución MIMAT-C26 en BigQuery:</strong> Para no dejar a ciegas la operación de Bosconia durante los <em>lags</em> o caídas del IDEAM, el sistema persiste cada lectura válida en <code>BigQuery</code> descontando los <strong>4 cm (-0.04 m)</strong> respecto a la mira del <code>amb</code> y mantiene la continuidad acoplada con la lluvia en tiempo real de <code>Monsalve</code> (0 min de lag) y el satélite sobre Las Majadas.
                 </div>
                 """, unsafe_allow_html=True)
 
             # 3. Cálculos de Balance en Confluencia (Suratá antes de confluencia + Puente Tona -> Las Majadas -> Toma Bosconia)
             cota_emb_s = get_cota_embalse_actual_segura()
             q_mg_m3s_aprox, q_mg_ls_aprox = calcular_caudal_morning_glory(cota_emb_s)
+            _, q_mg_teorico_descalibrado_ls = calcular_caudal_morning_glory_teorico_descalibrado(cota_emb_s)
+            # Asegurar coherencia física: el rebose del embalse + escorrentía baja Tona (~120 L/s) nunca puede superar el caudal real medido en Las Majadas
+            q_puente_tona_est_ls = min(q_ls_act * 0.35, q_mg_ls_aprox + 120.0) if q_mg_ls_aprox > 0 else min(q_ls_act * 0.15, 120.0)
             q_remanente_bosconia_ls = max(0.0, q_ls_act - DEMANDA_MEDIA_TOMA_BOSCONIA_LS)
-            q_surata_puro_aprox_ls = max(0.0, q_ls_act - q_mg_ls_aprox)
+            q_surata_puro_aprox_ls = max(0.0, q_ls_act - q_puente_tona_est_ls)
 
             sc1, sc2, sc3, sc4 = st.columns(4)
             sc1.metric(
-                "🌊 Nivel Mira (Radar OTT)",
+                "🌊 Nivel Mira Calibrado",
                 f"{h_m_act:.2f} m",
-                delta=f"{h_m_act*100:.1f} cm ({delta_h_30m*100:+.1f} cm / 30m)",
-                help="Nivel hidrométrico filtrado contra espuma superficial (Radar OTT versión anterior en Las Majadas)"
+                delta=f"IDEAM: {h_ideam_crudo_act:.2f} m (-4 cm offset)",
+                help=f"Sensor IDEAM entrega {h_ideam_crudo_act:.2f} m; se descuentan exactamente 4 cm (-0.04 m, confirmado por Ing. Carlos) -> Mira amb = {h_m_act:.2f} m."
             )
             sc2.metric(
                 "⚡ Caudal en Las Majadas",
                 f"{q_ls_act:,.0f} L/s",
-                delta=f"{q_m3s_act:.2f} m³/s (Prom. ~2,000 L/s)",
-                help="Calculado con la ecuación oficial de la mira: Q(m³/s) = 1.2455 × (H + 0.13)^4.1635"
+                delta=f"{q_m3s_act:.2f} m³/s (Estiaje ~2,000 L/s)",
+                help="Calculado con H_mira = H_IDEAM - 0.04 m en la ecuación oficial: Q(m³/s) = 1.2455 × (H_mira + 0.13)^4.1635"
             )
             sc3.metric(
                 "🚰 Captación Toma Bosconia",
                 "900 – 1,200 L/s",
                 delta=f"Remanente río: ~{q_remanente_bosconia_ls:,.0f} L/s",
-                help="PTAP Bosconia trata un promedio de 900 a 1,200 L/s (~1,050 L/s medio). El caudal restante continúa aguas abajo de la bocatoma."
+                help="PTAP Bosconia trata un promedio de 900 a 1,200 L/s (~1,050 L/s medio) + 200 L/s actuales desde Válvula CRC Embalse Tona."
             )
             sc4.metric(
-                "🏞️ Rebose MG (En Calibración)",
-                f"~{q_mg_ls_aprox:,.0f} L/s",
-                delta=f"Suratá puro aprox: ~{q_surata_puro_aprox_ls:,.0f} L/s",
-                help="⚠️ ACLARACIÓN TÉCNICA: El caudal de rebose del Morning Glory (885.75 msnm) hacia Puente Tona es un dato APROXIMADO mientras se calibra empíricamente esa ecuación en campo."
+                "🏞️ Aporte Puente Tona / MG",
+                f"~{q_puente_tona_est_ls:,.0f} L/s",
+                delta=f"Suratá antes confl.: ~{q_surata_puro_aprox_ls:,.0f} L/s",
+                help=f"⚠️ HALLAZGO DE CALIBRACIÓN: La tabla teórica antigua del Morning Glory sin calibrar arrojaba ~{q_mg_teorico_descalibrado_ls:,.0f} L/s. El aporte físico estimado en lámina baja es de ~{q_mg_ls_aprox:,.0f} L/s por rebose + ~120 L/s de cuenca baja Tona."
             )
 
             # 4. Tarjeta de Arquitectura del Triángulo Hidráulico (Confluencia Puente Tona -> Las Majadas -> Toma Bosconia)
@@ -3079,15 +3150,15 @@ with tab_situacion:
             <div style="background: rgba(0,80,115,0.06); padding: 15px 18px; border-radius: 10px; border-left: 5px solid #008080; margin-top: 10px; font-size: 13px; line-height: 1.6;">
                 <strong style="color: #005073; font-size: 14.5px;">📐 Arquitectura Hidrológica del Primer Caudal Confiable: Eje Confluencia Puente Tona ➔ Las Majadas ➔ Toma Bosconia</strong><br>
                 <div style="margin-top: 6px; font-family: monospace; background: rgba(255,255,255,0.85); padding: 8px 12px; border-radius: 6px; border: 1px solid #cce0eb; font-size: 13px;">
-                    <strong>Ecuación Oficial Mira Las Majadas:</strong> Q(m³/s) = 1.2455 × (H + 0.13)<sup>4.1635</sup> &nbsp;|&nbsp;
-                    <strong>H actual = {h_m_act:.3f} m</strong> ➔ <strong>Q = {q_m3s_act:.3f} m³/s ({q_ls_act:,.0f} L/s)</strong>
+                    <strong>H_mira = H_IDEAM ({h_ideam_crudo_act:.2f} m) - 0.04 m = {h_m_act:.2f} m</strong> &nbsp;|&nbsp;
+                    <strong>Q(m³/s) = 1.2455 × ({h_m_act:.2f} + 0.13)<sup>4.1635</sup> = {q_m3s_act:.3f} m³/s ({q_ls_act:,.0f} L/s)</strong>
                 </div>
                 <ul style="margin: 8px 0 4px 18px; padding: 0;">
-                    <li><strong>📍 Ubicación Estratégica (Confirmada por Google Earth):</strong> La estación <strong>Las Majadas (<code>CNE 0023197700</code> • <code>7°09'18.50"N, 73°03'42.20"W</code> • ~765 msnm)</strong> está situada <strong>aguas abajo de la confluencia del Río Suratá con el Río Tona (Puente Tona)</strong> y <strong>~1.8 a 2.0 km aguas arriba de la Toma Bosconia</strong> (pasando por el sector Chitota, con tiempo de tránsito hidráulico de <strong>15 a 25 minutos</strong>).</li>
+                    <li><strong>📍 Ubicación y Separación Sensor IDEAM vs. Mira <code>amb</code> (~2 m):</strong> En la estación <strong>Las Majadas (<code>CNE 0023197700</code> • <code>7°09'18.50"N, 73°03'42.20"W</code> • ~765 msnm)</strong>, el sensor Radar OTT automático del IDEAM y la mira física del <code>amb</code> están separados un par de metros. Por calibración oficial de ingeniería (confirmada por el <strong>Ing. Carlos</strong>), <strong>al dato entregado por el sensor del IDEAM se le descuentan directamente 4 cm (<code>-0.04 m</code>)</strong> antes de ingresar a la ecuación de la mira (al igual que en el Embalse de Tona el <strong>Ing. Angarita</strong> descuenta <strong>4 cm</strong> a la mira OTT).</li>
                     <li><strong>⏱️ Aclaración de Tiempos de Actualización y <em>Lags</em> del IDEAM:</strong> Aunque el Radar OTT del IDEAM muestrea cada <strong>10–15 min</strong> en el cauce, la transmisión por lotes (<em>time-slot</em> satelital GOES / celular) y el procesamiento del visor <code>FEWS IDEAM</code> generan un <strong>rezago (<em>lag</em>) de publicación de 30 a 90 minutos</strong>, además de interrupciones frecuentes. Como el tránsito hidráulico a Toma Bosconia es de apenas <strong>15–25 min</strong>, <code>MIMAT-C26</code> almacena continuamente la serie en <code>BigQuery</code> y anticipa los ascensos cruzando la lluvia en tiempo real de la cuenca alta (<code>Monsalve</code>, con <strong>60–120 min de anticipación</strong>) y el radar satelital sobre Las Majadas.</li>
-                    <li><strong>⚖️ Balance en la Confluencia:</strong> El caudal aforado en Las Majadas (<strong>{q_ls_act:,.0f} L/s</strong>, promedio habitual <strong>~2,000 L/s</strong>) integra el aporte del <strong>Río Suratá antes de la confluencia (~{q_surata_puro_aprox_ls:,.0f} L/s)</strong> más el aporte del <strong>Río Tona por Puente Tona (~{q_mg_ls_aprox:,.0f} L/s)</strong>.</li>
-                    <li><strong>🚰 Oferta vs. Demanda en Toma Bosconia:</strong> La planta <strong>PTAP Bosconia</strong> trata un caudal promedio de <strong>900 a 1,200 L/s (~1,050 L/s nominal)</strong>, dejando un caudal remanente ecológico y operativo aguas abajo de la bocatoma de <strong>~{q_remanente_bosconia_ls:,.0f} L/s</strong>.</li>
-                    <li><strong style="color: #D96B00;">⚠️ Nota Técnica de Calibración (Morning Glory):</strong> Se deja constancia explícita de que el caudal de rebose del vertedero <em>Morning Glory</em> del Embalse de Tona (<strong>~{q_mg_ls_aprox:,.0f} L/s</strong> a cota <strong>{cota_emb_s:.2f} msnm</strong>) es un <strong>valor aproximado mientras se termina de calibrar empíricamente esa ecuación mediante aforos en Puente Tona y Las Majadas</strong>.</li>
+                    <li><strong>⚖️ Balance Coherente en la Confluencia:</strong> El caudal total medido en Las Majadas (<strong>{q_ls_act:,.0f} L/s</strong>) está compuesto por el <strong>Río Suratá antes de la confluencia (~{q_surata_puro_aprox_ls:,.0f} L/s)</strong> más el aporte del <strong>Río Tona por Puente Tona (~{q_puente_tona_est_ls:,.0f} L/s</strong>, que incluye <strong>~{q_mg_ls_aprox:,.0f} L/s</strong> de rebose aproximado en lámina baja del Morning Glory).</li>
+                    <li><strong>🚰 Oferta vs. Demanda en Toma Bosconia + CRC Embalse:</strong> La planta <strong>PTAP Bosconia</strong> capta un promedio de <strong>900 a 1,200 L/s (~1,050 L/s nominal)</strong> en la Toma Bosconia (dejando <strong>~{q_remanente_bosconia_ls:,.0f} L/s</strong> de caudal remanente aguas abajo en el río) y recibe actualmente <strong>200 L/s</strong> adicionales desde la Válvula CRC del Embalse de Tona.</li>
+                    <li><strong style="color: #D96B00;">⚠️ Hallazgo de Auditoría en la Ecuación del Morning Glory (En Calibración):</strong> Se deja constancia explícita de que el caudal de rebose del vertedero <em>Morning Glory</em> del Embalse de Tona es un <strong>valor aproximado mientras se termina de calibrar empíricamente esa ecuación en campo</strong> (la tabla teórica antigua sin calibrar arrojaba ~<strong>{q_mg_teorico_descalibrado_ls:,.0f} L/s</strong>).</li>
                 </ul>
             </div>
             """, unsafe_allow_html=True)
@@ -4666,45 +4737,50 @@ with tab_matematica:
         st.markdown(r"""
         La estación **Suratá — Sector Las Majadas** (`7°09'18.50"N, 73°03'42.20"W`, $\approx 765.00\text{ msnm}$) constituye la **primera estación hidrológica fluvial del sistema `MIMAT-C26`**, ubicada aguas abajo de la confluencia del Río Suratá con el Río Tona (**Puente Tona**) y aproximadamente $1.8\text{ a }2.0\text{ km}$ aguas arriba de la **Toma Bosconia** del `amb`.
 
-        1. **Ecuación Potencial Oficial de Calibración de la Mira (Curva de Gasto $H \rightarrow Q$):**
-           A partir de la lectura limnimétrica $H$ (en metros), el caudal instantáneo $Q$ se determina mediante la ley potencial de sección de control calibrada para Las Majadas:
-           $$Q(\text{m}^3/\text{s}) = 1,2455 \times (H + 0,13)^{4,1635}$$
-           $$Q(\text{L/s}) = Q(\text{m}^3/\text{s}) \times 1.000 = 1.245,5 \times (H + 0,13)^{4,1635}$$
+        1. **Ecuación Potencial Oficial de Calibración de la Mira y Offset de $-4\text{ cm}$ al Sensor IDEAM (Curva de Gasto $H \rightarrow Q$):**
+           En el sector Las Majadas, el sensor automático Radar OTT del IDEAM (`CNE 0023197700`) y la mira limnimétrica física del `amb` se encuentran separados un par de metros. Por calibración oficial de campo confirmada por el **Ing. Carlos (`amb`)**, **se le restan exactamente $4\text{ cm}$ ($0,04\text{ m}$) directamente al dato de nivel entregado por el IDEAM** para obtener la lectura equivalente en la mira del `amb`:
+           $$H_{\text{mira amb}}(\text{m}) = H_{\text{sensor IDEAM}}(\text{m}) - 0,04\text{ m}$$
+           A partir del nivel calibrado de la mira $H_{\text{mira amb}}$, el caudal instantáneo $Q$ se determina mediante la ecuación potencial oficial del `amb`:
+           $$Q(\text{m}^3/\text{s}) = 1,2455 \times \left(H_{\text{mira amb}} + 0,13\right)^{4,1635} = 1,2455 \times \left(H_{\text{sensor IDEAM}} + 0,09\right)^{4,1635}$$
+           $$Q(\text{L/s}) = Q(\text{m}^3/\text{s}) \times 1.000 = 1.245,5 \times \left(H_{\text{mira amb}} + 0,13\right)^{4,1635}$$
+           *(De igual manera, en el Embalse de Tona se aplica la corrección oficial confirmada por el **Ing. Angarita (`amb`)**, restando $-4\text{ cm}$ ($-0,04\text{ m}$) a la lectura de la mira/radar OTT del vaso, y operando con una extracción actual de $200\text{ L/s}$ por la válvula CRC hacia Bosconia).*
 
         2. **Filtro Digital Robusto Anti-Espuma para Radar OTT (Generación Anterior):**
-           Dado que la estación opera con un **Radar Hidrométrico OTT (versión anterior)** apuntando a un cauce de montaña turbulento y la ecuación posee un exponente alto ($b = 4,1635$), cualquier rebote acústico/electromagnético sobre crestas de espuma o salpicaduras ($\delta H$) se amplificaría no linealmente en un factor proporcional a $(1 + \delta H / H)^{4,1635}$. Por ello, **se filtra primero el nivel $H(t)$ antes de evaluar la potencia**:
-           $$\tilde{H}(t) = \text{MedianaMóvil}_{k=3}\Big( \mathcal{F}_{\text{rango}}\big(H_{\text{OTT}}(t)\big) \Big), \qquad \left|\Delta H_{10\text{min}}\right| \le 0,35\text{ m}$$
-           $$Q_{\text{confiable}}(t) = 1,2455 \times \big(\tilde{H}(t) + 0,13\big)^{4,1635}$$
+           Dado que la estación opera con un **Radar Hidrométrico OTT (versión anterior)** apuntando a un cauce de montaña turbulento y la ecuación posee un exponente alto ($b = 4,1635$), cualquier rebote acústico/electromagnético sobre crestas de espuma o salpicaduras ($\delta H$) se amplificaría no linealmente en un factor proporcional a $(1 + \delta H / H)^{4,1635}$. Por ello, **se descuenta el offset de $-0,04\text{ m}$ y se filtra primero el nivel $H(t)$ antes de evaluar la potencia**:
+           $$\tilde{H}_{\text{mira}}(t) = \text{MedianaMóvil}_{k=3}\Big( \mathcal{F}_{\text{rango}}\big(H_{\text{IDEAM}}(t) - 0,04\big) \Big), \qquad \left|\Delta H_{10\text{min}}\right| \le 0,35\text{ m}$$
+           $$Q_{\text{confiable}}(t) = 1,2455 \times \big(\tilde{H}_{\text{mira}}(t) + 0,13\big)^{4,1635}$$
 
         3. **Balance de Masas en el Triángulo Hidráulico (Confluencia Puente Tona $\rightarrow$ Las Majadas $\rightarrow$ Toma Bosconia):**
            * **Ecuación en la Confluencia (Aguas Arriba de Las Majadas):**
-             $$Q_{\text{Las Majadas}} \approx Q_{\text{Suratá (antes de confluencia)}} + Q_{\text{Puente Tona (Rebose Morning Glory + Cuenca Baja Tona)}}$$
+             $$Q_{\text{Las Majadas}} \approx Q_{\text{Suratá (antes de confluencia)}} + Q_{\text{Puente Tona (Rebose Morning Glory + Descarga CRC 200 L/s + Cuenca Baja Tona)}}$$
            * **Ecuación en Toma Bosconia ($\sim 1,8\text{ km}$ Aguas Abajo de Las Majadas):**
-             Con un caudal promedio en Las Majadas de **$Q_{\text{promedio}} \approx 2.000\text{ L/s}$** ($H \approx 0,991\text{ m}$) y una captación media hacia **PTAP Bosconia** de **$Q_{\text{Toma Bosconia}} \in [900, \, 1.200]\text{ L/s}$** ($\approx 1.050\text{ L/s}$ nominal), el caudal remanente aguas abajo de la bocatoma cumple:
-             $$Q_{\text{remanente aguas abajo}} = Q_{\text{Las Majadas}} - Q_{\text{Toma Bosconia}} \approx 2.000 - 1.050 = 950\text{ L/s}$$
+             Con un caudal histórico de estiaje/base en Las Majadas de **$Q_{\text{base}} \in [2.000, \, 2.899]\text{ L/s}$** ($H_{\text{mira}} \in [0,99, \, 1,09]\text{ m}$, equivalente a $H_{\text{IDEAM}} \in [1,03, \, 1,13]\text{ m}$) y una captación media hacia **PTAP Bosconia** de **$Q_{\text{Toma Bosconia}} \in [900, \, 1.200]\text{ L/s}$** ($\approx 1.050\text{ L/s}$ nominal), el caudal remanente aguas abajo de la bocatoma cumple:
+             $$Q_{\text{remanente aguas abajo}} = Q_{\text{Las Majadas}} - Q_{\text{Toma Bosconia}}$$
 
         4. **Aclaración de Auditoría sobre la Ecuación del *Morning Glory*:**
            Se deja constancia expresa en la ingeniería del proyecto que el caudal de rebose del *Morning Glory* ($885,75\text{ msnm}$) empleado en el balance de Puente Tona es un **valor aproximado mientras se termina de calibrar empíricamente dicha ecuación** con los registros simultáneos de la mira de Las Majadas.
 
         5. **Auditoría de Tiempos de Actualización y Desfase de Latencia (*Lag*) en `FEWS IDEAM` (`CNE 0023197700`):**
            * **Muestreo vs. Transmisión por Lotes (*Batch*):** Aunque el datalogger del Radar OTT en Las Majadas registra el nivel cada $\Delta t_{\text{muestreo}} \in [10, \, 15]\text{ min}$, la transmisión hacia el IDEAM opera por ventanas satelitales GOES o paquetes diferidos GPRS, y el motor *Delft-FEWS Colombia* introduce un **rezago de publicación web ($\tau_{\text{lag, FEWS}}$) de $30\text{ a }90\text{ minutos}$**, además de caídas frecuentes con tramas en `null`.
-           * **Condición Crítica deTiempo de Tránsito ($\tau_{\text{tránsito}} < \tau_{\text{lag, FEWS}}$):** Dado que el tiempo de viaje hidráulico desde Las Majadas hasta las rejillas de **Toma Bosconia** ($\sim 1,8\text{ km}$) es de solo **$\tau_{\text{tránsito}} \in [15, \, 25]\text{ min}$**, se cumple que $\tau_{\text{tránsito}} < \tau_{\text{lag, FEWS}}$; es decir, una creciente súbita arribaría a la bocatoma antes de verse reflejada en el visor público del IDEAM.
-           * **Compensación Predictiva en `BigQuery` (`MIMAT-C26`):** El sistema resuelve esta asimetría almacenando permanentemente cada paquete válido en `BigQuery` y acoplando la estimación en tiempo real ($\tau_{\text{lag}} \approx 0\text{ min}$) con la precipitación medida en la cuenca alta del Suratá (`Monsalve`, con $\Delta t_{\text{anticipación}} \in [60, \, 120]\text{ min}$) y el radar satelital sobre el sector Las Majadas.
+           * **Condición Crítica de Tiempo de Tránsito ($\tau_{\text{tránsito}} < \tau_{\text{lag, FEWS}}$):** Dado que el tiempo de viaje hidráulico desde Las Majadas hasta las rejillas de **Toma Bosconia** ($\sim 1,8\text{ km}$) es de solo **$\tau_{\text{tránsito}} \in [15, \, 25]\text{ min}$**, se cumple que $\tau_{\text{tránsito}} < \tau_{\text{lag, FEWS}}$; es decir, una creciente súbita arribaría a la bocatoma antes de verse reflejada en el visor público del IDEAM.
+           * **Compensación Predictiva en `BigQuery` (`MIMAT-C26`):** El sistema resuelve esta asimetría consultando directamente la API Socrata oficial del IDEAM (`57sv-p2fu.json`, estación `0023197700`), almacenando permanentemente cada paquete válido en `BigQuery` y acoplando la estimación en tiempo real ($\tau_{\text{lag}} \approx 0\text{ min}$) con la precipitación medida en la cuenca alta del Suratá (`Monsalve`, con $\Delta t_{\text{anticipación}} \in [60, \, 120]\text{ min}$) y el radar satelital sobre el sector Las Majadas.
         """)
         df_tabla_maj = pd.DataFrame({
-            "Nivel Mira H (m)": ["0.65 m", "0.80 m", "0.90 m", "0.991 m (Promedio Base)", "1.05 m", "1.11 m (Umbral Amarillo)", "1.23 m (Alerta Naranja)", "1.43 m (Alerta Roja)"],
-            "H + 0.13 (m)": ["0.78 m", "0.93 m", "1.03 m", "1.121 m", "1.18 m", "1.24 m", "1.36 m", "1.56 m"],
-            "Caudal Q (m³/s)": ["0.442 m³/s", "0.920 m³/s", "1.408 m³/s", "2.002 m³/s", "2.481 m³/s", "3.048 m³/s", "4.487 m³/s", "7.968 m³/s"],
-            "Caudal Q (L/s)": ["442 L/s", "920 L/s", "1,408 L/s", "2,002 L/s", "2,481 L/s", "3,048 L/s", "4,487 L/s", "7,968 L/s"],
+            "Dato Sensor IDEAM (m)": ["0.69 m", "0.84 m", "1.031 m", "1.13 m (Mín. Semana Visor)", "1.15 m", "1.27 m", "1.38 m (Dato Vivo Hoy)", "1.47 m", "1.84 m (Pico Creciente)"],
+            "Nivel Mira Calibrado (-4 cm)": ["0.65 m", "0.80 m", "0.991 m (Base 2 m³/s)", "1.09 m (Estiaje 2.85 m³/s)", "1.11 m (Umbral Amarillo)", "1.23 m (Alerta Naranja)", "1.34 m (Estado Actual)", "1.43 m (Alerta Roja)", "1.80 m (Creciente ~19.3 m³/s)"],
+            "H_mira + 0.13 (m)": ["0.78 m", "0.93 m", "1.121 m", "1.22 m", "1.24 m", "1.36 m", "1.47 m", "1.56 m", "1.93 m"],
+            "Caudal Q (m³/s)": ["0.442 m³/s", "0.920 m³/s", "2.002 m³/s", "2.847 m³/s", "3.048 m³/s", "4.487 m³/s", "6.204 m³/s", "7.968 m³/s", "19.280 m³/s"],
+            "Caudal Q (L/s)": ["442 L/s", "920 L/s", "2,002 L/s", "2,847 L/s", "3,048 L/s", "4,487 L/s", "6,204 L/s", "7,968 L/s", "19,280 L/s"],
             "Estado Operativo Toma Bosconia (Demanda 900–1,200 L/s)": [
                 "🔵 Déficit Crítico (Activar Respaldo Embalse Tona)",
-                "🔵 Estiaje pronunciado (Suplementar con Válvula CRC)",
-                "🟢 Cubre captación Bosconia con remanente moderado",
-                "🟢 Caudal Confiable Promedio (~950 L/s remanentes aguas abajo)",
-                "🟢 Oferta holgada para PTAP Bosconia",
+                "🔵 Estiaje pronunciado (Suplementar con Válvula CRC 200 L/s)",
+                "🟢 Caudal Confiable Base (~950 L/s remanentes aguas abajo)",
+                "🟢 Estiaje Normal amb (~2,899 L/s histórico oficial)",
                 "🟡 Ascenso de Nivel (Alistar desarenadores Toma Bosconia)",
                 "🟠 Creciente Moderada-Fuerte (Tránsito 15–25 min a bocatoma)",
-                "🔴 Creciente Súbita Severa (Protección inmediata de bocatoma)"
+                "🟠 Caudal Alto en Recesión (Monitoreo de turbiedad Bosconia)",
+                "🔴 Creciente Súbita Severa (Protección inmediata de bocatoma)",
+                "🔴 Creciente Torrencial (~17,000–19,280 L/s validado en campo)"
             ]
         })
         st.dataframe(df_tabla_maj, use_container_width=True, hide_index=True)
@@ -4719,16 +4795,17 @@ st.sidebar.caption("Proyecto MIMAT-C26 • amb s.a. e.s.p.")
 with st.sidebar.expander("🌊 Información del Embalse"):
     st.write(f"**Nivel de Rebose:** {NIVEL_REBOSE_EMBALSE} msnm")
     c_act = get_cota_embalse_actual_segura()
-    st.write(f"**Cota Actual:** {c_act:.2f} msnm")
+    st.write(f"**Cota Actual (-4 cm OTT):** {c_act:.2f} msnm")
+    st.write("**Extracción Actual Bosconia:** 200 L/s")
     st.write(f"**Volumen Útil (2026):** {VOLUMEN_UTIL_MAX_HM3} hm³")
     st.write(f"**Volumen Muerto:** {VOLUMEN_MUERTO_HM3} hm³")
     st.caption("*Nota: El caudal de rebose Morning Glory es aproximado mientras se calibra su ecuación.*")
 
 with st.sidebar.expander("🏞️ Río Suratá (Las Majadas)"):
     info_sb_maj = sincronizar_fews_ideam_surata_bigquery()
-    st.write(f"**Nivel Mira (OTT):** {info_sb_maj['nivel_m']:.2f} m")
+    st.write(f"**Nivel Mira (-4 cm IDEAM):** {info_sb_maj['nivel_m']:.2f} m (IDEAM: {info_sb_maj.get('nivel_raw_ideam_m', info_sb_maj['nivel_m'] + 0.04):.2f} m)")
     st.write(f"**Caudal Actual:** {info_sb_maj['caudal_ls']:,.0f} L/s ({info_sb_maj['caudal_m3s']:.2f} m³/s)")
-    st.write("**Promedio Sector:** ~2,000 L/s")
+    st.write("**Estiaje / Base Sector:** 2,000 – 2,899 L/s")
     st.write("**Captación Bosconia:** 900 – 1,200 L/s")
 
 with st.sidebar.expander("🤖 Estado del Agente IA"):
@@ -4743,3 +4820,4 @@ with st.sidebar.expander("📏 Extensómetros (EDV)"):
 # ============================================================
 # FIN DEL CÓDIGO — SISTEMA MIMAT-C26 (amb)
 # ============================================================
+
