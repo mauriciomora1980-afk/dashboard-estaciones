@@ -1696,6 +1696,9 @@ def obtener_sensor_virtual_resiliente(estacion):
         }
     return None
 
+# Alias de compatibilidad para el Panel de Alerta Temprana SAT
+estimar_sensores_virtuales_satelitales = obtener_sensor_virtual_resiliente
+
 @st.cache_data(ttl=120)
 def consultar_auditoria_forense_bigquery(estacion: str):
     """
@@ -3225,7 +3228,7 @@ def render_panel_alertas_tempranas_sat():
             
             # Detectar si está en ceros / caída física de sensores
             if (temp_val == 0.0 and hum_val == 0.0) or (id_est in ["La_Mariana", "Yerbabuena"]):
-                sat_info = estimar_sensores_virtuales_satelitales(id_est)
+                sat_info = obtener_sensor_virtual_resiliente(id_est)
                 if sat_info:
                     lluvia_val = float(sat_info.get('precipitacion', 0.0) or 0.0)
                     temp_val = float(sat_info.get('temperatura', temp_val) or temp_val)
@@ -3233,7 +3236,7 @@ def render_panel_alertas_tempranas_sat():
                 estado_red = "VIRTUAL_SATELITAL"
                 origen_txt = "Sensor Virtual Satelital Open-Meteo Activo"
         else:
-            sat_info = estimar_sensores_virtuales_satelitales(id_est)
+            sat_info = obtener_sensor_virtual_resiliente(id_est)
             if sat_info:
                 lluvia_val = float(sat_info.get('precipitacion', 0.0) or 0.0)
                 temp_val = float(sat_info.get('temperatura', 18.0) or 18.0)
