@@ -3523,53 +3523,18 @@ def render_panel_alertas_tempranas_sat():
             </div>
             """, unsafe_allow_html=True)
 
-    # -------------------------------------------------------------
-    # FILA 4: PROTOCOLO OPERATIVO PMU / SALA DE CONTROL SCADA
-    # -------------------------------------------------------------
-    st.markdown("### 📋 4. Protocolo Operativo y Recomendaciones Institucionales (PMU / Sala de Control)")
-    st.markdown(f"""
-    <div style="background: #0B192C; border: 1px solid #1E3A8A; border-radius: 12px; padding: 16px 20px; font-size: 12.5px; color: #E2E8F0;">
-        <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px;">
-            <div>
-                <strong style="color: #64FFDA;">🚰 BOCATOMA BOSCONIA (PTAP):</strong><br>
-                • Demanda nominal: <strong>900 a 1,200 L/s</strong>.<br>
-                • Estado de captación actual: <strong>{sur_accion}</strong>.<br>
-                • Tiempo de viaje desde Majadas: <strong>15 a 25 minutos</strong>.
-            </div>
-            <div>
-                <strong style="color: #38BDF8;">🌊 EMBALSE DE TONA:</strong><br>
-                • Extracción confirmada CRC: <strong>200 L/s</strong>.<br>
-                • Vertimiento Morning Glory: <strong>~{q_mg_ls:,.0f} L/s ({q_mg_m3s:.2f} m³/s)</strong>.<br>
-                • Capacidad de retención: <strong>{'En rebose (Sin déficit)' if cota_emb >= 885.75 else f'Amortiguando (-{abs(885.75-cota_emb)*100:.1f} cm)'}</strong>.
-            </div>
-            <div>
-                <strong style="color: #F59E0B;">📞 LÍNEAS DE COORDINACIÓN:</strong><br>
-                • Contact Center amb: <strong>(607) 6898080</strong> / <strong>3330333356</strong>.<br>
-                • Coordinación Sala de Control SCADA: Canal telemétrico 24/7.<br>
-                • Notificación SMS: <strong>07:00 AM diario & Vigilancia cada 10 min</strong>.
-            </div>
-        </div>
-    </div>
-    """, unsafe_allow_html=True)
-
 # ============================================================
 # 8. PESTAÑAS PRINCIPALES DEL SISTEMA (7 PESTAÑAS)
 # ============================================================
-tab_resumen_alertas, tab_situacion, tab_embalse_2026, tab_radar_72h, tab_series, tab_ia, tab_matematica = st.tabs([
-    "🌐 Panel de Alerta Temprana y Vigilancia de Cuencas",
+tab_situacion, tab_embalse_2026, tab_radar_72h, tab_series, tab_ia, tab_resumen_alertas, tab_matematica = st.tabs([
     "📊 Situación Actual", 
     "🌊 Gestión Embalse & Sequía 2026", 
     "🛰️ Radar Satelital & Pronóstico 72h",
     "📈 Series de Tiempo & Descargas", 
     "🤖 Asistente IA MIMAT-C",
+    "🌐 Panel de Alerta Temprana y Vigilancia de Cuencas",
     "📐 Fundamento Matemático & Auditoría"
 ])
-
-# ------------------------------------------------------------
-# TAB 0: PANEL DE ALERTA TEMPRANA Y VIGILANCIA DE CUENCAS
-# ------------------------------------------------------------
-with tab_resumen_alertas:
-    render_panel_alertas_tempranas_sat()
 
 # ------------------------------------------------------------
 # TAB 1: SITUACIÓN ACTUAL
@@ -5184,6 +5149,12 @@ with tab_ia:
     if st.button("🗑️ Limpiar conversación", use_container_width=True):
         st.session_state.messages = []
         st.rerun()
+
+# ------------------------------------------------------------
+# TAB 5: PANEL DE ALERTA TEMPRANA Y VIGILANCIA DE CUENCAS
+# ------------------------------------------------------------
+with tab_resumen_alertas:
+    render_panel_alertas_tempranas_sat()
 
 # ------------------------------------------------------------
 # TAB 6: FUNDAMENTO MATEMÁTICO & AUDITORÍA DE INGENIERÍA
