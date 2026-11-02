@@ -3451,9 +3451,21 @@ def render_eventos_significativos_estadisticas():
             format_func=lambda x: "Histórico Completo 2026" if x >= 365 else f"Últimos {x} días",
             key="ev_periodo_dias"
         )
+        orden_oficial_ev = ["Todas las Estaciones", "Embalse", "Surata", "La_Mariana", "Yerbabuena", "Vegas_del_Quemado", "El_Pajal", "Monsalve"]
         estacion_ev_sel = col_f2.selectbox(
             "Filtrar por estación:",
-            ["Todas las Estaciones", "El_Pajal", "Yerbabuena", "La_Mariana", "Vegas_del_Quemado", "Monsalve", "Embalse", "Surata"],
+            orden_oficial_ev,
+            index=0,
+            format_func=lambda x: {
+                "Todas las Estaciones": "🌐 Todas las Estaciones",
+                "Embalse": "🌊 Embalse Tona",
+                "Surata": "⚡ Río Suratá (Majadas)",
+                "La_Mariana": "🌿 La Mariana",
+                "Yerbabuena": "💧 Yerbabuena",
+                "Vegas_del_Quemado": "⛰️ Vegas del Quemado",
+                "El_Pajal": "🌾 El Pajal",
+                "Monsalve": "🏔️ Monsalve"
+            }.get(x, x.replace('_', ' ')),
             key="ev_estacion_sel"
         )
         with st.spinner("Consultando registros forenses en BigQuery..."):
@@ -3628,11 +3640,36 @@ def render_eventos_significativos_estadisticas():
             return
 
         c_st1, c_st2, c_st3 = st.columns(3)
-        estaciones_disp = sorted(df_stats_base['id_estacion'].unique().tolist())
-        est_stat = c_st1.selectbox("Seleccione Estación:", estaciones_disp, index=0, key="stat_sel_estacion")
+        orden_oficial = ["Embalse", "Surata", "La_Mariana", "Yerbabuena", "Vegas_del_Quemado", "El_Pajal", "Monsalve"]
+        estaciones_reales = [
+            str(e).strip() for e in df_stats_base['id_estacion'].dropna().unique() 
+            if str(e).strip() and str(e).strip().lower() not in ['desconocido', 'none', 'null', 'nan', 'unknown']
+        ]
+        estaciones_disp = [e for e in orden_oficial if e in estaciones_reales]
+        for e in estaciones_reales:
+            if e not in estaciones_disp:
+                estaciones_disp.append(e)
+        if not estaciones_disp:
+            estaciones_disp = orden_oficial
+
+        est_stat = c_st1.selectbox(
+            "Seleccione Estación:",
+            estaciones_disp,
+            index=0,
+            format_func=lambda x: {
+                "Embalse": "🌊 Embalse Tona",
+                "Surata": "⚡ Río Suratá (Majadas)",
+                "La_Mariana": "🌿 La Mariana",
+                "Yerbabuena": "💧 Yerbabuena",
+                "Vegas_del_Quemado": "⛰️ Vegas del Quemado",
+                "El_Pajal": "🌾 El Pajal",
+                "Monsalve": "🏔️ Monsalve"
+            }.get(x, x.replace('_', ' ')),
+            key="stat_sel_estacion"
+        )
         granularidad = c_st2.selectbox(
             "Granularidad Temporal:",
-            ["🗓️ Mensual", "📐† Semanal", "📐… Diario", "🏆 Progresivo Anual (2026)"],
+            ["🗓️ Mensual", "📆 Semanal", "📅 Diario", "🏆 Progresivo Anual (2026)"],
             index=0,
             key="stat_sel_granularidad"
         )
