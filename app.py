@@ -3320,6 +3320,7 @@ def consultar_eventos_significativos_bigquery(dias=90):
     - Crecientes en Río Suratá (Majadas)
     """
     try:
+        filtro_tiempo = f"SAFE_CAST(timestamp AS TIMESTAMP) >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL {dias} DAY)" if dias < 365 else "1=1"
         query = f"""
         SELECT
             id_estacion,
@@ -3329,7 +3330,7 @@ def consultar_eventos_significativos_bigquery(dias=90):
             SAFE_CAST(humedad AS FLOAT64) as hum,
             SAFE_CAST(velocidad_viento AS FLOAT64) as viento
         FROM `gen-lang-client-0342049346.amb_hidrologia.telemetria_estaciones`
-        WHERE SAFE_CAST(timestamp AS TIMESTAMP) >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL {dias} DAY)
+        WHERE {filtro_tiempo}
           AND (
             (id_estacion = 'Embalse' AND SAFE_CAST(temperatura AS FLOAT64) >= 885.70)
             OR (id_estacion = 'El_Pajal' AND SAFE_CAST(precipitacion AS FLOAT64) >= 12.3)
@@ -3343,17 +3344,19 @@ def consultar_eventos_significativos_bigquery(dias=90):
         LIMIT 5000
         """
         q_job = client.query(query)
-        df_ev = q_job.to_dataframe()
-        return df_ev
+        rows = [dict(row) for row in q_job.result()]
+        return pd.DataFrame(rows)
     except Exception as e:
         print(f"Error consultando eventos significativos: {e}")
         return pd.DataFrame()
+
 @st.cache_data(ttl=300)
 def consultar_picos_embalse_bigquery(dias=90):
     """
     Consulta las cotas más altas registradas por el radar del embalse en el período.
     """
     try:
+        filtro_tiempo = f"SAFE_CAST(timestamp AS TIMESTAMP) >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL {dias} DAY)" if dias < 365 else "1=1"
         query = f"""
         SELECT
             SAFE_CAST(timestamp AS TIMESTAMP) as ts,
@@ -3362,15 +3365,17 @@ def consultar_picos_embalse_bigquery(dias=90):
         FROM `gen-lang-client-0342049346.amb_hidrologia.telemetria_estaciones`
         WHERE id_estacion = 'Embalse'
           AND SAFE_CAST(temperatura AS FLOAT64) > 800
-          AND SAFE_CAST(timestamp AS TIMESTAMP) >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL {dias} DAY)
+          AND {filtro_tiempo}
         ORDER BY cota DESC
         LIMIT 20
         """
         q_job = client.query(query)
-        return q_job.to_dataframe()
+        rows = [dict(row) for row in q_job.result()]
+        return pd.DataFrame(rows)
     except Exception as e:
         print(f"Error consultando picos embalse: {e}")
         return pd.DataFrame()
+
 @st.cache_data(ttl=600)
 def consultar_estadisticas_multitemporales_bigquery():
     """
@@ -3380,29 +3385,39 @@ def consultar_estadisticas_multitemporales_bigquery():
     """
     try:
         query = """
-        SELECT
+        WITH base AS (
+          SELECT 
             id_estacion,
             DATE(SAFE_CAST(timestamp AS TIMESTAMP), 'America/Bogota') as fecha,
-            EXTRACT(YEAR FROM SAFE_CAST(timestamp AS TIMESTAMP) AT TIME ZONE 'America/Bogota') as anio,
-            EXTRACT(MONTH FROM SAFE_CAST(timestamp AS TIMESTAMP) AT TIME ZONE 'America/Bogota') as mes,
-            EXTRACT(ISOWEEK FROM SAFE_CAST(timestamp AS TIMESTAMP) AT TIME ZONE 'America/Bogota') as semana,
-            ROUND(SUM(SAFE_CAST(precipitacion AS FLOAT64)), 2) as lluvia_diaria,
-            ROUND(MAX(SAFE_CAST(precipitacion AS FLOAT64)), 2) as lluvia_pico_horario,
-            ROUND(MIN(SAFE_CAST(temperatura AS FLOAT64)), 2) as temp_min,
-            ROUND(MAX(SAFE_CAST(temperatura AS FLOAT64)), 2) as temp_max,
-            ROUND(AVG(SAFE_CAST(temperatura AS FLOAT64)), 2) as temp_prom,
-            ROUND(MIN(SAFE_CAST(humedad AS FLOAT64)), 1) as hum_min,
-            ROUND(MAX(SAFE_CAST(humedad AS FLOAT64)), 1) as hum_max,
-            ROUND(AVG(SAFE_CAST(humedad AS FLOAT64)), 1) as hum_prom,
+            SAFE_CAST(precipitacion AS FLOAT64) as precip,
+            SAFE_CAST(temperatura AS FLOAT64) as temp,
+            SAFE_CAST(humedad AS FLOAT64) as hum
+          FROM `gen-lang-client-0342049346.amb_hidrologia.telemetria_estaciones`
+          WHERE timestamp IS NOT NULL
+        )
+        SELECT 
+            id_estacion,
+            fecha,
+            EXTRACT(YEAR FROM fecha) as anio,
+            EXTRACT(MONTH FROM fecha) as mes,
+            EXTRACT(ISOWEEK FROM fecha) as semana,
+            ROUND(SUM(IFNULL(precip, 0.0)), 2) as lluvia_diaria,
+            ROUND(MAX(IFNULL(precip, 0.0)), 2) as lluvia_pico_horario,
+            ROUND(MIN(temp), 2) as temp_min,
+            ROUND(MAX(temp), 2) as temp_max,
+            ROUND(AVG(temp), 2) as temp_prom,
+            ROUND(MIN(hum), 1) as hum_min,
+            ROUND(MAX(hum), 1) as hum_max,
+            ROUND(AVG(hum), 1) as hum_prom,
             COUNT(*) as total_lecturas
-        FROM `gen-lang-client-0342049346.amb_hidrologia.telemetria_estaciones`
-        WHERE SAFE_CAST(timestamp AS TIMESTAMP) IS NOT NULL
-        GROUP BY id_estacion, fecha, anio, mes, semana
+        FROM base
+        WHERE fecha IS NOT NULL
+        GROUP BY 1, 2, 3, 4, 5
         ORDER BY fecha DESC
         """
         q_job = client.query(query)
-        df = q_job.to_dataframe()
-        return df
+        rows = [dict(row) for row in q_job.result()]
+        return pd.DataFrame(rows)
     except Exception as e:
         print(f"Error consultando estadísticas multitemporales: {e}")
         return pd.DataFrame()
@@ -3431,7 +3446,7 @@ def render_eventos_significativos_estadisticas():
             "Ventana temporal de análisis forense:",
             [7, 15, 30, 60, 90, 180, 365],
             index=4,
-            format_func=lambda x: f"Últimos {x} días",
+            format_func=lambda x: "Histórico Completo 2026" if x >= 365 else f"Últimos {x} días",
             key="ev_periodo_dias"
         )
         estacion_ev_sel = col_f2.selectbox(
