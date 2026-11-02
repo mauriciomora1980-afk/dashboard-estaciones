@@ -3858,261 +3858,605 @@ def render_eventos_significativos_estadisticas():
             estaciones_disp = orden_oficial
 
         est_stat = c_st1.selectbox(
-            "Seleccione Estación:",
+            "Seleccione Estaci\u00F3n:",
             estaciones_disp,
             index=0,
             format_func=lambda x: {
-                "Embalse": "🌊 Embalse Tona",
-                "Surata": "⚡ Río Suratá (Majadas)",
-                "La_Mariana": "🌿 La Mariana",
-                "Yerbabuena": "💧 Yerbabuena",
-                "Vegas_del_Quemado": "⛰️ Vegas del Quemado",
-                "El_Pajal": "🌾 El Pajal",
-                "Monsalve": "🏔️ Monsalve"
+                "Embalse": "\U0001F30A Embalse Tona",
+                "Surata": "\u26A1 R\u00EDo Surat\u00E1 (Majadas)",
+                "La_Mariana": "\U0001F33F La Mariana",
+                "Yerbabuena": "\U0001F4A7 Yerbabuena",
+                "Vegas_del_Quemado": "\u26F0\uFE0F Vegas del Quemado",
+                "El_Pajal": "\U0001F33E El Pajal",
+                "Monsalve": "\U0001F3D4\uFE0F Monsalve"
             }.get(x, x.replace('_', ' ')),
             key="stat_sel_estacion"
         )
         granularidad = c_st2.selectbox(
             "Granularidad Temporal:",
-            ["🗓️ Mensual", "📆 Semanal", "📅 Diario", "🏆 Progresivo Anual (2026)"],
+            ["\U0001F5D3\uFE0F Mensual", "\U0001F4C6 Semanal", "\U0001F4C5 Diario", "\U0001F3C6 Progresivo Anual (2026)"],
             index=0,
             key="stat_sel_granularidad"
         )
+
+        es_surata = (est_stat == "Surata")
+        es_embalse = (est_stat == "Embalse")
+        es_cuenca = (not es_surata and not es_embalse)
+
+        # Variables disponibles segun la fisica real de medicion en campo
+        if es_surata:
+            opciones_variables = ["\U0001F30A Caudal Fluvial (L/s)", "\U0001F4CF Nivel Limnim\u00E9trico en Mira (m)"]
+        elif es_embalse:
+            opciones_variables = ["\U0001F30A Cota del Embalse (msnm)", "\U0001F300 Descarga Morning Glory (L/s)", "\U0001F4E6 Volumen Almacenado (hm\u00B3)"]
+        else:
+            opciones_variables = ["\U0001F327\uFE0F Precipitaci\u00F3n / Lluvia (mm)", "\U0001F321\uFE0F Temperatura (\u00B0C)", "\U0001F4A7 Humedad Relativa (%)"]
+
         variable_grafica = c_st3.selectbox(
             "Variable principal a visualizar:",
-            ["🌧️ Precipitación / Lluvia", "🌡️ Temperatura / Nivel", "💧 Humedad Relativa"],
-            key="stat_sel_variable"
+            opciones_variables,
+            index=0,
+            key=f"stat_sel_var_{est_stat}"
         )
+
         df_est = df_stats_base[df_stats_base['id_estacion'] == est_stat].copy()
         if df_est.empty:
-            st.info(f"No hay registros disponibles para la estación {est_stat}.")
+            st.info(f"No hay registros disponibles para la estaci\u00F3n {est_stat}.")
             return
 
-        es_embalse = (est_stat == "Embalse")
+        # Preprocesamiento inteligente por tipologia fisica de estacion
+        if es_surata:
+            # En Surata: precip es Caudal Q (L/s) y temp es Nivel Limnimetrico H (m)
+            df_est['caudal_diario_prom_ls'] = df_est.apply(
+                lambda r: round(r['lluvia_diaria'] / max(1, r['total_lecturas']), 1) if r['lluvia_diaria'] > 50 else round(r['lluvia_pico_horario'], 1),
+                axis=1
+            )
+            df_est['caudal_diario_max_ls'] = df_est['lluvia_pico_horario']
+            df_est['nivel_prom_m'] = df_est['temp_prom']
+            df_est['nivel_max_m'] = df_est['temp_max']
+            df_est['nivel_min_m'] = df_est['temp_min']
+        elif es_embalse:
+            # En Embalse: temp es Cota Radar en msnm
+            df_est['cota_prom_msnm'] = df_est['temp_prom']
+            df_est['cota_max_msnm'] = df_est['temp_max']
+            df_est['cota_min_msnm'] = df_est['temp_min']
+            df_est['descarga_mg_max_ls'] = df_est['cota_max_msnm'].apply(
+                lambda c: round(110.0 * (max(0.0, c - 885.75) ** 1.5) * 1000.0, 1)
+            )
+            df_est['volumen_max_hm3'] = df_est['cota_max_msnm'].apply(
+                lambda c: round(interpolar_volumen(c), 2)
+            )
 
         # --------------------------------------------------------
         # 1. GRANULARIDAD: DIARIO
         # --------------------------------------------------------
         if "Diario" in granularidad:
-            df_view = df_est[[
-                'fecha', 'lluvia_diaria', 'lluvia_pico_horario',
-                'temp_min', 'temp_max', 'temp_prom',
-                'hum_min', 'hum_max', 'hum_prom', 'total_lecturas'
-            ]].copy()
+            df_view = df_est.copy()
             df_view['fecha'] = pd.to_datetime(df_view['fecha'])
             df_view = df_view.sort_values('fecha', ascending=False)
 
             col_k1, col_k2, col_k3, col_k4 = st.columns(4)
-            col_k1.metric("Días con Registro", len(df_view))
-            col_k2.metric("Lluvia Diaria Máxima", f"{df_view['lluvia_diaria'].max():.1f} mm")
-            col_k3.metric("Lluvia Diaria Promedio", f"{df_view['lluvia_diaria'].mean():.1f} mm")
-            if es_embalse:
-                col_k4.metric("Cota Máx Radar", f"{df_view['temp_max'].max():.2f} msnm")
-            else:
-                col_k4.metric("Temp Máx Absoluta", f"{df_view['temp_max'].max():.1f} °C")
+            col_k1.metric("D\u00EDas Monitoreados", len(df_view))
+
             fig_d = go.Figure()
-            if "Precipitación" in variable_grafica:
-                fig_d.add_trace(go.Bar(
-                    x=df_view['fecha'], y=df_view['lluvia_diaria'],
-                    name="Lluvia Diaria (mm)", marker_color="#00CC96"
-                ))
-                fig_d.add_trace(go.Scatter(
-                    x=df_view['fecha'], y=df_view['lluvia_pico_horario'],
-                    name="Pico Horario Máx (mm/h)", mode='lines+markers', line=dict(color="#FF8000", width=2)
-                ))
-                fig_d.update_layout(title=f"Histórico Diario de Precipitación — {est_stat}", yaxis_title="mm / mm/h")
-            elif "Temperatura" in variable_grafica:
-                lbl_t = "Cota Radar (msnm)" if es_embalse else "Temperatura (°C)"
-                fig_d.add_trace(go.Scatter(
-                    x=df_view['fecha'], y=df_view['temp_max'],
-                    name=f"Máximo ({lbl_t})", mode='lines', line=dict(color="#FF4B4B", width=1.5)
-                ))
-                fig_d.add_trace(go.Scatter(
-                    x=df_view['fecha'], y=df_view['temp_prom'],
-                    name=f"Promedio ({lbl_t})", mode='lines', line=dict(color="#38BDF8", width=2)
-                ))
-                fig_d.add_trace(go.Scatter(
-                    x=df_view['fecha'], y=df_view['temp_min'],
-                    name=f"Mínimo ({lbl_t})", mode='lines', line=dict(color="#00CC96", width=1.5),
-                    fill='tonexty', fillcolor='rgba(56, 189, 248, 0.15)'
-                ))
-                fig_d.update_layout(title=f"Banda Diaria de {lbl_t} (Máx - Prom - Mín) — {est_stat}", yaxis_title=lbl_t)
+
+            if es_surata:
+                q_max_abs = df_view['caudal_diario_max_ls'].max()
+                q_prom_abs = df_view['caudal_diario_prom_ls'].mean()
+                h_max_abs = df_view['nivel_max_m'].max()
+                h_mira_max = max(0.05, h_max_abs - 0.04)
+                col_k2.metric("Caudal Pico M\u00E1ximo", f"{q_max_abs:,.0f} L/s ({q_max_abs/1000.0:.2f} m\u00B3/s)")
+                col_k3.metric("Caudal Medio Ponderado", f"{q_prom_abs:,.0f} L/s ({q_prom_abs/1000.0:.2f} m\u00B3/s)")
+                col_k4.metric("Nivel M\u00E1x en Mira amb", f"{h_mira_max:.2f} m (IDEAM: {h_max_abs:.2f} m)")
+
+                if "Caudal" in variable_grafica:
+                    fig_d.add_trace(go.Bar(
+                        x=df_view['fecha'], y=df_view['caudal_diario_prom_ls'],
+                        name="Caudal Medio Diario (L/s)", marker_color="#00CC96"
+                    ))
+                    fig_d.add_trace(go.Scatter(
+                        x=df_view['fecha'], y=df_view['caudal_diario_max_ls'],
+                        name="Caudal Pico M\u00E1x (L/s)", mode='lines+markers', line=dict(color="#FF8000", width=2)
+                    ))
+                    fig_d.update_layout(title="Hist\u00F3rico Diario de Caudal Fluvial \u2014 R\u00EDo Surat\u00E1 (Majadas)", yaxis_title="Caudal Q (L/s)")
+                else:
+                    fig_d.add_trace(go.Scatter(
+                        x=df_view['fecha'], y=df_view['nivel_max_m'] - 0.04,
+                        name="Nivel M\u00E1x Mira amb (m)", mode='lines', line=dict(color="#FF4B4B", width=1.5)
+                    ))
+                    fig_d.add_trace(go.Scatter(
+                        x=df_view['fecha'], y=df_view['nivel_prom_m'] - 0.04,
+                        name="Nivel Prom Mira amb (m)", mode='lines', line=dict(color="#38BDF8", width=2)
+                    ))
+                    fig_d.add_trace(go.Scatter(
+                        x=df_view['fecha'], y=df_view['nivel_min_m'] - 0.04,
+                        name="Nivel M\u00EDn Mira amb (m)", mode='lines', line=dict(color="#00CC96", width=1.5),
+                        fill='tonexty', fillcolor='rgba(56, 189, 248, 0.15)'
+                    ))
+                    fig_d.update_layout(title="Banda Diaria de Nivel Limnim\u00E9trico en Mira \u2014 R\u00EDo Surat\u00E1 (Majadas)", yaxis_title="Nivel Mira amb (m)")
+
+                rename_cols = {
+                    'fecha': 'Fecha',
+                    'caudal_diario_prom_ls': 'Caudal Medio (L/s)',
+                    'caudal_diario_max_ls': 'Caudal Pico M\u00E1x (L/s)',
+                    'nivel_prom_m': 'Nivel Prom IDEAM (m)',
+                    'nivel_max_m': 'Nivel M\u00E1x IDEAM (m)',
+                    'total_lecturas': 'Lecturas'
+                }
+                cols_tabla = ['fecha', 'caudal_diario_prom_ls', 'caudal_diario_max_ls', 'nivel_prom_m', 'nivel_max_m', 'total_lecturas']
+
+            elif es_embalse:
+                c_max_abs = df_view['cota_max_msnm'].max()
+                c_prom_abs = df_view['cota_prom_msnm'].mean()
+                q_mg_abs = df_view['descarga_mg_max_ls'].max()
+                v_max_abs = df_view['volumen_max_hm3'].max()
+                col_k2.metric("Cota M\u00E1xima Radar", f"{c_max_abs:.2f} msnm")
+                col_k3.metric("Descarga M\u00E1x Morning Glory", f"{q_mg_abs:,.0f} L/s ({q_mg_abs/1000.0:.2f} m\u00B3/s)")
+                col_k4.metric("Volumen Almacenado M\u00E1x", f"{v_max_abs:.2f} hm\u00B3")
+
+                if "Cota" in variable_grafica:
+                    fig_d.add_trace(go.Scatter(
+                        x=df_view['fecha'], y=df_view['cota_max_msnm'],
+                        name="Cota M\u00E1xima (msnm)", mode='lines', line=dict(color="#FF4B4B", width=1.5)
+                    ))
+                    fig_d.add_trace(go.Scatter(
+                        x=df_view['fecha'], y=df_view['cota_prom_msnm'],
+                        name="Cota Promedio (msnm)", mode='lines', line=dict(color="#38BDF8", width=2)
+                    ))
+                    fig_d.add_trace(go.Scatter(
+                        x=df_view['fecha'], y=df_view['cota_min_msnm'],
+                        name="Cota M\u00EDnima (msnm)", mode='lines', line=dict(color="#00CC96", width=1.5),
+                        fill='tonexty', fillcolor='rgba(56, 189, 248, 0.15)'
+                    ))
+                    fig_d.add_hline(y=885.75, line_dash="dash", line_color="#FF0000", annotation_text="Cresta Morning Glory (885.75 msnm)")
+                    fig_d.update_layout(title="Hist\u00F3rico Diario de Cota \u2014 Embalse de Tona", yaxis_title="Cota (msnm)")
+                elif "Descarga" in variable_grafica:
+                    fig_d.add_trace(go.Bar(
+                        x=df_view['fecha'], y=df_view['descarga_mg_max_ls'],
+                        name="Descarga Morning Glory M\u00E1x (L/s)", marker_color="#38BDF8"
+                    ))
+                    fig_d.update_layout(title="Descarga Diaria Vertedero Morning Glory \u2014 Embalse de Tona", yaxis_title="Caudal (L/s)")
+                else:
+                    fig_d.add_trace(go.Scatter(
+                        x=df_view['fecha'], y=df_view['volumen_max_hm3'],
+                        name="Volumen Almacenado (hm\u00B3)", mode='lines+markers', line=dict(color="#A855F7", width=2)
+                    ))
+                    fig_d.update_layout(title="Volumen Almacenado Diario \u2014 Embalse de Tona", yaxis_title="Volumen (hm\u00B3)")
+
+                rename_cols = {
+                    'fecha': 'Fecha',
+                    'cota_prom_msnm': 'Cota Prom (msnm)',
+                    'cota_max_msnm': 'Cota M\u00E1x (msnm)',
+                    'cota_min_msnm': 'Cota M\u00EDn (msnm)',
+                    'descarga_mg_max_ls': 'Descarga MG (L/s)',
+                    'volumen_max_hm3': 'Volumen (hm\u00B3)',
+                    'total_lecturas': 'Lecturas'
+                }
+                cols_tabla = ['fecha', 'cota_prom_msnm', 'cota_max_msnm', 'cota_min_msnm', 'descarga_mg_max_ls', 'volumen_max_hm3', 'total_lecturas']
+
             else:
-                fig_d.add_trace(go.Scatter(
-                    x=df_view['fecha'], y=df_view['hum_prom'],
-                    name="Humedad Promedio (%)", mode='lines+markers', line=dict(color="#A855F7", width=2)
-                ))
-                fig_d.update_layout(title=f"Humedad Relativa Diaria — {est_stat}", yaxis_title="%")
+                col_k2.metric("Lluvia Diaria M\u00E1xima", f"{df_view['lluvia_diaria'].max():.1f} mm")
+                col_k3.metric("Lluvia Diaria Promedio", f"{df_view['lluvia_diaria'].mean():.1f} mm")
+                col_k4.metric("Temp M\u00E1x Absoluta", f"{df_view['temp_max'].max():.1f} \u00B0C")
+
+                if "Precipitaci\u00F3n" in variable_grafica:
+                    fig_d.add_trace(go.Bar(
+                        x=df_view['fecha'], y=df_view['lluvia_diaria'],
+                        name="Lluvia Diaria (mm)", marker_color="#00CC96"
+                    ))
+                    fig_d.add_trace(go.Scatter(
+                        x=df_view['fecha'], y=df_view['lluvia_pico_horario'],
+                        name="Pico Horario M\u00E1x (mm/h)", mode='lines+markers', line=dict(color="#FF8000", width=2)
+                    ))
+                    fig_d.update_layout(title=f"Hist\u00F3rico Diario de Precipitaci\u00F3n \u2014 {est_stat}", yaxis_title="mm / mm/h")
+                elif "Temperatura" in variable_grafica:
+                    fig_d.add_trace(go.Scatter(
+                        x=df_view['fecha'], y=df_view['temp_max'],
+                        name="Temperatura M\u00E1xima (\u00B0C)", mode='lines', line=dict(color="#FF4B4B", width=1.5)
+                    ))
+                    fig_d.add_trace(go.Scatter(
+                        x=df_view['fecha'], y=df_view['temp_prom'],
+                        name="Temperatura Promedio (\u00B0C)", mode='lines', line=dict(color="#38BDF8", width=2)
+                    ))
+                    fig_d.add_trace(go.Scatter(
+                        x=df_view['fecha'], y=df_view['temp_min'],
+                        name="Temperatura M\u00EDnima (\u00B0C)", mode='lines', line=dict(color="#00CC96", width=1.5),
+                        fill='tonexty', fillcolor='rgba(56, 189, 248, 0.15)'
+                    ))
+                    fig_d.update_layout(title=f"Banda Diaria de Temperatura (\u00B0C) \u2014 {est_stat}", yaxis_title="\u00B0C")
+                else:
+                    fig_d.add_trace(go.Scatter(
+                        x=df_view['fecha'], y=df_view['hum_prom'],
+                        name="Humedad Promedio (%)", mode='lines+markers', line=dict(color="#A855F7", width=2)
+                    ))
+                    fig_d.update_layout(title=f"Humedad Relativa Diaria (%) \u2014 {est_stat}", yaxis_title="%")
+
+                rename_cols = {
+                    'fecha': 'Fecha',
+                    'lluvia_diaria': 'Lluvia Acum. (mm)',
+                    'lluvia_pico_horario': 'Pico Horario (mm/h)',
+                    'temp_min': 'Temp M\u00EDn (\u00B0C)',
+                    'temp_max': 'Temp M\u00E1x (\u00B0C)',
+                    'temp_prom': 'Temp Prom (\u00B0C)',
+                    'hum_prom': 'Humedad Prom (%)',
+                    'total_lecturas': 'Lecturas'
+                }
+                cols_tabla = ['fecha', 'lluvia_diaria', 'lluvia_pico_horario', 'temp_min', 'temp_max', 'temp_prom', 'hum_prom', 'total_lecturas']
+
             fig_d.update_layout(template="plotly_dark", height=380, hovermode="x unified")
             st.plotly_chart(fig_d, use_container_width=True)
 
-            rename_cols = {
-                'fecha': 'Fecha',
-                'lluvia_diaria': 'Lluvia Acum. (mm)',
-                'lluvia_pico_horario': 'Pico Horario (mm/h)',
-                'temp_min': 'Cota Mín (msnm)' if es_embalse else 'Temp Mín (°C)',
-                'temp_max': 'Cota Máx (msnm)' if es_embalse else 'Temp Máx (°C)',
-                'temp_prom': 'Cota Prom (msnm)' if es_embalse else 'Temp Prom (°C)',
-                'hum_prom': 'Humedad Prom (%)',
-                'total_lecturas': 'Lecturas'
-            }
-            df_table_d = df_view.rename(columns=rename_cols).drop(columns=['hum_min', 'hum_max'], errors='ignore')
+            df_table_d = df_view[cols_tabla].rename(columns=rename_cols)
             st.dataframe(df_table_d, use_container_width=True, hide_index=True)
             csv_d = df_table_d.to_csv(index=False).encode('utf-8')
             st.download_button(
-                label=f"📥 Descargar Estadísticas Diarias ({est_stat}) en CSV",
+                label=f"\U0001F4E5 Descargar Estad\u00EDsticas Diarias ({est_stat}) en CSV",
                 data=csv_d,
                 file_name=f"estadisticas_diarias_{est_stat}.csv",
                 mime="text/csv"
             )
+
         # --------------------------------------------------------
         # 2. GRANULARIDAD: SEMANAL
         # --------------------------------------------------------
         elif "Semanal" in granularidad:
-            df_sem = df_est.groupby(['anio', 'semana']).agg(
-                fecha_inicio=('fecha', 'min'),
-                fecha_fin=('fecha', 'max'),
-                lluvia_semanal=('lluvia_diaria', 'sum'),
-                pico_max_semanal=('lluvia_pico_horario', 'max'),
-                dias_con_lluvia=('lluvia_diaria', lambda s: (s > 0.1).sum()),
-                temp_min_sem=('temp_min', 'min'),
-                temp_max_sem=('temp_max', 'max'),
-                temp_prom_sem=('temp_prom', 'mean'),
-                hum_prom_sem=('hum_prom', 'mean'),
-                dias_evaluados=('fecha', 'count')
-            ).reset_index().sort_values(['anio', 'semana'], ascending=False)
+            if es_surata:
+                df_sem = df_est.groupby(['anio', 'semana']).agg(
+                    fecha_inicio=('fecha', 'min'),
+                    fecha_fin=('fecha', 'max'),
+                    caudal_prom_sem=('caudal_diario_prom_ls', 'mean'),
+                    caudal_max_sem=('caudal_diario_max_ls', 'max'),
+                    nivel_prom_sem=('nivel_prom_m', 'mean'),
+                    nivel_max_sem=('nivel_max_m', 'max'),
+                    dias_evaluados=('fecha', 'count')
+                ).reset_index().sort_values(['anio', 'semana'], ascending=False)
+                df_sem['Semana'] = df_sem.apply(lambda r: f"Semana {int(r['semana'])} ({int(r['anio'])})", axis=1)
 
-            df_sem['Semana'] = df_sem.apply(lambda r: f"Semana {int(r['semana'])} ({r['anio']})", axis=1)
+                col_sk1, col_sk2, col_sk3, col_sk4 = st.columns(4)
+                col_sk1.metric("Semanas Evaluadas", len(df_sem))
+                col_sk2.metric("Caudal Pico Semanal", f"{df_sem['caudal_max_sem'].max():,.0f} L/s ({df_sem['caudal_max_sem'].max()/1000.0:.2f} m\u00B3/s)")
+                col_sk3.metric("Caudal Medio Semanal", f"{df_sem['caudal_prom_sem'].mean():,.0f} L/s")
+                col_sk4.metric("Nivel M\u00E1x en Sensor", f"{df_sem['nivel_max_sem'].max():.2f} m (Mira: {max(0.05, df_sem['nivel_max_sem'].max() - 0.04):.2f} m)")
 
-            col_sk1, col_sk2, col_sk3, col_sk4 = st.columns(4)
-            col_sk1.metric("Semanas Evaluadas", len(df_sem))
-            col_sk2.metric("Lluvia Semanal Máx", f"{df_sem['lluvia_semanal'].max():.1f} mm")
-            col_sk3.metric("Lluvia Semanal Prom", f"{df_sem['lluvia_semanal'].mean():.1f} mm")
-            if es_embalse:
-                col_sk4.metric("Cota Semanal Máx", f"{df_sem['temp_max_sem'].max():.2f} msnm")
+                fig_s = go.Figure()
+                if "Caudal" in variable_grafica:
+                    fig_s.add_trace(go.Bar(
+                        x=df_sem['Semana'], y=df_sem['caudal_prom_sem'],
+                        name="Caudal Medio Semanal (L/s)", marker_color="#00CC96"
+                    ))
+                    fig_s.add_trace(go.Scatter(
+                        x=df_sem['Semana'], y=df_sem['caudal_max_sem'],
+                        name="Caudal Pico Semanal (L/s)", mode='lines+markers', line=dict(color="#FF8000", width=2)
+                    ))
+                    fig_s.update_layout(title="Consolidado Semanal de Caudal Fluvial \u2014 R\u00EDo Surat\u00E1 (Majadas)", yaxis_title="Caudal Q (L/s)")
+                else:
+                    fig_s.add_trace(go.Scatter(
+                        x=df_sem['Semana'], y=df_sem['nivel_max_sem'] - 0.04,
+                        name="Nivel M\u00E1ximo Semanal Mira (m)", mode='lines+markers', line=dict(color="#FF4B4B")
+                    ))
+                    fig_s.add_trace(go.Scatter(
+                        x=df_sem['Semana'], y=df_sem['nivel_prom_sem'] - 0.04,
+                        name="Nivel Promedio Semanal Mira (m)", mode='lines+markers', line=dict(color="#38BDF8")
+                    ))
+                    fig_s.update_layout(title="Comportamiento Semanal de Nivel Limnim\u00E9trico \u2014 R\u00EDo Surat\u00E1 (Majadas)", yaxis_title="Nivel Mira amb (m)")
+
+                rename_sem = {
+                    'Semana': 'Semana ISO',
+                    'fecha_inicio': 'Desde',
+                    'fecha_fin': 'Hasta',
+                    'caudal_prom_sem': 'Caudal Medio (L/s)',
+                    'caudal_max_sem': 'Caudal Pico M\u00E1x (L/s)',
+                    'nivel_prom_sem': 'Nivel Prom IDEAM (m)',
+                    'nivel_max_sem': 'Nivel M\u00E1x IDEAM (m)',
+                    'dias_evaluados': 'D\u00EDas Monitoreados'
+                }
+                cols_sem = ['Semana', 'fecha_inicio', 'fecha_fin', 'caudal_prom_sem', 'caudal_max_sem', 'nivel_prom_sem', 'nivel_max_sem', 'dias_evaluados']
+
+            elif es_embalse:
+                df_sem = df_est.groupby(['anio', 'semana']).agg(
+                    fecha_inicio=('fecha', 'min'),
+                    fecha_fin=('fecha', 'max'),
+                    cota_prom_sem=('cota_prom_msnm', 'mean'),
+                    cota_max_sem=('cota_max_msnm', 'max'),
+                    cota_min_sem=('cota_min_msnm', 'min'),
+                    descarga_mg_max_sem=('descarga_mg_max_ls', 'max'),
+                    volumen_max_sem=('volumen_max_hm3', 'max'),
+                    dias_evaluados=('fecha', 'count')
+                ).reset_index().sort_values(['anio', 'semana'], ascending=False)
+                df_sem['Semana'] = df_sem.apply(lambda r: f"Semana {int(r['semana'])} ({int(r['anio'])})", axis=1)
+
+                col_sk1, col_sk2, col_sk3, col_sk4 = st.columns(4)
+                col_sk1.metric("Semanas Evaluadas", len(df_sem))
+                col_sk2.metric("Cota Semanal M\u00E1x", f"{df_sem['cota_max_sem'].max():.2f} msnm")
+                col_sk3.metric("Descarga M\u00E1x Morning Glory", f"{df_sem['descarga_mg_max_sem'].max():,.0f} L/s")
+                col_sk4.metric("Volumen Almacenado M\u00E1x", f"{df_sem['volumen_max_sem'].max():.2f} hm\u00B3")
+
+                fig_s = go.Figure()
+                if "Cota" in variable_grafica:
+                    fig_s.add_trace(go.Scatter(
+                        x=df_sem['Semana'], y=df_sem['cota_max_sem'],
+                        name="Cota M\u00E1xima Semanal (msnm)", mode='lines+markers', line=dict(color="#FF4B4B")
+                    ))
+                    fig_s.add_trace(go.Scatter(
+                        x=df_sem['Semana'], y=df_sem['cota_prom_sem'],
+                        name="Cota Promedio Semanal (msnm)", mode='lines+markers', line=dict(color="#38BDF8")
+                    ))
+                    fig_s.add_trace(go.Scatter(
+                        x=df_sem['Semana'], y=df_sem['cota_min_sem'],
+                        name="Cota M\u00EDnima Semanal (msnm)", mode='lines+markers', line=dict(color="#00CC96")
+                    ))
+                    fig_s.add_hline(y=885.75, line_dash="dash", line_color="#FF0000", annotation_text="Cresta Morning Glory (885.75 msnm)")
+                    fig_s.update_layout(title="Comportamiento Semanal de Cota \u2014 Embalse de Tona", yaxis_title="Cota (msnm)")
+                elif "Descarga" in variable_grafica:
+                    fig_s.add_trace(go.Bar(
+                        x=df_sem['Semana'], y=df_sem['descarga_mg_max_sem'],
+                        name="Descarga MG M\u00E1xima (L/s)", marker_color="#38BDF8"
+                    ))
+                    fig_s.update_layout(title="Descarga Semanal Vertedero Morning Glory \u2014 Embalse de Tona", yaxis_title="Caudal (L/s)")
+                else:
+                    fig_s.add_trace(go.Scatter(
+                        x=df_sem['Semana'], y=df_sem['volumen_max_sem'],
+                        name="Volumen M\u00E1ximo (hm\u00B3)", mode='lines+markers', line=dict(color="#A855F7", width=2)
+                    ))
+                    fig_s.update_layout(title="Volumen Semanal Almacenado \u2014 Embalse de Tona", yaxis_title="Volumen (hm\u00B3)")
+
+                rename_sem = {
+                    'Semana': 'Semana ISO',
+                    'fecha_inicio': 'Desde',
+                    'fecha_fin': 'Hasta',
+                    'cota_prom_sem': 'Cota Prom (msnm)',
+                    'cota_max_sem': 'Cota M\u00E1x (msnm)',
+                    'cota_min_sem': 'Cota M\u00EDn (msnm)',
+                    'descarga_mg_max_sem': 'Descarga MG (L/s)',
+                    'volumen_max_sem': 'Volumen (hm\u00B3)',
+                    'dias_evaluados': 'D\u00EDas Monitoreados'
+                }
+                cols_sem = ['Semana', 'fecha_inicio', 'fecha_fin', 'cota_prom_sem', 'cota_max_sem', 'cota_min_sem', 'descarga_mg_max_sem', 'volumen_max_sem', 'dias_evaluados']
+
             else:
-                col_sk4.metric("Temp Semanal Máx", f"{df_sem['temp_max_sem'].max():.1f} °C")
-            fig_s = go.Figure()
-            if "Precipitación" in variable_grafica:
-                fig_s.add_trace(go.Bar(
-                    x=df_sem['Semana'], y=df_sem['lluvia_semanal'],
-                    name="Lluvia Total Semanal (mm)", marker_color="#00E676"
-                ))
-                fig_s.add_trace(go.Scatter(
-                    x=df_sem['Semana'], y=df_sem['pico_max_semanal'],
-                    name="Pico Horario Máx (mm/h)", mode='lines+markers', line=dict(color="#FF8000", width=2)
-                ))
-                fig_s.update_layout(title=f"Consolidado Semanal de Precipitación — {est_stat}", yaxis_title="mm")
-            else:
-                lbl_t = "Cota Radar (msnm)" if es_embalse else "Temperatura (°C)"
-                fig_s.add_trace(go.Scatter(
-                    x=df_sem['Semana'], y=df_sem['temp_max_sem'],
-                    name=f"Máxima Semanal ({lbl_t})", mode='lines+markers', line=dict(color="#FF4B4B")
-                ))
-                fig_s.add_trace(go.Scatter(
-                    x=df_sem['Semana'], y=df_sem['temp_prom_sem'],
-                    name=f"Promedio Semanal ({lbl_t})", mode='lines+markers', line=dict(color="#38BDF8")
-                ))
-                fig_s.add_trace(go.Scatter(
-                    x=df_sem['Semana'], y=df_sem['temp_min_sem'],
-                    name=f"Mínima Semanal ({lbl_t})", mode='lines+markers', line=dict(color="#00CC96"),
-                    fill='tonexty', fillcolor='rgba(56, 189, 248, 0.15)'
-                ))
-                fig_s.update_layout(title=f"Comportamiento Semanal de {lbl_t} — {est_stat}", yaxis_title=lbl_t)
+                df_sem = df_est.groupby(['anio', 'semana']).agg(
+                    fecha_inicio=('fecha', 'min'),
+                    fecha_fin=('fecha', 'max'),
+                    lluvia_semanal=('lluvia_diaria', 'sum'),
+                    pico_max_semanal=('lluvia_pico_horario', 'max'),
+                    dias_con_lluvia=('lluvia_diaria', lambda s: (s > 0.1).sum()),
+                    temp_min_sem=('temp_min', 'min'),
+                    temp_max_sem=('temp_max', 'max'),
+                    temp_prom_sem=('temp_prom', 'mean'),
+                    hum_prom_sem=('hum_prom', 'mean'),
+                    dias_evaluados=('fecha', 'count')
+                ).reset_index().sort_values(['anio', 'semana'], ascending=False)
+                df_sem['Semana'] = df_sem.apply(lambda r: f"Semana {int(r['semana'])} ({int(r['anio'])})", axis=1)
+
+                col_sk1, col_sk2, col_sk3, col_sk4 = st.columns(4)
+                col_sk1.metric("Semanas Evaluadas", len(df_sem))
+                col_sk2.metric("Lluvia Semanal M\u00E1x", f"{df_sem['lluvia_semanal'].max():.1f} mm")
+                col_sk3.metric("Lluvia Semanal Prom", f"{df_sem['lluvia_semanal'].mean():.1f} mm")
+                col_sk4.metric("Temp Semanal M\u00E1x", f"{df_sem['temp_max_sem'].max():.1f} \u00B0C")
+
+                fig_s = go.Figure()
+                if "Precipitaci\u00F3n" in variable_grafica:
+                    fig_s.add_trace(go.Bar(
+                        x=df_sem['Semana'], y=df_sem['lluvia_semanal'],
+                        name="Lluvia Total Semanal (mm)", marker_color="#00E676"
+                    ))
+                    fig_s.add_trace(go.Scatter(
+                        x=df_sem['Semana'], y=df_sem['pico_max_semanal'],
+                        name="Pico Horario M\u00E1x (mm/h)", mode='lines+markers', line=dict(color="#FF8000", width=2)
+                    ))
+                    fig_s.update_layout(title=f"Consolidado Semanal de Precipitaci\u00F3n \u2014 {est_stat}", yaxis_title="mm")
+                else:
+                    fig_s.add_trace(go.Scatter(
+                        x=df_sem['Semana'], y=df_sem['temp_max_sem'],
+                        name="M\u00E1xima Semanal (\u00B0C)", mode='lines+markers', line=dict(color="#FF4B4B")
+                    ))
+                    fig_s.add_trace(go.Scatter(
+                        x=df_sem['Semana'], y=df_sem['temp_prom_sem'],
+                        name="Promedio Semanal (\u00B0C)", mode='lines+markers', line=dict(color="#38BDF8")
+                    ))
+                    fig_s.add_trace(go.Scatter(
+                        x=df_sem['Semana'], y=df_sem['temp_min_sem'],
+                        name="M\u00EDnima Semanal (\u00B0C)", mode='lines+markers', line=dict(color="#00CC96"),
+                        fill='tonexty', fillcolor='rgba(56, 189, 248, 0.15)'
+                    ))
+                    fig_s.update_layout(title=f"Comportamiento Semanal de Temperatura (\u00B0C) \u2014 {est_stat}", yaxis_title="\u00B0C")
+
+                rename_sem = {
+                    'Semana': 'Semana ISO',
+                    'fecha_inicio': 'Desde',
+                    'fecha_fin': 'Hasta',
+                    'lluvia_semanal': 'Lluvia Semanal (mm)',
+                    'pico_max_semanal': 'Pico M\u00E1x Horario (mm/h)',
+                    'dias_con_lluvia': 'D\u00EDas Lluviosos',
+                    'temp_min_sem': 'Temp M\u00EDn (\u00B0C)',
+                    'temp_max_sem': 'Temp M\u00E1x (\u00B0C)',
+                    'temp_prom_sem': 'Temp Prom (\u00B0C)',
+                    'dias_evaluados': 'D\u00EDas Monitoreados'
+                }
+                cols_sem = ['Semana', 'fecha_inicio', 'fecha_fin', 'lluvia_semanal', 'pico_max_semanal', 'dias_con_lluvia', 'temp_min_sem', 'temp_max_sem', 'temp_prom_sem', 'dias_evaluados']
+
             fig_s.update_layout(template="plotly_dark", height=380)
             st.plotly_chart(fig_s, use_container_width=True)
 
-            rename_sem = {
-                'Semana': 'Semana ISO',
-                'fecha_inicio': 'Desde',
-                'fecha_fin': 'Hasta',
-                'lluvia_semanal': 'Lluvia Semanal (mm)',
-                'pico_max_semanal': 'Pico Máx Horario (mm/h)',
-                'dias_con_lluvia': 'Días Lluviosos',
-                'temp_min_sem': 'Cota Mín (msnm)' if es_embalse else 'Temp Mín (°C)',
-                'temp_max_sem': 'Cota Máx (msnm)' if es_embalse else 'Temp Máx (°C)',
-                'temp_prom_sem': 'Cota Prom (msnm)' if es_embalse else 'Temp Prom (°C)',
-                'dias_evaluados': 'Días Monitoreados'
-            }
-            df_show_sem = df_sem[list(rename_sem.keys())].rename(columns=rename_sem)
+            df_show_sem = df_sem[cols_sem].rename(columns=rename_sem)
             st.dataframe(df_show_sem, use_container_width=True, hide_index=True)
             csv_s = df_show_sem.to_csv(index=False).encode('utf-8')
             st.download_button(
-                label=f"📥 Descargar Estadísticas Semanales ({est_stat}) en CSV",
+                label=f"\U0001F4E5 Descargar Estad\u00EDsticas Semanales ({est_stat}) en CSV",
                 data=csv_s,
                 file_name=f"estadisticas_semanales_{est_stat}.csv",
                 mime="text/csv"
             )
+
         # --------------------------------------------------------
         # 3. GRANULARIDAD: MENSUAL
         # --------------------------------------------------------
-        elif granularidad == "🗓️ Mensual":
-            df_mes = df_est.groupby(['anio', 'mes']).agg(
-                lluvia_mensual=('lluvia_diaria', 'sum'),
-                pico_horario_mes=('lluvia_pico_horario', 'max'),
-                dias_con_lluvia=('lluvia_diaria', lambda s: (s > 0.1).sum()),
-                temp_min_mes=('temp_min', 'min'),
-                temp_max_mes=('temp_max', 'max'),
-                temp_prom_mes=('temp_prom', 'mean'),
-                hum_prom_mes=('hum_prom', 'mean'),
-                dias_registrados=('fecha', 'count')
-            ).reset_index().sort_values(['anio', 'mes'], ascending=False)
+        elif "Mensual" in granularidad:
+            if es_surata:
+                df_mes = df_est.groupby(['anio', 'mes']).agg(
+                    caudal_prom_mes=('caudal_diario_prom_ls', 'mean'),
+                    caudal_max_mes=('caudal_diario_max_ls', 'max'),
+                    nivel_prom_mes=('nivel_prom_m', 'mean'),
+                    nivel_max_mes=('nivel_max_m', 'max'),
+                    dias_registrados=('fecha', 'count')
+                ).reset_index().sort_values(['anio', 'mes'], ascending=False)
+                df_mes['Mes Nombre'] = df_mes.apply(lambda r: f"{meses_es.get(int(r['mes']), r['mes'])} {int(r['anio'])}", axis=1)
 
-            df_mes['Mes Nombre'] = df_mes.apply(lambda r: f"{meses_es.get(int(r['mes']), r['mes'])} {int(r['anio'])}", axis=1)
+                col_m1, col_m2, col_m3, col_m4 = st.columns(4)
+                col_m1.metric("Meses con Datos", len(df_mes))
+                col_m2.metric("Caudal Pico M\u00E1x Mensual", f"{df_mes['caudal_max_mes'].max():,.0f} L/s ({df_mes['caudal_max_mes'].max()/1000.0:.2f} m\u00B3/s)")
+                col_m3.metric("Caudal Medio Mensual", f"{df_mes['caudal_prom_mes'].mean():,.0f} L/s")
+                col_m4.metric("Nivel M\u00E1ximo Sensor", f"{df_mes['nivel_max_mes'].max():.2f} m")
 
-            col_m1, col_m2, col_m3, col_m4 = st.columns(4)
-            col_m1.metric("Meses con Datos", len(df_mes))
-            col_m2.metric("Mes Más Lluvioso", f"{df_mes['lluvia_mensual'].max():.1f} mm")
-            col_m3.metric("Lluvia Mensual Promedio", f"{df_mes['lluvia_mensual'].mean():.1f} mm")
-            if es_embalse:
-                col_m4.metric("Cota Máx Mensual", f"{df_mes['temp_max_mes'].max():.2f} msnm")
+                fig_m = go.Figure()
+                if "Caudal" in variable_grafica:
+                    fig_m.add_trace(go.Bar(
+                        x=df_mes['Mes Nombre'], y=df_mes['caudal_prom_mes'],
+                        name="Caudal Medio Mensual (L/s)", marker_color="#00CC96"
+                    ))
+                    fig_m.add_trace(go.Scatter(
+                        x=df_mes['Mes Nombre'], y=df_mes['caudal_max_mes'],
+                        name="Caudal Pico Mensual (L/s)", mode='lines+markers', line=dict(color="#FF8000", width=2.5)
+                    ))
+                    fig_m.update_layout(title="Consolidado Mensual de Caudal Fluvial \u2014 R\u00EDo Surat\u00E1 (Majadas)", yaxis_title="Caudal Q (L/s)")
+                else:
+                    fig_m.add_trace(go.Bar(
+                        x=df_mes['Mes Nombre'], y=df_mes['nivel_prom_mes'] - 0.04,
+                        name="Nivel Medio Mira (m)", marker_color="#38BDF8"
+                    ))
+                    fig_m.add_trace(go.Scatter(
+                        x=df_mes['Mes Nombre'], y=df_mes['nivel_max_mes'] - 0.04,
+                        name="Nivel M\u00E1ximo Mira (m)", mode='lines+markers', line=dict(color="#FF4B4B", width=2)
+                    ))
+                    fig_m.update_layout(title="Comportamiento Mensual de Nivel Limnim\u00E9trico \u2014 R\u00EDo Surat\u00E1 (Majadas)", yaxis_title="Nivel Mira amb (m)")
+
+                rename_mes = {
+                    'Mes Nombre': 'Mes / A\u00F1o',
+                    'caudal_prom_mes': 'Caudal Medio (L/s)',
+                    'caudal_max_mes': 'Caudal Pico M\u00E1x (L/s)',
+                    'nivel_prom_mes': 'Nivel Prom IDEAM (m)',
+                    'nivel_max_mes': 'Nivel M\u00E1x IDEAM (m)',
+                    'dias_registrados': 'D\u00EDas Monitoreados'
+                }
+                cols_mes = ['Mes Nombre', 'caudal_prom_mes', 'caudal_max_mes', 'nivel_prom_mes', 'nivel_max_mes', 'dias_registrados']
+
+            elif es_embalse:
+                df_mes = df_est.groupby(['anio', 'mes']).agg(
+                    cota_prom_mes=('cota_prom_msnm', 'mean'),
+                    cota_max_mes=('cota_max_msnm', 'max'),
+                    cota_min_mes=('cota_min_msnm', 'min'),
+                    descarga_mg_max_mes=('descarga_mg_max_ls', 'max'),
+                    volumen_max_mes=('volumen_max_hm3', 'max'),
+                    dias_registrados=('fecha', 'count')
+                ).reset_index().sort_values(['anio', 'mes'], ascending=False)
+                df_mes['Mes Nombre'] = df_mes.apply(lambda r: f"{meses_es.get(int(r['mes']), r['mes'])} {int(r['anio'])}", axis=1)
+
+                col_m1, col_m2, col_m3, col_m4 = st.columns(4)
+                col_m1.metric("Meses con Datos", len(df_mes))
+                col_m2.metric("Cota M\u00E1x Mensual", f"{df_mes['cota_max_mes'].max():.2f} msnm")
+                col_m3.metric("Descarga M\u00E1x Morning Glory", f"{df_mes['descarga_mg_max_mes'].max():,.0f} L/s")
+                col_m4.metric("Volumen M\u00E1x Almacenado", f"{df_mes['volumen_max_mes'].max():.2f} hm\u00B3")
+
+                fig_m = go.Figure()
+                if "Cota" in variable_grafica:
+                    fig_m.add_trace(go.Scatter(
+                        x=df_mes['Mes Nombre'], y=df_mes['cota_max_mes'],
+                        name="Cota M\u00E1xima Mensual (msnm)", mode='lines+markers', line=dict(color="#FF4B4B")
+                    ))
+                    fig_m.add_trace(go.Scatter(
+                        x=df_mes['Mes Nombre'], y=df_mes['cota_prom_mes'],
+                        name="Cota Media Mensual (msnm)", mode='lines+markers', line=dict(color="#38BDF8")
+                    ))
+                    fig_m.add_hline(y=885.75, line_dash="dash", line_color="#FF0000", annotation_text="Cresta Morning Glory (885.75 msnm)")
+                    fig_m.update_layout(title="Comportamiento Mensual de Cota \u2014 Embalse de Tona", yaxis_title="Cota (msnm)")
+                elif "Descarga" in variable_grafica:
+                    fig_m.add_trace(go.Bar(
+                        x=df_mes['Mes Nombre'], y=df_mes['descarga_mg_max_mes'],
+                        name="Descarga MG M\u00E1xima (L/s)", marker_color="#38BDF8"
+                    ))
+                    fig_m.update_layout(title="Descarga Mensual Vertedero Morning Glory \u2014 Embalse de Tona", yaxis_title="Caudal (L/s)")
+                else:
+                    fig_m.add_trace(go.Scatter(
+                        x=df_mes['Mes Nombre'], y=df_mes['volumen_max_mes'],
+                        name="Volumen M\u00E1ximo (hm\u00B3)", mode='lines+markers', line=dict(color="#A855F7", width=2)
+                    ))
+                    fig_m.update_layout(title="Volumen Mensual Almacenado \u2014 Embalse de Tona", yaxis_title="Volumen (hm\u00B3)")
+
+                rename_mes = {
+                    'Mes Nombre': 'Mes / A\u00F1o',
+                    'cota_prom_mes': 'Cota Prom (msnm)',
+                    'cota_max_mes': 'Cota M\u00E1x (msnm)',
+                    'cota_min_mes': 'Cota M\u00EDn (msnm)',
+                    'descarga_mg_max_mes': 'Descarga MG (L/s)',
+                    'volumen_max_mes': 'Volumen (hm\u00B3)',
+                    'dias_registrados': 'D\u00EDas Monitoreados'
+                }
+                cols_mes = ['Mes Nombre', 'cota_prom_mes', 'cota_max_mes', 'cota_min_mes', 'descarga_mg_max_mes', 'volumen_max_mes', 'dias_registrados']
+
             else:
-                col_m4.metric("Temp Máx Mensual", f"{df_mes['temp_max_mes'].max():.1f} °C")
-            fig_m = go.Figure()
-            if "Precipitación" in variable_grafica:
-                fig_m.add_trace(go.Bar(
-                    x=df_mes['Mes Nombre'], y=df_mes['lluvia_mensual'],
-                    name="Lluvia Acumulada Mensual (mm)", marker_color="#00CC96", text=df_mes['lluvia_mensual'].round(1), textposition='auto'
-                ))
-                fig_m.add_trace(go.Scatter(
-                    x=df_mes['Mes Nombre'], y=df_mes['pico_horario_mes'],
-                    name="Pico Horario Extremo (mm/h)", mode='lines+markers', line=dict(color="#FF8000", width=2.5)
-                ))
-                fig_m.update_layout(title=f"Precipitación Mensual Consolidada — {est_stat}", yaxis_title="mm")
-            else:
-                lbl_t = "Cota Radar (msnm)" if es_embalse else "Temperatura (°C)"
-                fig_m.add_trace(go.Bar(
-                    x=df_mes['Mes Nombre'], y=df_mes['temp_prom_mes'],
-                    name=f"Media Mensual ({lbl_t})", marker_color="#38BDF8"
-                ))
-                fig_m.add_trace(go.Scatter(
-                    x=df_mes['Mes Nombre'], y=df_mes['temp_max_mes'],
-                    name=f"Máxima Mensual ({lbl_t})", mode='lines+markers', line=dict(color="#FF4B4B", width=2)
-                ))
-                fig_m.add_trace(go.Scatter(
-                    x=df_mes['Mes Nombre'], y=df_mes['temp_min_mes'],
-                    name=f"Mínima Mensual ({lbl_t})", mode='lines+markers', line=dict(color="#00E676", width=2)
-                ))
-                fig_m.update_layout(title=f"Comportamiento Térmico / Nivel Mensual — {est_stat}", yaxis_title=lbl_t)
+                df_mes = df_est.groupby(['anio', 'mes']).agg(
+                    lluvia_mensual=('lluvia_diaria', 'sum'),
+                    pico_horario_mes=('lluvia_pico_horario', 'max'),
+                    dias_con_lluvia=('lluvia_diaria', lambda s: (s > 0.1).sum()),
+                    temp_min_mes=('temp_min', 'min'),
+                    temp_max_mes=('temp_max', 'max'),
+                    temp_prom_mes=('temp_prom', 'mean'),
+                    hum_prom_mes=('hum_prom', 'mean'),
+                    dias_registrados=('fecha', 'count')
+                ).reset_index().sort_values(['anio', 'mes'], ascending=False)
+                df_mes['Mes Nombre'] = df_mes.apply(lambda r: f"{meses_es.get(int(r['mes']), r['mes'])} {int(r['anio'])}", axis=1)
+
+                col_m1, col_m2, col_m3, col_m4 = st.columns(4)
+                col_m1.metric("Meses con Datos", len(df_mes))
+                col_m2.metric("Mes M\u00E1s Lluvioso", f"{df_mes['lluvia_mensual'].max():.1f} mm")
+                col_m3.metric("Lluvia Mensual Promedio", f"{df_mes['lluvia_mensual'].mean():.1f} mm")
+                col_m4.metric("Temp M\u00E1x Mensual", f"{df_mes['temp_max_mes'].max():.1f} \u00B0C")
+
+                fig_m = go.Figure()
+                if "Precipitaci\u00F3n" in variable_grafica:
+                    fig_m.add_trace(go.Bar(
+                        x=df_mes['Mes Nombre'], y=df_mes['lluvia_mensual'],
+                        name="Lluvia Acumulada Mensual (mm)", marker_color="#00CC96", text=df_mes['lluvia_mensual'].round(1), textposition='auto'
+                    ))
+                    fig_m.add_trace(go.Scatter(
+                        x=df_mes['Mes Nombre'], y=df_mes['pico_horario_mes'],
+                        name="Pico Horario Extremo (mm/h)", mode='lines+markers', line=dict(color="#FF8000", width=2.5)
+                    ))
+                    fig_m.update_layout(title=f"Precipitaci\u00F3n Mensual Consolidada \u2014 {est_stat}", yaxis_title="mm")
+                else:
+                    fig_m.add_trace(go.Bar(
+                        x=df_mes['Mes Nombre'], y=df_mes['temp_prom_mes'],
+                        name="Media Mensual (\u00B0C)", marker_color="#38BDF8"
+                    ))
+                    fig_m.add_trace(go.Scatter(
+                        x=df_mes['Mes Nombre'], y=df_mes['temp_max_mes'],
+                        name="M\u00E1xima Mensual (\u00B0C)", mode='lines+markers', line=dict(color="#FF4B4B", width=2)
+                    ))
+                    fig_m.add_trace(go.Scatter(
+                        x=df_mes['Mes Nombre'], y=df_mes['temp_min_mes'],
+                        name="M\u00EDnima Mensual (\u00B0C)", mode='lines+markers', line=dict(color="#00CC96", width=2)
+                    ))
+                    fig_m.update_layout(title=f"Comportamiento T\u00E9rmico Mensual \u2014 {est_stat}", yaxis_title="\u00B0C")
+
+                rename_mes = {
+                    'Mes Nombre': 'Mes / A\u00F1o',
+                    'lluvia_mensual': 'Lluvia Total (mm)',
+                    'pico_horario_mes': 'Pico M\u00E1x (mm/h)',
+                    'dias_con_lluvia': 'D\u00EDas con Lluvia',
+                    'temp_min_mes': 'Temp M\u00EDn (\u00B0C)',
+                    'temp_max_mes': 'Temp M\u00E1x (\u00B0C)',
+                    'temp_prom_mes': 'Temp Prom (\u00B0C)',
+                    'dias_registrados': 'D\u00EDas con Datos'
+                }
+                cols_mes = ['Mes Nombre', 'lluvia_mensual', 'pico_horario_mes', 'dias_con_lluvia', 'temp_min_mes', 'temp_max_mes', 'temp_prom_mes', 'dias_registrados']
 
             fig_m.update_layout(template="plotly_dark", height=380)
             st.plotly_chart(fig_m, use_container_width=True)
-            rename_mes = {
-                'Mes Nombre': 'Mes / Año',
-                'lluvia_mensual': 'Lluvia Total (mm)',
-                'pico_horario_mes': 'Pico Máx (mm/h)',
-                'dias_con_lluvia': 'Días con Lluvia',
-                'temp_min_mes': 'Cota Mín (msnm)' if es_embalse else 'Temp Mín (°C)',
-                'temp_max_mes': 'Cota Máx (msnm)' if es_embalse else 'Temp Máx (°C)',
-                'temp_prom_mes': 'Cota Prom (msnm)' if es_embalse else 'Temp Prom (°C)',
-                'dias_registrados': 'Días con Datos'
-            }
-            df_show_mes = df_mes[list(rename_mes.keys())].rename(columns=rename_mes)
-            st.dataframe(df_show_mes, use_container_width=True, hide_index=True)
 
+            df_show_mes = df_mes[cols_mes].rename(columns=rename_mes)
+            st.dataframe(df_show_mes, use_container_width=True, hide_index=True)
             csv_m = df_show_mes.to_csv(index=False).encode('utf-8')
             st.download_button(
-                label=f"📥 Descargar Estadísticas Mensuales ({est_stat}) en CSV",
+                label=f"\U0001F4E5 Descargar Estad\u00EDsticas Mensuales ({est_stat}) en CSV",
                 data=csv_m,
                 file_name=f"estadisticas_mensuales_{est_stat}.csv",
                 mime="text/csv"
@@ -4122,60 +4466,112 @@ def render_eventos_significativos_estadisticas():
         # 4. GRANULARIDAD: PROGRESIVO ANUAL (2026)
         # --------------------------------------------------------
         elif "Anual" in granularidad:
-            df_anual = df_est.groupby('anio').agg(
-                lluvia_anual=('lluvia_diaria', 'sum'),
-                pico_anual_horario=('lluvia_pico_horario', 'max'),
-                pico_diario_max=('lluvia_diaria', 'max'),
-                dias_con_lluvia=('lluvia_diaria', lambda s: (s > 0.1).sum()),
-                temp_min_anual=('temp_min', 'min'),
-                temp_max_anual=('temp_max', 'max'),
-                temp_prom_anual=('temp_prom', 'mean'),
-                dias_monitoreados=('fecha', 'count')
-            ).reset_index().sort_values('anio', ascending=False)
-            st.markdown(f"""
+            st.markdown("""
             <div style="background-color: #1e293b; border-left: 5px solid #38BDF8; padding: 14px 18px; border-radius: 8px; margin-bottom: 20px;">
-                <h4 style="color: #38BDF8; margin: 0 0 4px 0;">📈 Climatología Progresiva Anual</h4>
+                <h4 style="color: #38BDF8; margin: 0 0 4px 0;">\U0001F4C8 Climatolog\u00EDa e Hidrolog\u00EDa Progresiva Anual</h4>
                 <div style="color: #E2E8F0; font-size: 0.93rem;">
-                    Los valores anuales se actualizan automáticamente en tiempo real con cada nueva lectura ingresada a BigQuery.
-                    A medida que transcurran los meses, la serie se irá consolidando hasta alcanzar el ciclo anual completo (365 días).
+                    Los valores anuales se actualizan autom\u00E1ticamente con cada nueva lectura ingresada a BigQuery, reflejando exclusivamente las variables f\u00EDsicas que cada estaci\u00F3n mide en campo.
                 </div>
             </div>
             """, unsafe_allow_html=True)
-            for idx, r_an in df_anual.iterrows():
-                anio_val = int(r_an['anio'])
-                st.markdown(f"#### 📅 Resumen Acumulado Año {anio_val} — Estación {est_stat}")
-                k1, k2, k3, k4 = st.columns(4)
-                k1.metric("Lluvia Acumulada Anual", f"{r_an['lluvia_anual']:.1f} mm")
-                k2.metric("Días Monitoreados", f"{int(r_an['dias_monitoreados'])} días")
-                k3.metric("Días con Lluvia", f"{int(r_an['dias_con_lluvia'])} días")
-                k4.metric("Día Más Lluvioso", f"{r_an['pico_diario_max']:.1f} mm")
-                k5, k6, k7, k8 = st.columns(4)
-                if es_embalse:
-                    k5.metric("Cota Mínima del Año", f"{r_an['temp_min_anual']:.2f} msnm")
-                    k6.metric("Cota Máxima del Año", f"{r_an['temp_max_anual']:.2f} msnm")
-                    k7.metric("Cota Media Anual", f"{r_an['temp_prom_anual']:.2f} msnm")
-                    k8.metric("Pico Horario Extremo", f"{r_an['pico_anual_horario']:.1f} mm/h")
-                else:
-                    k5.metric("Temp Mínima Anual", f"{r_an['temp_min_anual']:.1f} °C")
-                    k6.metric("Temp Máxima Anual", f"{r_an['temp_max_anual']:.1f} °C")
-                    k7.metric("Temp Media Ponderada", f"{r_an['temp_prom_anual']:.1f} °C")
-                    k8.metric("Pico Horario Extremo", f"{r_an['pico_anual_horario']:.1f} mm/h")
-            rename_an = {
-                'anio': 'Año',
-                'lluvia_anual': 'Lluvia Acum. Anual (mm)',
-                'pico_diario_max': 'Máx Lluvia en 24h (mm)',
-                'pico_anual_horario': 'Pico Horario Extremo (mm/h)',
-                'dias_con_lluvia': 'Días Lluviosos',
-                'temp_min_anual': 'Cota Mín (msnm)' if es_embalse else 'Temp Mínima (°C)',
-                'temp_max_anual': 'Cota Máx (msnm)' if es_embalse else 'Temp Máxima (°C)',
-                'temp_prom_anual': 'Cota Media (msnm)' if es_embalse else 'Temp Media (°C)',
-                'dias_monitoreados': 'Días Registrados'
-            }
-            df_show_an = df_anual.rename(columns=rename_an)
+
+            if es_surata:
+                df_anual = df_est.groupby('anio').agg(
+                    caudal_prom_anual=('caudal_diario_prom_ls', 'mean'),
+                    caudal_max_anual=('caudal_diario_max_ls', 'max'),
+                    nivel_prom_anual=('nivel_prom_m', 'mean'),
+                    nivel_max_anual=('nivel_max_m', 'max'),
+                    dias_monitoreados=('fecha', 'count')
+                ).reset_index().sort_values('anio', ascending=False)
+
+                for idx, r_an in df_anual.iterrows():
+                    anio_val = int(r_an['anio'])
+                    st.markdown(f"#### \U0001F4C5 Resumen Hidrol\u00F3gico A\u00F1o {anio_val} \u2014 R\u00EDo Surat\u00E1 (Majadas)")
+                    k1, k2, k3, k4 = st.columns(4)
+                    k1.metric("Caudal Pico M\u00E1ximo del A\u00F1o", f"{r_an['caudal_max_anual']:,.0f} L/s ({r_an['caudal_max_anual']/1000.0:.2f} m\u00B3/s)")
+                    k2.metric("Caudal Medio Ponderado", f"{r_an['caudal_prom_anual']:,.0f} L/s")
+                    k3.metric("Nivel M\u00E1x en Sensor", f"{r_an['nivel_max_anual']:.2f} m (Mira: {max(0.05, r_an['nivel_max_anual']-0.04):.2f} m)")
+                    k4.metric("D\u00EDas Monitoreados", f"{int(r_an['dias_monitoreados'])} d\u00EDas")
+
+                rename_an = {
+                    'anio': 'A\u00F1o',
+                    'caudal_max_anual': 'Caudal Pico M\u00E1x (L/s)',
+                    'caudal_prom_anual': 'Caudal Medio (L/s)',
+                    'nivel_max_anual': 'Nivel M\u00E1x Sensor (m)',
+                    'nivel_prom_anual': 'Nivel Prom Sensor (m)',
+                    'dias_monitoreados': 'D\u00EDas Registrados'
+                }
+                cols_an = ['anio', 'caudal_max_anual', 'caudal_prom_anual', 'nivel_max_anual', 'nivel_prom_anual', 'dias_monitoreados']
+
+            elif es_embalse:
+                df_anual = df_est.groupby('anio').agg(
+                    cota_prom_anual=('cota_prom_msnm', 'mean'),
+                    cota_max_anual=('cota_max_msnm', 'max'),
+                    cota_min_anual=('cota_min_msnm', 'min'),
+                    descarga_mg_max_anual=('descarga_mg_max_ls', 'max'),
+                    volumen_max_anual=('volumen_max_hm3', 'max'),
+                    dias_monitoreados=('fecha', 'count')
+                ).reset_index().sort_values('anio', ascending=False)
+
+                for idx, r_an in df_anual.iterrows():
+                    anio_val = int(r_an['anio'])
+                    st.markdown(f"#### \U0001F4C5 Resumen Hidrol\u00F3gico A\u00F1o {anio_val} \u2014 Embalse de Tona")
+                    k1, k2, k3, k4 = st.columns(4)
+                    k1.metric("Cota M\u00E1xima Anual", f"{r_an['cota_max_anual']:.2f} msnm")
+                    k2.metric("Cota Media Anual", f"{r_an['cota_prom_anual']:.2f} msnm")
+                    k3.metric("Descarga M\u00E1x Morning Glory", f"{r_an['descarga_mg_max_anual']:,.0f} L/s")
+                    k4.metric("Volumen M\u00E1ximo Almacenado", f"{r_an['volumen_max_anual']:.2f} hm\u00B3")
+
+                rename_an = {
+                    'anio': 'A\u00F1o',
+                    'cota_max_anual': 'Cota M\u00E1x (msnm)',
+                    'cota_prom_anual': 'Cota Prom (msnm)',
+                    'cota_min_anual': 'Cota M\u00EDn (msnm)',
+                    'descarga_mg_max_anual': 'Descarga MG (L/s)',
+                    'volumen_max_anual': 'Volumen (hm\u00B3)',
+                    'dias_monitoreados': 'D\u00EDas Registrados'
+                }
+                cols_an = ['anio', 'cota_max_anual', 'cota_prom_anual', 'cota_min_anual', 'descarga_mg_max_anual', 'volumen_max_anual', 'dias_monitoreados']
+
+            else:
+                df_anual = df_est.groupby('anio').agg(
+                    lluvia_anual=('lluvia_diaria', 'sum'),
+                    pico_anual_horario=('lluvia_pico_horario', 'max'),
+                    pico_diario_max=('lluvia_diaria', 'max'),
+                    dias_con_lluvia=('lluvia_diaria', lambda s: (s > 0.1).sum()),
+                    temp_min_anual=('temp_min', 'min'),
+                    temp_max_anual=('temp_max', 'max'),
+                    temp_prom_anual=('temp_prom', 'mean'),
+                    dias_monitoreados=('fecha', 'count')
+                ).reset_index().sort_values('anio', ascending=False)
+
+                for idx, r_an in df_anual.iterrows():
+                    anio_val = int(r_an['anio'])
+                    st.markdown(f"#### \U0001F4C5 Resumen Acumulado A\u00F1o {anio_val} \u2014 Estaci\u00F3n {est_stat}")
+                    k1, k2, k3, k4 = st.columns(4)
+                    k1.metric("Lluvia Acumulada Anual", f"{r_an['lluvia_anual']:.1f} mm")
+                    k2.metric("D\u00EDas Monitoreados", f"{int(r_an['dias_monitoreados'])} d\u00EDas")
+                    k3.metric("D\u00EDas con Lluvia", f"{int(r_an['dias_con_lluvia'])} d\u00EDas")
+                    k4.metric("D\u00EDa M\u00E1s Lluvioso", f"{r_an['pico_diario_max']:.1f} mm")
+
+                rename_an = {
+                    'anio': 'A\u00F1o',
+                    'lluvia_anual': 'Lluvia Acum. Anual (mm)',
+                    'pico_diario_max': 'M\u00E1x Lluvia en 24h (mm)',
+                    'pico_anual_horario': 'Pico Horario Extremo (mm/h)',
+                    'dias_con_lluvia': 'D\u00EDas Lluviosos',
+                    'temp_min_anual': 'Temp M\u00EDnima (\u00B0C)',
+                    'temp_max_anual': 'Temp M\u00E1xima (\u00B0C)',
+                    'temp_prom_anual': 'Temp Media (\u00B0C)',
+                    'dias_monitoreados': 'D\u00EDas Registrados'
+                }
+                cols_an = ['anio', 'lluvia_anual', 'pico_diario_max', 'pico_anual_horario', 'dias_con_lluvia', 'temp_min_anual', 'temp_max_anual', 'temp_prom_anual', 'dias_monitoreados']
+
+            df_show_an = df_anual[cols_an].rename(columns=rename_an)
             st.dataframe(df_show_an, use_container_width=True, hide_index=True)
             csv_a = df_show_an.to_csv(index=False).encode('utf-8')
             st.download_button(
-                label=f"📥 Descargar Consolidado Anual ({est_stat}) en CSV",
+                label=f"\U0001F4E5 Descargar Consolidado Anual ({est_stat}) en CSV",
                 data=csv_a,
                 file_name=f"estadisticas_anuales_{est_stat}.csv",
                 mime="text/csv"
