@@ -1730,7 +1730,9 @@ def calcular_tendencia_barometrica(df_hist, altitud_msnm, pres_actual, temp_actu
 # ============================================================
 # 4.1 METADATOS HIDROLÓGICOS & GEORREFERENCIACIÓN OFICIAL (amb)
 # ============================================================
-METADATA_ESTACIONES_AMB = {
+# Alias de compatibilidad global
+
+METADATA_ESTACIONES_AMB = METADATOS_ESTACIONES = {
     "Embalse": {
         "nombre_completo": "Embalse Tona (Radar OTT)",
         "tipo_sensor": "Radar Hidrométrico OTT (Nivel Vaso)",
@@ -3495,7 +3497,8 @@ def render_eventos_significativos_estadisticas():
                             ts_str = ts_col.astimezone(colombia_tz).strftime('%Y-%m-%d %H:%M')
                         else:
                             ts_str = str(ts_col)[:16]
-                        cuenca_nombre = METADATOS_ESTACIONES.get(est, {}).get("cuenca", est)
+                        info_est = METADATA_ESTACIONES_AMB.get(est, {}) if "METADATA_ESTACIONES_AMB" in globals() else {}
+                        cuenca_nombre = info_est.get("cuenca_principal") or info_est.get("cuenca", est.replace("_", " "))
                         filas_lluvia_extrema.append({
                             "Fecha / Hora": ts_str,
                             "Estación": est.replace('_', ' '),
@@ -3511,10 +3514,10 @@ def render_eventos_significativos_estadisticas():
                 <div style="display: flex; align-items: center; gap: 12px;">
                     <span style="font-size: 1.4rem;">✅</span>
                     <div>
-                        <strong style="color: #00E676; font-size: 1.05rem;">No hubo eventos extremos</strong>
+                        <strong style="color: #00E676; font-size: 1.05rem;">No se han registrado eventos extremos</strong>
                         <div style="color: #ECEFF1; font-size: 0.92rem; margin-top: 3px;">
                             En los últimos <strong>{periodo_dias} días</strong> no se superaron los umbrales de alerta (Amarilla, Naranja o Roja) en las estaciones de cuenca.
-                            Todas las precipitaciones se mantuvieron dentro del régimen operativo normal.
+                            Módulo forense en vigilancia activa continua. Todas las precipitaciones y niveles se mantienen en régimen de normalidad operativa.
                         </div>
                     </div>
                 </div>
