@@ -3460,19 +3460,19 @@ def consultar_estadisticas_multitemporales_bigquery():
 
 def render_eventos_significativos_estadisticas():
     """
-    Renderiza la pestaña oficial de Eventos Significativos y Estadísticas Climatológicas Multitemporales.
-    Aplica las reglas hidrológicas estrictas de cuencas del amb:
-    - Monsalve: Afecta Río Suratá (Majadas) -> NO afecta al Embalse de Tona.
-    - El Pajal, Yerbabuena, Vegas del Quemado: Afectan Embalse de Tona (Río Tona).
-    - La Mariana: Afecta Cuenca Río Frío (PTAP Florida) -> No afecta Embalse ni Majadas.
-    - Embalse: Descargas por Morning Glory hacia confluencia Suratá / Majadas.
+    Renderiza la pestana oficial de Eventos Significativos y Estadisticas Climatologicas Multitemporales.
+    Aplica las reglas hidrologicas estrictas de cuencas del amb:
+    - Monsalve: Afecta Rio Surata (Majadas) -> NO afecta al Embalse de Tona.
+    - El Pajal, Yerbabuena, Vegas del Quemado: Afectan Embalse de Tona (Rio Tona).
+    - La Mariana: Afecta Cuenca Rio Frio (PTAP Florida) -> No afecta Embalse ni Majadas.
+    - Embalse: Descargas por Morning Glory hacia confluencia Surata / Majadas.
     """
-    st.subheader("ðŸš¨ Eventos Hidrológicos Significativos & Climatología Multitemporal")
-    st.caption("Bitácora forense de picos extremos, reboses y estadísticas progresivas acumuladas (Diarias, Semanales, Mensuales y Anuales) — Sistema MIMAT-C26")
+    st.subheader("\U0001F6A8 Eventos Hidrol\u00F3gicos Significativos & Climatolog\u00EDa Multitemporal")
+    st.caption("Bit\u00E1cora forense de picos extremos, reboses y estad\u00EDsticas progresivas acumuladas (Diarias, Semanales, Mensuales y Anuales) \u2014 Sistema MIMAT-C26")
 
     tab_sub_eventos, tab_sub_estadisticas = st.tabs([
-        "ðŸš¨ Bitácora Forense de Eventos Extremos",
-        "ðŸ“Š Estadísticas Climatológicas (Día / Semana / Mes / Año)"
+        "\U0001F6A8 Bit\u00E1cora Forense de Eventos Extremos",
+        "\U0001F4CA Estad\u00EDsticas Climatol\u00F3gicas (D\u00EDa / Semana / Mes / A\u00F1o)"
     ])
     meses_es = {
         1: "Enero", 2: "Febrero", 3: "Marzo", 4: "Abril",
@@ -3480,36 +3480,36 @@ def render_eventos_significativos_estadisticas():
         9: "Septiembre", 10: "Octubre", 11: "Noviembre", 12: "Diciembre"
     }
     # ------------------------------------------------------------
-    # SUB-TAB 1: BITÁCORA FORENSE DE EVENTOS EXTREMOS
+    # SUB-TAB 1: BITACORA FORENSE DE EVENTOS EXTREMOS
     # ------------------------------------------------------------
     with tab_sub_eventos:
         col_f1, col_f2 = st.columns([2, 2])
         periodo_dias = col_f1.selectbox(
-            "Ventana temporal de análisis forense:",
+            "Ventana temporal de an\u00E1lisis forense:",
             [7, 15, 30, 60, 90, 180, 365],
             index=4,
-            format_func=lambda x: "Histórico Completo 2026" if x >= 365 else f"Ãšltimos {x} días",
+            format_func=lambda x: "Hist\u00F3rico Completo 2026" if x >= 365 else f"\u00DAltimos {x} d\u00EDas",
             key="ev_periodo_dias"
         )
         orden_oficial_ev = ["Todas las Estaciones", "Embalse", "Surata", "La_Mariana", "Yerbabuena", "Vegas_del_Quemado", "El_Pajal", "Monsalve"]
         estacion_ev_sel = col_f2.selectbox(
-            "Filtrar por estación:",
+            "Filtrar por estaci\u00F3n:",
             orden_oficial_ev,
             index=0,
             format_func=lambda x: {
-                "Todas las Estaciones": "ðŸŒ Todas las Estaciones",
-                "Embalse": "🌊 Embalse Tona",
-                "Surata": "⚡ Río Suratá (Majadas)",
-                "La_Mariana": "🌿 La Mariana",
-                "Yerbabuena": "ðŸ’§ Yerbabuena",
-                "Vegas_del_Quemado": "â›°ï¸ Vegas del Quemado",
-                "El_Pajal": "ðŸŒ¾ El Pajal",
-                "Monsalve": "ðŸ”ï¸ Monsalve"
+                "Todas las Estaciones": "\U0001F310 Todas las Estaciones",
+                "Embalse": "\U0001F30A Embalse Tona",
+                "Surata": "\u26A1 R\u00EDo Surat\u00E1 (Majadas)",
+                "La_Mariana": "\U0001F33F La Mariana",
+                "Yerbabuena": "\U0001F4A7 Yerbabuena",
+                "Vegas_del_Quemado": "\u26F0\uFE0F Vegas del Quemado",
+                "El_Pajal": "\U0001F33E El Pajal",
+                "Monsalve": "\U0001F3D4\uFE0F Monsalve"
             }.get(x, x.replace('_', ' ')),
             key="ev_estacion_sel"
         )
 
-        # Reglas Hidrológicas de Visibilidad por Cuenca (Confirmadas por amb)
+        # Reglas Hidrologicas de Visibilidad por Cuenca (Confirmadas por amb)
         mostrar_lluvias = estacion_ev_sel in ["Todas las Estaciones", "El_Pajal", "Yerbabuena", "La_Mariana", "Vegas_del_Quemado", "Monsalve"]
         mostrar_embalse = estacion_ev_sel in ["Todas las Estaciones", "Embalse", "El_Pajal", "Yerbabuena", "Vegas_del_Quemado"]
         mostrar_majadas = estacion_ev_sel in ["Todas las Estaciones", "Surata", "Monsalve", "Embalse"]
@@ -3527,10 +3527,10 @@ def render_eventos_significativos_estadisticas():
         st.markdown("---")
 
         # ========================================================
-        # 1. PICOS DE PRECIPITACIÃ“N EXTREMA EN CUENCAS
+        # 1. PICOS DE PRECIPITACION EXTREMA EN CUENCAS
         # ========================================================
         if mostrar_lluvias:
-            st.markdown("### 🌧️ 1. Picos de Precipitación Extrema en Cuencas")
+            st.markdown("### \U0001F327\uFE0F 1. Picos de Precipitaci\u00F3n Extrema en Cuencas")
             filas_lluvia_extrema = []
             if not df_ev_filtro.empty:
                 for idx, row in df_ev_filtro.iterrows():
@@ -3542,17 +3542,17 @@ def render_eventos_significativos_estadisticas():
                         u_roja = umbrales[est]['roja']
                         if p_val >= u_amarilla:
                             if p_val >= u_roja:
-                                nivel_alerta = "🔴 ALERTA ROJA"
+                                nivel_alerta = "\U0001F534 ALERTA ROJA"
                                 badge_color = "#FF4B4B"
-                                desc_impacto = "Riesgo de creciente súbita inminente en drenaje"
+                                desc_impacto = "Riesgo de creciente s\u00FAbita inminente en drenaje"
                             elif p_val >= u_naranja:
-                                nivel_alerta = "🟠 ALERTA NARANJA"
+                                nivel_alerta = "\U0001F7E0 ALERTA NARANJA"
                                 badge_color = "#FF8000"
-                                desc_impacto = "Incremento severo de escorrentía superficial"
+                                desc_impacto = "Incremento severo de escorrent\u00EDa superficial"
                             else:
-                                nivel_alerta = "🟡 ALERTA AMARILLA"
+                                nivel_alerta = "\U0001F7E1 ALERTA AMARILLA"
                                 badge_color = "#FFBB00"
-                                desc_impacto = "Aviso preventivo por ascenso de precipitación"
+                                desc_impacto = "Aviso preventivo por ascenso de precipitaci\u00F3n"
                             ts_col = row['ts']
                             if hasattr(ts_col, 'astimezone'):
                                 ts_str = ts_col.astimezone(colombia_tz).strftime('%Y-%m-%d %H:%M')
@@ -3562,7 +3562,7 @@ def render_eventos_significativos_estadisticas():
                             cuenca_nombre = info_est.get("cuenca_principal") or info_est.get("cuenca", est.replace("_", " "))
                             filas_lluvia_extrema.append({
                                 "Fecha / Hora": ts_str,
-                                "Estación": est.replace('_', ' '),
+                                "Estaci\u00F3n": est.replace('_', ' '),
                                 "Microcuenca": cuenca_nombre,
                                 "Lluvia (mm/h)": round(p_val, 2),
                                 "Nivel de Alerta": nivel_alerta,
@@ -3573,12 +3573,12 @@ def render_eventos_significativos_estadisticas():
                 st.markdown(f"""
                 <div style="background-color: #0d2818; border: 1px solid #00E676; border-left: 6px solid #00E676; padding: 14px 18px; border-radius: 8px; margin: 10px 0 20px 0;">
                     <div style="display: flex; align-items: center; gap: 12px;">
-                        <span style="font-size: 1.4rem;">✅</span>
+                        <span style="font-size: 1.4rem;">\u2705</span>
                         <div>
-                            <strong style="color: #00E676; font-size: 1.05rem;">No se han registrado eventos extremos de precipitación</strong>
+                            <strong style="color: #00E676; font-size: 1.05rem;">No se han registrado eventos extremos de precipitaci\u00F3n</strong>
                             <div style="color: #ECEFF1; font-size: 0.92rem; margin-top: 3px;">
-                                En los últimos <strong>{periodo_dias} días</strong> no se superaron los umbrales de alerta (Amarilla, Naranja o Roja) en las estaciones de cuenca evaluadas.
-                                Todas las precipitaciones se mantuvieron dentro del régimen normal.
+                                En los \u00FAltimos <strong>{periodo_dias} d\u00EDas</strong> no se superaron los umbrales de alerta (Amarilla, Naranja o Roja) en las estaciones de cuenca evaluadas.
+                                Todas las precipitaciones se mantuvieron dentro del r\u00E9gimen normal.
                             </div>
                         </div>
                     </div>
@@ -3588,44 +3588,44 @@ def render_eventos_significativos_estadisticas():
                 df_lluvia_show = pd.DataFrame(filas_lluvia_extrema)
                 c_k1, c_k2, c_k3 = st.columns(3)
                 c_k1.metric("Total Eventos de Lluvia Extrema", len(df_lluvia_show))
-                c_k2.metric("Pico Máximo Registrado", f"{df_lluvia_show['Lluvia (mm/h)'].max():.1f} mm/h")
-                c_k3.metric("Estación con Más Eventos", df_lluvia_show['Estación'].mode()[0])
+                c_k2.metric("Pico M\u00E1ximo Registrado", f"{df_lluvia_show['Lluvia (mm/h)'].max():.1f} mm/h")
+                c_k3.metric("Estaci\u00F3n con M\u00E1s Eventos", df_lluvia_show['Estaci\u00F3n'].mode()[0])
                 st.dataframe(
-                    df_lluvia_show[["Fecha / Hora", "Estación", "Microcuenca", "Lluvia (mm/h)", "Nivel de Alerta", "Impacto Operativo"]],
+                    df_lluvia_show[["Fecha / Hora", "Estaci\u00F3n", "Microcuenca", "Lluvia (mm/h)", "Nivel de Alerta", "Impacto Operativo"]],
                     use_container_width=True,
                     hide_index=True
                 )
             st.markdown("---")
 
-        # Mensajes hidrológicos pedagógicos según la cuenca seleccionada
+        # Mensajes hidrologicos pedagogicos segun la cuenca seleccionada
         if estacion_ev_sel == "Monsalve":
             st.markdown("""
             <div style="background: rgba(0, 150, 136, 0.08); border-left: 5px solid #00B4D8; padding: 12px 16px; border-radius: 8px; margin: 10px 0 20px 0;">
-                <strong style="color: #00B4D8; font-size: 13.5px;">🏔️ Hidrología Cuenca Monsalve (Páramo de Santurbán):</strong>
+                <strong style="color: #00B4D8; font-size: 13.5px;">\U0001F3D4\uFE0F Hidrolog\u00EDa Cuenca Monsalve (P\u00E1ramo de Santurb\u00E1n):</strong>
                 <div style="color: #E2E8F0; font-size: 12.5px; margin-top: 4px; line-height: 1.5;">
-                    La estación <strong>Monsalve</strong> (3,339 msnm) monitorea la cuenca alta del <strong>Río Suratá</strong>.
-                    Sus escorrentías drenan en cauce libre directamente hacia el <strong>Río Suratá (Sector Majadas)</strong> y la captación de <strong>Toma Bosconia</strong>.
-                    <span style="color: #64FFDA; font-weight: 700;">No tributa al Embalse de Tona</span> (por lo tanto, la bitácora del embalse no aplica para este filtro).
+                    La estaci\u00F3n <strong>Monsalve</strong> (3,339 msnm) monitorea la cuenca alta del <strong>R\u00EDo Surat\u00E1</strong>.
+                    Sus escorrent\u00EDas drenan en cauce libre directamente hacia el <strong>R\u00EDo Surat\u00E1 (Sector Majadas)</strong> y la captaci\u00F3n de <strong>Toma Bosconia</strong>.
+                    <span style="color: #64FFDA; font-weight: 700;">No tributa al Embalse de Tona</span> (por lo tanto, la bit\u00E1cora del embalse no aplica para este filtro).
                 </div>
             </div>
             """, unsafe_allow_html=True)
         elif estacion_ev_sel == "La_Mariana":
             st.markdown("""
             <div style="background: rgba(139, 195, 74, 0.08); border-left: 5px solid #8BC34A; padding: 12px 16px; border-radius: 8px; margin: 10px 0 20px 0;">
-                <strong style="color: #8BC34A; font-size: 13.5px;">🌿 Hidrología Cuenca La Mariana:</strong>
+                <strong style="color: #8BC34A; font-size: 13.5px;">\U0001F33F Hidrolog\u00EDa Cuenca La Mariana:</strong>
                 <div style="color: #E2E8F0; font-size: 12.5px; margin-top: 4px; line-height: 1.5;">
-                    La estación <strong>La Mariana</strong> (2,436 msnm) monitorea la vertiente suroccidental tributaria de la microcuenca de <strong>Río Frío</strong>, que abastece la planta <strong>PTAP Florida</strong>.
-                    No presenta conexión hidrológica directa con la cuenca del Río Tona (Embalse) ni con el Río Suratá (Majadas).
+                    La estaci\u00F3n <strong>La Mariana</strong> (2,436 msnm) monitorea la vertiente suroccidental tributaria de la microcuenca de <strong>R\u00EDo Fr\u00EDo</strong>, que abastece la planta <strong>PTAP Florida</strong>.
+                    No presenta conexi\u00F3n hidrol\u00F3gica directa con la cuenca del R\u00EDo Tona (Embalse) ni con el R\u00EDo Surat\u00E1 (Majadas).
                 </div>
             </div>
             """, unsafe_allow_html=True)
         elif estacion_ev_sel in ["El_Pajal", "Yerbabuena", "Vegas_del_Quemado"]:
             st.markdown("""
             <div style="background: rgba(56, 189, 248, 0.08); border-left: 5px solid #38BDF8; padding: 12px 16px; border-radius: 8px; margin: 10px 0 20px 0;">
-                <strong style="color: #38BDF8; font-size: 13.5px;">🌊 Hidrología Cuenca Tona (Aportes al Embalse):</strong>
+                <strong style="color: #38BDF8; font-size: 13.5px;">\U0001F30A Hidrolog\u00EDa Cuenca Tona (Aportes al Embalse):</strong>
                 <div style="color: #E2E8F0; font-size: 12.5px; margin-top: 4px; line-height: 1.5;">
-                    Esta estación tributa a las subcuencas altas del Río Tona (Quebradas Golondrinas, Arnania y Carrizal), aportando directamente al vaso del <strong>Embalse de Tona</strong>.
-                    El agua solo transita hacia el Río Suratá (Majadas) si el embalse supera la cota de rebose 885.75 msnm vertiendo por el <em>Morning Glory</em>.
+                    Esta estaci\u00F3n tributa a las subcuencas altas del R\u00EDo Tona (Quebradas Golondrinas, Arnania y Carrizal), aportando directamente al vaso del <strong>Embalse de Tona</strong>.
+                    El agua solo transita hacia el R\u00EDo Surat\u00E1 (Majadas) si el embalse supera la cota de rebose 885.75 msnm vertiendo por el <em>Morning Glory</em>.
                 </div>
             </div>
             """, unsafe_allow_html=True)
@@ -3635,7 +3635,7 @@ def render_eventos_significativos_estadisticas():
         # ========================================================
         if mostrar_embalse:
             num_sec_emb = "1" if not mostrar_lluvias else "2"
-            st.markdown(f"### 🌊 {num_sec_emb}. Picos y Reboses del Embalse de Tona (Cota 885.75 msnm)")
+            st.markdown(f"### \U0001F30A {num_sec_emb}. Picos y Reboses del Embalse de Tona (Cota 885.75 msnm)")
             rebose_cota = 885.75
             picos_embalse_data = []
             if not df_picos_emb.empty:
@@ -3651,11 +3651,11 @@ def render_eventos_significativos_estadisticas():
                     if sobr > 0:
                         q_vert = 110.0 * (sobr ** 1.5)
                         q_vert_ls = q_vert * 1000.0
-                        estado_reb = f"🔴 REBOSE ACTIVO (+{sobr:.2f} m)"
-                        q_vert_str = f"{q_vert:.2f} m³/s ({q_vert_ls:.0f} L/s)"
+                        estado_reb = f"\U0001F534 REBOSE ACTIVO (+{sobr:.2f} m)"
+                        q_vert_str = f"{q_vert:.2f} m\u00B3/s ({q_vert_ls:.0f} L/s)"
                     else:
-                        estado_reb = f"🟢 NORMAL ({abs(sobr):.2f} m bajo rebose)"
-                        q_vert_str = "0.00 m³/s (Sin vertimiento)"
+                        estado_reb = f"\U0001F7E2 NORMAL ({abs(sobr):.2f} m bajo rebose)"
+                        q_vert_str = "0.00 m\u00B3/s (Sin vertimiento)"
 
                     picos_embalse_data.append({
                         "Fecha / Hora": ts_c_str,
@@ -3667,34 +3667,34 @@ def render_eventos_significativos_estadisticas():
 
             df_picos_emb_show = pd.DataFrame(picos_embalse_data)
 
-            eventos_rebose_count = sum(1 for p in picos_embalse_data if "🔴" in p["Estado Respecto a Rebose"])
+            eventos_rebose_count = sum(1 for p in picos_embalse_data if "\U0001F534" in p["Estado Respecto a Rebose"])
             if eventos_rebose_count == 0:
-                st.info(f"ℹ️  **Sin eventos de rebose:** En los últimos {periodo_dias} días la cota del embalse se mantuvo bajo los {rebose_cota:.2f} msnm. No se registraron descargas por vertimiento.")
+                st.info(f"\u2139\uFE0F  **Sin eventos de rebose:** En los \u00FAltimos {periodo_dias} d\u00EDas la cota del embalse se mantuvo bajo los {rebose_cota:.2f} msnm. No se registraron descargas por vertimiento.")
             else:
-                st.warning(f"⚠️  **Se registraron {eventos_rebose_count} lecturas en cota de rebose** sobre el vertedero Morning Glory (885.75 msnm) en el período analizado.")
+                st.warning(f"\u26A0\uFE0F  **Se registraron {eventos_rebose_count} lecturas en cota de rebose** sobre el vertedero Morning Glory (885.75 msnm) en el per\u00EDodo analizado.")
 
             if not df_picos_emb_show.empty:
-                st.caption("Top picos históricos de nivel registrados por el radar del embalse:")
+                st.caption("Top picos hist\u00F3ricos de nivel registrados por el radar del embalse:")
                 st.dataframe(df_picos_emb_show, use_container_width=True, hide_index=True)
 
             st.markdown("---")
 
         # ========================================================
-        # 3. REGISTRO DE CRECIENTES EN RÍO SURATÁ (SECTOR MAJADAS)
+        # 3. REGISTRO DE CRECIENTES EN RIO SURATA (SECTOR MAJADAS)
         # ========================================================
         if mostrar_majadas:
             if estacion_ev_sel == "Monsalve":
-                st.markdown("### ⚡ 2. Registro Hidrológico en Río Suratá (Sector Majadas — Receptor Directo de Monsalve)")
-                st.caption("Monitoreo fluvial en Majadas correspondiente a la descarga libre de la Cuenca Alta del Río Suratá (Páramo / Monsalve). Tiempo de tránsito estimado: ~2.5 a 3.5 horas desde Monsalve hasta Majadas, y 15 a 25 minutos desde Majadas hasta la Bocatoma Bosconia.")
+                st.markdown("### \u26A1 2. Registro Hidrol\u00F3gico en R\u00EDo Surat\u00E1 (Sector Majadas \u2014 Receptor Directo de Monsalve)")
+                st.caption("Monitoreo fluvial en Majadas correspondiente a la descarga libre de la Cuenca Alta del R\u00EDo Surat\u00E1 (P\u00E1ramo / Monsalve). Tiempo de tr\u00E1nsito estimado: ~2.5 a 3.5 horas desde Monsalve hasta Majadas, y 15 a 25 minutos desde Majadas hasta la Bocatoma Bosconia.")
             elif estacion_ev_sel == "Embalse":
-                st.markdown("### ⚡ 2. Tránsito Hidrológico hacia Río Suratá (Sector Majadas) por Vertimiento de Embalse")
-                st.caption("Monitoreo en Majadas del caudal recibido desde el Río Tona cuando el Embalse descarga por el vertedero Morning Glory (Cota > 885.75 msnm).")
+                st.markdown("### \u26A1 2. Tr\u00E1nsito Hidrol\u00F3gico hacia R\u00EDo Surat\u00E1 (Sector Majadas) por Vertimiento de Embalse")
+                st.caption("Monitoreo en Majadas del caudal recibido desde el R\u00EDo Tona cuando el Embalse descarga por el vertedero Morning Glory (Cota > 885.75 msnm).")
             elif estacion_ev_sel == "Surata":
-                st.markdown("### ⚡ 1. Registro de Crecientes y Aforos en Río Suratá (Sector Majadas — IDEAM 0023197700)")
-                st.caption("Registro forense de niveles de mira, lecturas del sensor limnimétrico IDEAM y caudales hacia Toma Bosconia.")
+                st.markdown("### \u26A1 1. Registro de Crecientes y Aforos en R\u00EDo Surat\u00E1 (Sector Majadas \u2014 IDEAM 0023197700)")
+                st.caption("Registro forense de niveles de mira, lecturas del sensor limnim\u00E9trico IDEAM y caudales hacia Toma Bosconia.")
             else:
-                st.markdown("### ⚡ 3. Registro de Crecientes en Río Suratá (Sector Majadas — IDEAM 0023197700)")
-                st.caption("Bitácora forense de niveles en mira, caudales aforados y alertas hidrológicas hacia Toma Bosconia.")
+                st.markdown("### \u26A1 3. Registro de Crecientes en R\u00EDo Surat\u00E1 (Sector Majadas \u2014 IDEAM 0023197700)")
+                st.caption("Bit\u00E1cora forense de niveles en mira, caudales aforados y alertas hidrol\u00F3gicas hacia Toma Bosconia.")
 
             filas_surata = []
             timestamps_vistos = set()
@@ -3710,15 +3710,15 @@ def render_eventos_significativos_estadisticas():
                             qm3_u, qls_u = calcular_caudal_mira_majadas(h_u, aplicar_offset_ideam=True)
                             h_mira_u = max(0.05, h_u - OFFSET_SENSOR_IDEAM_MAJADAS)
                             if qls_u >= 12000.0 or h_mira_u >= 1.66:
-                                alerta_sur = "🔴 ALERTA ROJA (Creciente Crítica)"
+                                alerta_sur = "\U0001F534 ALERTA ROJA (Creciente Cr\u00EDtica)"
                             elif qls_u >= 7000.0 or h_mira_u >= 1.45:
-                                alerta_sur = "🟠 ALERTA NARANJA (Creciente Mayor)"
+                                alerta_sur = "\U0001F7E0 ALERTA NARANJA (Creciente Mayor)"
                             elif qls_u >= 4500.0 or h_mira_u >= 1.25:
-                                alerta_sur = "🟡 ALERTA AMARILLA (Creciente Moderada)"
+                                alerta_sur = "\U0001F7E1 ALERTA AMARILLA (Creciente Moderada)"
                             elif qls_u >= 2800.0 or h_mira_u >= 1.08:
-                                alerta_sur = "🔵 AVISO (Ascenso de Caudal)"
+                                alerta_sur = "\U0001F535 AVISO (Ascenso de Caudal)"
                             else:
-                                alerta_sur = "🟢 REGIMEN BASE (Normal)"
+                                alerta_sur = "\U0001F7E2 REGIMEN BASE (Normal)"
 
                             timestamps_vistos.add(ts_c_str)
                             filas_surata.append({
@@ -3726,15 +3726,15 @@ def render_eventos_significativos_estadisticas():
                                 "Nivel Mira amb (m)": round(h_mira_u, 2),
                                 "Nivel IDEAM (m)": round(h_u, 2),
                                 "Caudal Q (L/s)": round(qls_u, 0),
-                                "Caudal (m³/s)": round(qm3_u, 2),
+                                "Caudal (m\u00B3/s)": round(qm3_u, 2),
                                 "Nivel de Alerta": alerta_sur,
-                                "Tránsito a Toma Bosconia": "15 a 25 min",
+                                "Tr\u00E1nsito a Toma Bosconia": "15 a 25 min",
                                 "q_sort": qls_u
                             })
             except Exception:
                 pass
 
-            # Procesar registros históricos de BigQuery para Suratá
+            # Procesar registros historicos de BigQuery para Surata
             if not df_picos_sur.empty:
                 for idx, r_s in df_picos_sur.iterrows():
                     ts_s = r_s.get('ts')
@@ -3755,7 +3755,7 @@ def render_eventos_significativos_estadisticas():
                     h_mira = None
                     q_ls = None
 
-                    # Identificar Caudal Q y Nivel H según magnitud física
+                    # Identificar Caudal Q y Nivel H segun magnitud fisica
                     if p is not None and p > 50.0:
                         q_ls = p
                         if t is not None and 0.20 <= t <= 5.0:
@@ -3786,15 +3786,15 @@ def render_eventos_significativos_estadisticas():
                     if q_ls is not None and h_mira is not None:
                         h_ideam_est = h_mira + OFFSET_SENSOR_IDEAM_MAJADAS
                         if q_ls >= 12000.0 or h_mira >= 1.66:
-                            alerta_sur = "🔴 ALERTA ROJA (Creciente Crítica)"
+                            alerta_sur = "\U0001F534 ALERTA ROJA (Creciente Cr\u00EDtica)"
                         elif q_ls >= 7000.0 or h_mira >= 1.45:
-                            alerta_sur = "🟠 ALERTA NARANJA (Creciente Mayor)"
+                            alerta_sur = "\U0001F7E0 ALERTA NARANJA (Creciente Mayor)"
                         elif q_ls >= 4500.0 or h_mira >= 1.25:
-                            alerta_sur = "🟡 ALERTA AMARILLA (Creciente Moderada)"
+                            alerta_sur = "\U0001F7E1 ALERTA AMARILLA (Creciente Moderada)"
                         elif q_ls >= 2800.0 or h_mira >= 1.08:
-                            alerta_sur = "🔵 AVISO (Ascenso de Caudal)"
+                            alerta_sur = "\U0001F535 AVISO (Ascenso de Caudal)"
                         else:
-                            alerta_sur = "🟢 REGIMEN BASE (Normal)"
+                            alerta_sur = "\U0001F7E2 REGIMEN BASE (Normal)"
 
                         timestamps_vistos.add(ts_str)
                         filas_surata.append({
@@ -3802,9 +3802,9 @@ def render_eventos_significativos_estadisticas():
                             "Nivel Mira amb (m)": round(h_mira, 2),
                             "Nivel IDEAM (m)": round(h_ideam_est, 2),
                             "Caudal Q (L/s)": round(q_ls, 0),
-                            "Caudal (m³/s)": round(q_ls / 1000.0, 2),
+                            "Caudal (m\u00B3/s)": round(q_ls / 1000.0, 2),
                             "Nivel de Alerta": alerta_sur,
-                            "Tránsito a Toma Bosconia": "15 a 25 min",
+                            "Tr\u00E1nsito a Toma Bosconia": "15 a 25 min",
                             "q_sort": q_ls
                         })
 
@@ -3815,19 +3815,19 @@ def render_eventos_significativos_estadisticas():
             if len(eventos_surata) == 0:
                 if len(filas_surata) > 0:
                     top_lecturas = sorted(filas_surata, key=lambda x: x["q_sort"], reverse=True)[:10]
-                    st.info(f"ℹ️  **Río Suratá en régimen base estable:** En los últimos {periodo_dias} días los caudales se mantuvieron dentro del flujo base habitual (< 2,800 L/s). No se registraron crecientes mayores en Majadas.")
+                    st.info(f"\u2139\uFE0F  **R\u00EDo Surat\u00E1 en r\u00E9gimen base estable:** En los \u00FAltimos {periodo_dias} d\u00EDas los caudales se mantuvieron dentro del flujo base habitual (< 2,800 L/s). No se registraron crecientes mayores en Majadas.")
                     df_sur_show = pd.DataFrame(top_lecturas).drop(columns=['q_sort'])
-                    st.caption("Top lecturas de nivel registradas en el período:")
+                    st.caption("Top lecturas de nivel registradas en el per\u00EDodo:")
                     st.dataframe(df_sur_show, use_container_width=True, hide_index=True)
                 else:
-                    st.success(f"**Río Suratá en régimen estable:** En los últimos {periodo_dias} días no se registraron crecientes mayores ni ascensos críticos en Majadas.")
+                    st.success(f"**R\u00EDo Surat\u00E1 en r\u00E9gimen estable:** En los \u00FAltimos {periodo_dias} d\u00EDas no se registraron crecientes mayores ni ascensos cr\u00EDticos en Majadas.")
             else:
-                st.warning(f"⚠️  **Se registraron {len(eventos_surata)} lecturas en evento de creciente / ascenso de caudal** en Río Suratá (Sector Majadas) en el período analizado.")
+                st.warning(f"\u26A0\uFE0F  **Se registraron {len(eventos_surata)} lecturas en evento de creciente / ascenso de caudal** en R\u00EDo Surat\u00E1 (Sector Majadas) en el per\u00EDodo analizado.")
                 df_ev_sur_show = pd.DataFrame(eventos_surata)
                 c_su1, c_su2, c_su3 = st.columns(3)
                 c_su1.metric("Total Registros de Creciente", len(df_ev_sur_show))
-                c_su2.metric("Pico Máximo de Caudal", f"{df_ev_sur_show['Caudal Q (L/s)'].max():,.0f} L/s ({df_ev_sur_show['Caudal (m³/s)'].max():.2f} m³/s)")
-                c_su3.metric("Nivel Máximo en Mira amb", f"{df_ev_sur_show['Nivel Mira amb (m)'].max():.2f} m")
+                c_su2.metric("Pico M\u00E1ximo de Caudal", f"{df_ev_sur_show['Caudal Q (L/s)'].max():,.0f} L/s ({df_ev_sur_show['Caudal (m\u00B3/s)'].max():.2f} m\u00B3/s)")
+                c_su3.metric("Nivel M\u00E1ximo en Mira amb", f"{df_ev_sur_show['Nivel Mira amb (m)'].max():.2f} m")
 
                 st.dataframe(df_ev_sur_show.drop(columns=['q_sort']), use_container_width=True, hide_index=True)
 
