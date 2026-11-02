@@ -3605,18 +3605,673 @@ def render_panel_alertas_tempranas_sat():
             </div>
             """, unsafe_allow_html=True)
 
+
 # ============================================================
-# 8. PESTAÑAS PRINCIPALES DEL SISTEMA (7 PESTAÑAS)
+# 7.6 CONSULTAS Y VISTA DE EVENTOS SIGNIFICATIVOS & ESTADÃSTICAS
 # ============================================================
-tab_situacion, tab_embalse_2026, tab_radar_72h, tab_series, tab_ia, tab_resumen_alertas, tab_matematica = st.tabs([
-    "📊 Situación Actual", 
-    "🌊 Gestión Embalse & Sequía 2026", 
-    "🛰️ Radar Satelital & Pronóstico 72h",
-    "📈 Series de Tiempo & Descargas", 
-    "🤖 Asistente IA MIMAT-C",
-    "🌐 Panel de Alerta Temprana y Vigilancia de Cuencas",
-    "📐 Fundamento Matemático & Auditoría"
+
+@st.cache_data(ttl=300)
+def consultar_eventos_significativos_bigquery(dias=90):
+    """
+    Consulta en BigQuery los registros histÃ³ricos de eventos extremos:
+    - Picos de lluvia que superaron umbrales de alerta
+    - Picos del radar del Embalse de Tona (cota >= 885.70 msnm)
+    - Crecientes en RÃ­o SuratÃ¡ (Majadas)
+    """
+    try:
+        query = f"""
+        SELECT 
+            id_estacion,
+            SAFE_CAST(timestamp AS TIMESTAMP) as ts,
+            SAFE_CAST(precipitacion AS FLOAT64) as precip,
+            SAFE_CAST(temperatura AS FLOAT64) as temp,
+            SAFE_CAST(humedad AS FLOAT64) as hum,
+            SAFE_CAST(velocidad_viento AS FLOAT64) as viento
+        FROM `gen-lang-client-0342049346.amb_hidrologia.telemetria_estaciones`
+        WHERE SAFE_CAST(timestamp AS TIMESTAMP) >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL {dias} DAY)
+          AND (
+            (id_estacion = 'Embalse' AND SAFE_CAST(temperatura AS FLOAT64) >= 885.70)
+            OR (id_estacion = 'El_Pajal' AND SAFE_CAST(precipitacion AS FLOAT64) >= 12.3)
+            OR (id_estacion = 'Yerbabuena' AND SAFE_CAST(precipitacion AS FLOAT64) >= 10.9)
+            OR (id_estacion = 'La_Mariana' AND SAFE_CAST(precipitacion AS FLOAT64) >= 11.7)
+            OR (id_estacion = 'Vegas_del_Quemado' AND SAFE_CAST(precipitacion AS FLOAT64) >= 27.2)
+            OR (id_estacion = 'Monsalve' AND SAFE_CAST(precipitacion AS FLOAT64) >= 10.9)
+            OR (id_estacion = 'Surata' AND (SAFE_CAST(precipitacion AS FLOAT64) >= 1.41 OR SAFE_CAST(temperatura AS FLOAT64) >= 7500))
+          )
+        ORDER BY ts DESC
+        LIMIT 5000
+        """
+        q_job = client.query(query)
+        df_ev = q_job.to_dataframe()
+        return df_ev
+    except Exception as e:
+        print(f"Error consultando eventos significativos: {e}")
+        return pd.DataFrame()
+
+@st.cache_data(ttl=300)
+def consultar_picos_embalse_bigquery(dias=90):
+    """
+    Consulta las cotas mÃ¡s altas registradas por el radar del embalse en el perÃ­odo.
+    """
+    try:
+        query = f"""
+        SELECT 
+            SAFE_CAST(timestamp AS TIMESTAMP) as ts,
+            SAFE_CAST(temperatura AS FLOAT64) as cota,
+            SAFE_CAST(precipitacion AS FLOAT64) as precip
+        FROM `gen-lang-client-0342049346.amb_hidrologia.telemetria_estaciones`
+        WHERE id_estacion = 'Embalse'
+          AND SAFE_CAST(temperatura AS FLOAT64) > 800
+          AND SAFE_CAST(timestamp AS TIMESTAMP) >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL {dias} DAY)
+        ORDER BY cota DESC
+        LIMIT 20
+        """
+        q_job = client.query(query)
+        return q_job.to_dataframe()
+    except Exception as e:
+        print(f"Error consultando picos embalse: {e}")
+        return pd.DataFrame()
+
+@st.cache_data(ttl=600)
+def consultar_estadisticas_multitemporales_bigquery():
+    """
+    Agrupa en BigQuery los datos diarios de todas las estaciones desde el inicio del registro 2026.
+    A partir de esta matriz base diaria se calculan las estadÃ­sticas semanales, mensuales
+    y el acumulado progresivo anual 2026.
+    """
+    try:
+        query = """
+        SELECT 
+            id_estacion,
+            DATE(SAFE_CAST(timestamp AS TIMESTAMP), 'America/Bogota') as fecha,
+            EXTRACT(YEAR FROM SAFE_CAST(timestamp AS TIMESTAMP) AT TIME ZONE 'America/Bogota') as anio,
+            EXTRACT(MONTH FROM SAFE_CAST(timestamp AS TIMESTAMP) AT TIME ZONE 'America/Bogota') as mes,
+            EXTRACT(ISOWEEK FROM SAFE_CAST(timestamp AS TIMESTAMP) AT TIME ZONE 'America/Bogota') as semana,
+            ROUND(SUM(SAFE_CAST(precipitacion AS FLOAT64)), 2) as lluvia_diaria,
+            ROUND(MAX(SAFE_CAST(precipitacion AS FLOAT64)), 2) as lluvia_pico_horario,
+            ROUND(MIN(SAFE_CAST(temperatura AS FLOAT64)), 2) as temp_min,
+            ROUND(MAX(SAFE_CAST(temperatura AS FLOAT64)), 2) as temp_max,
+            ROUND(AVG(SAFE_CAST(temperatura AS FLOAT64)), 2) as temp_prom,
+            ROUND(MIN(SAFE_CAST(humedad AS FLOAT64)), 1) as hum_min,
+            ROUND(MAX(SAFE_CAST(humedad AS FLOAT64)), 1) as hum_max,
+            ROUND(AVG(SAFE_CAST(humedad AS FLOAT64)), 1) as hum_prom,
+            COUNT(*) as total_lecturas
+        FROM `gen-lang-client-0342049346.amb_hidrologia.telemetria_estaciones`
+        WHERE SAFE_CAST(timestamp AS TIMESTAMP) IS NOT NULL
+        GROUP BY id_estacion, fecha, anio, mes, semana
+        ORDER BY fecha DESC
+        """
+        q_job = client.query(query)
+        df = q_job.to_dataframe()
+        return df
+    except Exception as e:
+        print(f"Error consultando estadÃ­sticas multitemporales: {e}")
+        return pd.DataFrame()
+
+def render_eventos_significativos_estadisticas():
+    """
+    Renderiza la pestaÃ±a oficial de Eventos Significativos y EstadÃ­sticas ClimatolÃ³gicas Multitemporales.
+    """
+    st.subheader("ðŸš¨ Eventos HidrolÃ³gicos Significativos & ClimatologÃ­a Multitemporal")
+    st.caption("BitÃ¡cora forense de picos extremos, reboses y estadÃ­sticas progresivas acumuladas (Diarias, Semanales, Mensuales y Anuales) â€” Sistema MIMAT-C26")
+
+    tab_sub_eventos, tab_sub_estadisticas = st.tabs([
+        "ðŸš¨ BitÃ¡cora Forense de Eventos Extremos", 
+        "ðŸ“Š EstadÃ­sticas ClimatolÃ³gicas (DÃ­a / Semana / Mes / AÃ±o)"
+    ])
+
+    meses_es = {
+        1: "Enero", 2: "Febrero", 3: "Marzo", 4: "Abril",
+        5: "Mayo", 6: "Junio", 7: "Julio", 8: "Agosto",
+        9: "Septiembre", 10: "Octubre", 11: "Noviembre", 12: "Diciembre"
+    }
+
+    # ------------------------------------------------------------
+    # SUB-TAB 1: BITÃCORA FORENSE DE EVENTOS EXTREMOS
+    # ------------------------------------------------------------
+    with tab_sub_eventos:
+        col_f1, col_f2 = st.columns([2, 2])
+        periodo_dias = col_f1.selectbox(
+            "Ventana temporal de anÃ¡lisis forense:",
+            [7, 15, 30, 60, 90, 180, 365],
+            index=4,
+            format_func=lambda x: f"Ãšltimos {x} dÃ­as",
+            key="ev_periodo_dias"
+        )
+        estacion_ev_sel = col_f2.selectbox(
+            "Filtrar por estaciÃ³n:",
+            ["Todas las Estaciones", "El_Pajal", "Yerbabuena", "La_Mariana", "Vegas_del_Quemado", "Monsalve", "Embalse", "Surata"],
+            key="ev_estacion_sel"
+        )
+
+        with st.spinner("Consultando registros forenses en BigQuery..."):
+            df_ev_raw = consultar_eventos_significativos_bigquery(periodo_dias)
+            df_picos_emb = consultar_picos_embalse_bigquery(periodo_dias)
+
+        if not df_ev_raw.empty and estacion_ev_sel != "Todas las Estaciones":
+            df_ev_filtro = df_ev_raw[df_ev_raw['id_estacion'] == estacion_ev_sel].copy()
+        else:
+            df_ev_filtro = df_ev_raw.copy()
+
+        st.markdown("---")
+
+        # ========================================================
+        # 1. PICOS DE PRECIPITACIÃ“N EXTREMA
+        # ========================================================
+        st.markdown("### ðŸŒ§ï¸ 1. Picos de PrecipitaciÃ³n Extrema en Cuencas")
+
+        filas_lluvia_extrema = []
+        if not df_ev_filtro.empty:
+            for idx, row in df_ev_filtro.iterrows():
+                est = str(row.get('id_estacion', ''))
+                if est in umbrales and row.get('precip') is not None:
+                    p_val = float(row['precip'])
+                    u_amarilla = umbrales[est]['amarilla']
+                    u_naranja = umbrales[est]['naranja']
+                    u_roja = umbrales[est]['roja']
+
+                    if p_val >= u_amarilla:
+                        if p_val >= u_roja:
+                            nivel_alerta = "ðŸ”´ ALERTA ROJA"
+                            badge_color = "#FF4B4B"
+                            desc_impacto = "Riesgo de creciente sÃºbita inminente en drenaje"
+                        elif p_val >= u_naranja:
+                            nivel_alerta = "ðŸŸ  ALERTA NARANJA"
+                            badge_color = "#FF8000"
+                            desc_impacto = "Incremento severo de escorrentÃ­a superficial"
+                        else:
+                            nivel_alerta = "ðŸŸ¡ ALERTA AMARILLA"
+                            badge_color = "#FFBB00"
+                            desc_impacto = "Aviso preventivo por ascenso de precipitaciÃ³n"
+
+                        ts_col = row['ts']
+                        if hasattr(ts_col, 'astimezone'):
+                            ts_str = ts_col.astimezone(colombia_tz).strftime('%Y-%m-%d %H:%M')
+                        else:
+                            ts_str = str(ts_col)[:16]
+
+                        cuenca_nombre = METADATOS_ESTACIONES.get(est, {}).get("cuenca", est)
+
+                        filas_lluvia_extrema.append({
+                            "Fecha / Hora": ts_str,
+                            "EstaciÃ³n": est.replace('_', ' '),
+                            "Microcuenca": cuenca_nombre,
+                            "Lluvia (mm/h)": round(p_val, 2),
+                            "Nivel de Alerta": nivel_alerta,
+                            "Impacto Operativo": desc_impacto,
+                            "badge_color": badge_color
+                        })
+
+        if len(filas_lluvia_extrema) == 0:
+            st.markdown(f"""
+            <div style="background-color: #0d2818; border: 1px solid #00E676; border-left: 6px solid #00E676; padding: 14px 18px; border-radius: 8px; margin: 10px 0 20px 0;">
+                <div style="display: flex; align-items: center; gap: 12px;">
+                    <span style="font-size: 1.4rem;">âœ…</span>
+                    <div>
+                        <strong style="color: #00E676; font-size: 1.05rem;">No hubo eventos extremos</strong>
+                        <div style="color: #ECEFF1; font-size: 0.92rem; margin-top: 3px;">
+                            En los Ãºltimos <strong>{periodo_dias} dÃ­as</strong> no se superaron los umbrales de alerta (Amarilla, Naranja o Roja) en las estaciones de cuenca. 
+                            Todas las precipitaciones se mantuvieron dentro del rÃ©gimen operativo normal.
+                        </div>
+                    </div>
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+        else:
+            df_lluvia_show = pd.DataFrame(filas_lluvia_extrema)
+            c_k1, c_k2, c_k3 = st.columns(3)
+            c_k1.metric("Total Eventos de Lluvia Extrema", len(df_lluvia_show))
+            c_k2.metric("Pico MÃ¡ximo Registrado", f"{df_lluvia_show['Lluvia (mm/h)'].max():.1f} mm/h")
+            c_k3.metric("EstaciÃ³n con MÃ¡s Eventos", df_lluvia_show['EstaciÃ³n'].mode()[0])
+
+            st.dataframe(
+                df_lluvia_show[["Fecha / Hora", "EstaciÃ³n", "Microcuenca", "Lluvia (mm/h)", "Nivel de Alerta", "Impacto Operativo"]],
+                use_container_width=True,
+                hide_index=True
+            )
+
+        st.markdown("---")
+
+        # ========================================================
+        # 2. PICOS Y REBOSES DEL RADAR DEL EMBALSE DE TONA
+        # ========================================================
+        st.markdown("### ðŸŒŠ 2. Picos y Reboses del Embalse de Tona (Cota 885.75 msnm)")
+
+        rebose_cota = 885.75
+        picos_embalse_data = []
+
+        if not df_picos_emb.empty:
+            for idx, r_emb in df_picos_emb.iterrows():
+                c_val = float(r_emb['cota'])
+                ts_c = r_emb['ts']
+                if hasattr(ts_c, 'astimezone'):
+                    ts_c_str = ts_c.astimezone(colombia_tz).strftime('%Y-%m-%d %H:%M')
+                else:
+                    ts_c_str = str(ts_c)[:16]
+
+                sobr = c_val - rebose_cota
+                if sobr > 0:
+                    q_vert = 110.0 * (sobr ** 1.5)
+                    q_vert_ls = q_vert * 1000.0
+                    estado_reb = f"ðŸ”´ REBOSE ACTIVO (+{sobr:.2f} m)"
+                    q_vert_str = f"{q_vert:.2f} mÂ³/s ({q_vert_ls:.0f} L/s)"
+                else:
+                    estado_reb = f"ðŸŸ¢ NORMAL ({abs(sobr):.2f} m bajo rebose)"
+                    q_vert_str = "0.00 mÂ³/s (Sin vertimiento)"
+
+                picos_embalse_data.append({
+                    "Fecha / Hora": ts_c_str,
+                    "Cota Radar (msnm)": round(c_val, 2),
+                    "Estado Respecto a Rebose": estado_reb,
+                    "Descarga Morning Glory Estimada": q_vert_str,
+                    "Lluvia Registrada (mm)": round(float(r_emb.get('precip', 0.0) or 0.0), 2)
+                })
+
+        df_picos_emb_show = pd.DataFrame(picos_embalse_data)
+
+        eventos_rebose_count = sum(1 for p in picos_embalse_data if "ðŸ”´" in p["Estado Respecto a Rebose"])
+        if eventos_rebose_count == 0:
+            st.info(f"â„¹ï¸ **Sin eventos de rebose:** En los Ãºltimos {periodo_dias} dÃ­as la cota del embalse se mantuvo bajo los {rebose_cota:.2f} msnm. No se registraron descargas por vertimiento.")
+        else:
+            st.warning(f"âš ï¸ **Se registraron {eventos_rebose_count} lecturas en cota de rebose** sobre el vertedero Morning Glory (885.75 msnm) en el perÃ­odo analizado.")
+
+        if not df_picos_emb_show.empty:
+            st.caption("Top picos histÃ³ricos de nivel registrados por el radar del embalse:")
+            st.dataframe(df_picos_emb_show, use_container_width=True, hide_index=True)
+
+        st.markdown("---")
+
+        # ========================================================
+        # 3. CRECIENTES EN RÃO SURATÃ (MAJADAS - IDEAM 0023197700)
+        # ========================================================
+        st.markdown("### âš¡ 3. Registro de Crecientes en RÃ­o SuratÃ¡ (Sector Majadas)")
+
+        filas_surata = []
+        if not df_ev_filtro.empty:
+            df_sur = df_ev_filtro[df_ev_filtro['id_estacion'] == 'Surata']
+            for idx, r_s in df_sur.iterrows():
+                h_val = float(r_s.get('precip') or 0.0)
+                q_val = float(r_s.get('temp') or 0.0)
+                if h_val >= 1.41 or q_val >= 7500.0:
+                    ts_s = r_s['ts']
+                    ts_s_str = ts_s.astimezone(colombia_tz).strftime('%Y-%m-%d %H:%M') if hasattr(ts_s, 'astimezone') else str(ts_s)[:16]
+                    if q_val >= 14000.0 or h_val >= 1.66:
+                        alerta_sur = "ðŸ”´ ALERTA ROJA (Creciente CrÃ­tica)"
+                    elif q_val >= 9500.0 or h_val >= 1.50:
+                        alerta_sur = "ðŸŸ  ALERTA NARANJA (Creciente Mayor)"
+                    else:
+                        alerta_sur = "ðŸŸ¡ AVISO AMARILLO (Ascenso Moderado)"
+
+                    filas_surata.append({
+                        "Fecha / Hora": ts_s_str,
+                        "Nivel (m)": round(h_val, 2),
+                        "Caudal Estimado (L/s)": round(q_val, 0),
+                        "Alerta": alerta_sur,
+                        "TrÃ¡nsito a Toma Bosconia": "15 a 25 min"
+                    })
+
+        if len(filas_surata) == 0:
+            st.success(f"âœ… **RÃ­o SuratÃ¡ en rÃ©gimen estable:** En los Ãºltimos {periodo_dias} dÃ­as no se registraron crecientes mayores ni ascensos crÃ­ticos en Majadas.")
+        else:
+            st.dataframe(pd.DataFrame(filas_surata), use_container_width=True, hide_index=True)
+
+    # ------------------------------------------------------------
+    # SUB-TAB 2: ESTADÃSTICAS CLIMATOLÃ“GICAS MULTITEMPORALES
+    # ------------------------------------------------------------
+    with tab_sub_estadisticas:
+        st.markdown("### ðŸ“Š ClimatologÃ­a DinÃ¡mica y Agregaciones Multitemporales")
+        st.caption("CÃ¡lculo progresivo de valores MÃ¡ximos, MÃ­nimos, Promedios y Acumulados generados automÃ¡ticamente a partir de BigQuery.")
+
+        with st.spinner("Compilando matriz multitemporal desde BigQuery..."):
+            df_stats_base = consultar_estadisticas_multitemporales_bigquery()
+
+        if df_stats_base.empty:
+            st.warning("âš ï¸ No se pudieron obtener los datos consolidados de BigQuery en este momento.")
+            return
+
+        c_st1, c_st2, c_st3 = st.columns(3)
+        estaciones_disp = sorted(df_stats_base['id_estacion'].unique().tolist())
+        est_stat = c_st1.selectbox("Seleccione EstaciÃ³n:", estaciones_disp, index=0, key="stat_sel_estacion")
+        granularidad = c_st2.selectbox(
+            "Granularidad Temporal:",
+            ["ðŸ—“ï¸ Mensual", "ðŸ“† Semanal", "ðŸ“… Diario", "ðŸ† Progresivo Anual (2026)"],
+            index=0,
+            key="stat_sel_granularidad"
+        )
+        variable_grafica = c_st3.selectbox(
+            "Variable principal a visualizar:",
+            ["ðŸŒ§ï¸ PrecipitaciÃ³n / Lluvia", "ðŸŒ¡ï¸ Temperatura / Nivel", "ðŸ’§ Humedad Relativa"],
+            key="stat_sel_variable"
+        )
+
+        df_est = df_stats_base[df_stats_base['id_estacion'] == est_stat].copy()
+        if df_est.empty:
+            st.info(f"No hay registros disponibles para la estaciÃ³n {est_stat}.")
+            return
+
+        es_embalse = (est_stat == "Embalse")
+
+        # --------------------------------------------------------
+        # 1. GRANULARIDAD: DIARIO
+        # --------------------------------------------------------
+        if granularidad == "ðŸ“… Diario":
+            df_view = df_est[[
+                'fecha', 'lluvia_diaria', 'lluvia_pico_horario',
+                'temp_min', 'temp_max', 'temp_prom',
+                'hum_min', 'hum_max', 'hum_prom', 'total_lecturas'
+            ]].copy()
+            df_view['fecha'] = pd.to_datetime(df_view['fecha'])
+            df_view = df_view.sort_values('fecha', ascending=False)
+
+            col_k1, col_k2, col_k3, col_k4 = st.columns(4)
+            col_k1.metric("DÃ­as con Registro", len(df_view))
+            col_k2.metric("Lluvia Diaria MÃ¡xima", f"{df_view['lluvia_diaria'].max():.1f} mm")
+            col_k3.metric("Lluvia Diaria Promedio", f"{df_view['lluvia_diaria'].mean():.1f} mm")
+            if es_embalse:
+                col_k4.metric("Cota MÃ¡x Radar", f"{df_view['temp_max'].max():.2f} msnm")
+            else:
+                col_k4.metric("Temp MÃ¡x Absoluta", f"{df_view['temp_max'].max():.1f} Â°C")
+
+            fig_d = go.Figure()
+            if "PrecipitaciÃ³n" in variable_grafica:
+                fig_d.add_trace(go.Bar(
+                    x=df_view['fecha'], y=df_view['lluvia_diaria'],
+                    name="Lluvia Diaria (mm)", marker_color="#00CC96"
+                ))
+                fig_d.add_trace(go.Scatter(
+                    x=df_view['fecha'], y=df_view['lluvia_pico_horario'],
+                    name="Pico Horario MÃ¡x (mm/h)", mode='lines+markers', line=dict(color="#FF8000", width=2)
+                ))
+                fig_d.update_layout(title=f"HistÃ³rico Diario de PrecipitaciÃ³n â€” {est_stat}", yaxis_title="mm / mm/h")
+            elif "Temperatura" in variable_grafica:
+                lbl_t = "Cota Radar (msnm)" if es_embalse else "Temperatura (Â°C)"
+                fig_d.add_trace(go.Scatter(
+                    x=df_view['fecha'], y=df_view['temp_max'],
+                    name=f"MÃ¡ximo ({lbl_t})", mode='lines', line=dict(color="#FF4B4B", width=1.5)
+                ))
+                fig_d.add_trace(go.Scatter(
+                    x=df_view['fecha'], y=df_view['temp_prom'],
+                    name=f"Promedio ({lbl_t})", mode='lines', line=dict(color="#38BDF8", width=2)
+                ))
+                fig_d.add_trace(go.Scatter(
+                    x=df_view['fecha'], y=df_view['temp_min'],
+                    name=f"MÃ­nimo ({lbl_t})", mode='lines', line=dict(color="#00CC96", width=1.5),
+                    fill='tonexty', fillcolor='rgba(56, 189, 248, 0.15)'
+                ))
+                fig_d.update_layout(title=f"Banda Diaria de {lbl_t} (MÃ¡x - Prom - MÃ­n) â€” {est_stat}", yaxis_title=lbl_t)
+            else:
+                fig_d.add_trace(go.Scatter(
+                    x=df_view['fecha'], y=df_view['hum_prom'],
+                    name="Humedad Promedio (%)", mode='lines+markers', line=dict(color="#A855F7", width=2)
+                ))
+                fig_d.update_layout(title=f"Humedad Relativa Diaria â€” {est_stat}", yaxis_title="%")
+
+            fig_d.update_layout(template="plotly_dark", height=380, hovermode="x unified")
+            st.plotly_chart(fig_d, use_container_width=True)
+
+            rename_cols = {
+                'fecha': 'Fecha',
+                'lluvia_diaria': 'Lluvia Acum. (mm)',
+                'lluvia_pico_horario': 'Pico Horario (mm/h)',
+                'temp_min': 'Cota MÃ­n (msnm)' if es_embalse else 'Temp MÃ­n (Â°C)',
+                'temp_max': 'Cota MÃ¡x (msnm)' if es_embalse else 'Temp MÃ¡x (Â°C)',
+                'temp_prom': 'Cota Prom (msnm)' if es_embalse else 'Temp Prom (Â°C)',
+                'hum_prom': 'Humedad Prom (%)',
+                'total_lecturas': 'Lecturas'
+            }
+            df_table_d = df_view.rename(columns=rename_cols).drop(columns=['hum_min', 'hum_max'], errors='ignore')
+            st.dataframe(df_table_d, use_container_width=True, hide_index=True)
+
+            csv_d = df_table_d.to_csv(index=False).encode('utf-8')
+            st.download_button(
+                label=f"ðŸ“¥ Descargar EstadÃ­sticas Diarias ({est_stat}) en CSV",
+                data=csv_d,
+                file_name=f"estadisticas_diarias_{est_stat}.csv",
+                mime="text/csv"
+            )
+
+        # --------------------------------------------------------
+        # 2. GRANULARIDAD: SEMANAL
+        # --------------------------------------------------------
+        elif granularidad == "ðŸ“† Semanal":
+            df_sem = df_est.groupby(['anio', 'semana']).agg(
+                fecha_inicio=('fecha', 'min'),
+                fecha_fin=('fecha', 'max'),
+                lluvia_semanal=('lluvia_diaria', 'sum'),
+                pico_max_semanal=('lluvia_pico_horario', 'max'),
+                dias_con_lluvia=('lluvia_diaria', lambda s: (s > 0.1).sum()),
+                temp_min_sem=('temp_min', 'min'),
+                temp_max_sem=('temp_max', 'max'),
+                temp_prom_sem=('temp_prom', 'mean'),
+                hum_prom_sem=('hum_prom', 'mean'),
+                dias_evaluados=('fecha', 'count')
+            ).reset_index().sort_values(['anio', 'semana'], ascending=False)
+
+            df_sem['Semana'] = df_sem.apply(lambda r: f"Semana {int(r['semana'])} ({r['anio']})", axis=1)
+
+            col_sk1, col_sk2, col_sk3, col_sk4 = st.columns(4)
+            col_sk1.metric("Semanas Evaluadas", len(df_sem))
+            col_sk2.metric("Lluvia Semanal MÃ¡x", f"{df_sem['lluvia_semanal'].max():.1f} mm")
+            col_sk3.metric("Lluvia Semanal Prom", f"{df_sem['lluvia_semanal'].mean():.1f} mm")
+            if es_embalse:
+                col_sk4.metric("Cota Semanal MÃ¡x", f"{df_sem['temp_max_sem'].max():.2f} msnm")
+            else:
+                col_sk4.metric("Temp Semanal MÃ¡x", f"{df_sem['temp_max_sem'].max():.1f} Â°C")
+
+            fig_s = go.Figure()
+            if "PrecipitaciÃ³n" in variable_grafica:
+                fig_s.add_trace(go.Bar(
+                    x=df_sem['Semana'], y=df_sem['lluvia_semanal'],
+                    name="Lluvia Total Semanal (mm)", marker_color="#00E676"
+                ))
+                fig_s.add_trace(go.Scatter(
+                    x=df_sem['Semana'], y=df_sem['pico_max_semanal'],
+                    name="Pico Horario MÃ¡x (mm/h)", mode='lines+markers', line=dict(color="#FF8000", width=2)
+                ))
+                fig_s.update_layout(title=f"Consolidado Semanal de PrecipitaciÃ³n â€” {est_stat}", yaxis_title="mm")
+            else:
+                lbl_t = "Cota Radar (msnm)" if es_embalse else "Temperatura (Â°C)"
+                fig_s.add_trace(go.Scatter(
+                    x=df_sem['Semana'], y=df_sem['temp_max_sem'],
+                    name=f"MÃ¡xima Semanal ({lbl_t})", mode='lines+markers', line=dict(color="#FF4B4B")
+                ))
+                fig_s.add_trace(go.Scatter(
+                    x=df_sem['Semana'], y=df_sem['temp_prom_sem'],
+                    name=f"Promedio Semanal ({lbl_t})", mode='lines+markers', line=dict(color="#38BDF8")
+                ))
+                fig_s.add_trace(go.Scatter(
+                    x=df_sem['Semana'], y=df_sem['temp_min_sem'],
+                    name=f"MÃ­nima Semanal ({lbl_t})", mode='lines+markers', line=dict(color="#00CC96"),
+                    fill='tonexty', fillcolor='rgba(56, 189, 248, 0.15)'
+                ))
+                fig_s.update_layout(title=f"Comportamiento Semanal de {lbl_t} â€” {est_stat}", yaxis_title=lbl_t)
+
+            fig_s.update_layout(template="plotly_dark", height=380)
+            st.plotly_chart(fig_s, use_container_width=True)
+
+            rename_sem = {
+                'Semana': 'Semana ISO',
+                'fecha_inicio': 'Desde',
+                'fecha_fin': 'Hasta',
+                'lluvia_semanal': 'Lluvia Semanal (mm)',
+                'pico_max_semanal': 'Pico MÃ¡x Horario (mm/h)',
+                'dias_con_lluvia': 'DÃ­as Lluviosos',
+                'temp_min_sem': 'Cota MÃ­n (msnm)' if es_embalse else 'Temp MÃ­n (Â°C)',
+                'temp_max_sem': 'Cota MÃ¡x (msnm)' if es_embalse else 'Temp MÃ¡x (Â°C)',
+                'temp_prom_sem': 'Cota Prom (msnm)' if es_embalse else 'Temp Prom (Â°C)',
+                'dias_evaluados': 'DÃ­as Monitoreados'
+            }
+            df_show_sem = df_sem[list(rename_sem.keys())].rename(columns=rename_sem)
+            st.dataframe(df_show_sem, use_container_width=True, hide_index=True)
+
+            csv_s = df_show_sem.to_csv(index=False).encode('utf-8')
+            st.download_button(
+                label=f"ðŸ“¥ Descargar EstadÃ­sticas Semanales ({est_stat}) en CSV",
+                data=csv_s,
+                file_name=f"estadisticas_semanales_{est_stat}.csv",
+                mime="text/csv"
+            )
+
+        # --------------------------------------------------------
+        # 3. GRANULARIDAD: MENSUAL
+        # --------------------------------------------------------
+        elif granularidad == "ðŸ—“ï¸ Mensual":
+            df_mes = df_est.groupby(['anio', 'mes']).agg(
+                lluvia_mensual=('lluvia_diaria', 'sum'),
+                pico_horario_mes=('lluvia_pico_horario', 'max'),
+                dias_con_lluvia=('lluvia_diaria', lambda s: (s > 0.1).sum()),
+                temp_min_mes=('temp_min', 'min'),
+                temp_max_mes=('temp_max', 'max'),
+                temp_prom_mes=('temp_prom', 'mean'),
+                hum_prom_mes=('hum_prom', 'mean'),
+                dias_registrados=('fecha', 'count')
+            ).reset_index().sort_values(['anio', 'mes'], ascending=False)
+
+            df_mes['Mes Nombre'] = df_mes.apply(lambda r: f"{meses_es.get(int(r['mes']), r['mes'])} {int(r['anio'])}", axis=1)
+
+            col_m1, col_m2, col_m3, col_m4 = st.columns(4)
+            col_m1.metric("Meses con Datos", len(df_mes))
+            col_m2.metric("Mes MÃ¡s Lluvioso", f"{df_mes['lluvia_mensual'].max():.1f} mm")
+            col_m3.metric("Lluvia Mensual Promedio", f"{df_mes['lluvia_mensual'].mean():.1f} mm")
+            if es_embalse:
+                col_m4.metric("Cota MÃ¡x Mensual", f"{df_mes['temp_max_mes'].max():.2f} msnm")
+            else:
+                col_m4.metric("Temp MÃ¡x Mensual", f"{df_mes['temp_max_mes'].max():.1f} Â°C")
+
+            fig_m = go.Figure()
+            if "PrecipitaciÃ³n" in variable_grafica:
+                fig_m.add_trace(go.Bar(
+                    x=df_mes['Mes Nombre'], y=df_mes['lluvia_mensual'],
+                    name="Lluvia Acumulada Mensual (mm)", marker_color="#00CC96", text=df_mes['lluvia_mensual'].round(1), textposition='auto'
+                ))
+                fig_m.add_trace(go.Scatter(
+                    x=df_mes['Mes Nombre'], y=df_mes['pico_horario_mes'],
+                    name="Pico Horario Extremo (mm/h)", mode='lines+markers', line=dict(color="#FF8000", width=2.5)
+                ))
+                fig_m.update_layout(title=f"PrecipitaciÃ³n Mensual Consolidada â€” {est_stat}", yaxis_title="mm")
+            else:
+                lbl_t = "Cota Radar (msnm)" if es_embalse else "Temperatura (Â°C)"
+                fig_m.add_trace(go.Bar(
+                    x=df_mes['Mes Nombre'], y=df_mes['temp_prom_mes'],
+                    name=f"Media Mensual ({lbl_t})", marker_color="#38BDF8"
+                ))
+                fig_m.add_trace(go.Scatter(
+                    x=df_mes['Mes Nombre'], y=df_mes['temp_max_mes'],
+                    name=f"MÃ¡xima Mensual ({lbl_t})", mode='lines+markers', line=dict(color="#FF4B4B", width=2)
+                ))
+                fig_m.add_trace(go.Scatter(
+                    x=df_mes['Mes Nombre'], y=df_mes['temp_min_mes'],
+                    name=f"MÃ­nima Mensual ({lbl_t})", mode='lines+markers', line=dict(color="#00E676", width=2)
+                ))
+                fig_m.update_layout(title=f"Comportamiento TÃ©rmico / Nivel Mensual â€” {est_stat}", yaxis_title=lbl_t)
+
+            fig_m.update_layout(template="plotly_dark", height=380)
+            st.plotly_chart(fig_m, use_container_width=True)
+
+            rename_mes = {
+                'Mes Nombre': 'Mes / AÃ±o',
+                'lluvia_mensual': 'Lluvia Total (mm)',
+                'pico_horario_mes': 'Pico MÃ¡x (mm/h)',
+                'dias_con_lluvia': 'DÃ­as con Lluvia',
+                'temp_min_mes': 'Cota MÃ­n (msnm)' if es_embalse else 'Temp MÃ­n (Â°C)',
+                'temp_max_mes': 'Cota MÃ¡x (msnm)' if es_embalse else 'Temp MÃ¡x (Â°C)',
+                'temp_prom_mes': 'Cota Prom (msnm)' if es_embalse else 'Temp Prom (Â°C)',
+                'dias_registrados': 'DÃ­as con Datos'
+            }
+            df_show_mes = df_mes[list(rename_mes.keys())].rename(columns=rename_mes)
+            st.dataframe(df_show_mes, use_container_width=True, hide_index=True)
+
+            csv_m = df_show_mes.to_csv(index=False).encode('utf-8')
+            st.download_button(
+                label=f"ðŸ“¥ Descargar EstadÃ­sticas Mensuales ({est_stat}) en CSV",
+                data=csv_m,
+                file_name=f"estadisticas_mensuales_{est_stat}.csv",
+                mime="text/csv"
+            )
+
+        # --------------------------------------------------------
+        # 4. GRANULARIDAD: PROGRESIVO ANUAL (2026)
+        # --------------------------------------------------------
+        elif granularidad == "ðŸ† Progresivo Anual (2026)":
+            df_anual = df_est.groupby('anio').agg(
+                lluvia_anual=('lluvia_diaria', 'sum'),
+                pico_anual_horario=('lluvia_pico_horario', 'max'),
+                pico_diario_max=('lluvia_diaria', 'max'),
+                dias_con_lluvia=('lluvia_diaria', lambda s: (s > 0.1).sum()),
+                temp_min_anual=('temp_min', 'min'),
+                temp_max_anual=('temp_max', 'max'),
+                temp_prom_anual=('temp_prom', 'mean'),
+                dias_monitoreados=('fecha', 'count')
+            ).reset_index().sort_values('anio', ascending=False)
+
+            st.markdown(f"""
+            <div style="background-color: #1e293b; border-left: 5px solid #38BDF8; padding: 14px 18px; border-radius: 8px; margin-bottom: 20px;">
+                <h4 style="color: #38BDF8; margin: 0 0 4px 0;">ðŸ“ˆ ClimatologÃ­a Progresiva Anual</h4>
+                <div style="color: #E2E8F0; font-size: 0.93rem;">
+                    Los valores anuales se actualizan automÃ¡ticamente en tiempo real con cada nueva lectura ingresada a BigQuery. 
+                    A medida que transcurran los meses, la serie se irÃ¡ consolidando hasta alcanzar el ciclo anual completo (365 dÃ­as).
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+
+            for idx, r_an in df_anual.iterrows():
+                anio_val = int(r_an['anio'])
+                st.markdown(f"#### ðŸ“… Resumen Acumulado AÃ±o {anio_val} â€” EstaciÃ³n {est_stat}")
+
+                k1, k2, k3, k4 = st.columns(4)
+                k1.metric("Lluvia Acumulada Anual", f"{r_an['lluvia_anual']:.1f} mm")
+                k2.metric("DÃ­as Monitoreados", f"{int(r_an['dias_monitoreados'])} dÃ­as")
+                k3.metric("DÃ­as con Lluvia", f"{int(r_an['dias_con_lluvia'])} dÃ­as")
+                k4.metric("DÃ­a MÃ¡s Lluvioso", f"{r_an['pico_diario_max']:.1f} mm")
+
+                k5, k6, k7, k8 = st.columns(4)
+                if es_embalse:
+                    k5.metric("Cota MÃ­nima del AÃ±o", f"{r_an['temp_min_anual']:.2f} msnm")
+                    k6.metric("Cota MÃ¡xima del AÃ±o", f"{r_an['temp_max_anual']:.2f} msnm")
+                    k7.metric("Cota Media Anual", f"{r_an['temp_prom_anual']:.2f} msnm")
+                    k8.metric("Pico Horario Extremo", f"{r_an['pico_anual_horario']:.1f} mm/h")
+                else:
+                    k5.metric("Temp MÃ­nima Anual", f"{r_an['temp_min_anual']:.1f} Â°C")
+                    k6.metric("Temp MÃ¡xima Anual", f"{r_an['temp_max_anual']:.1f} Â°C")
+                    k7.metric("Temp Media Ponderada", f"{r_an['temp_prom_anual']:.1f} Â°C")
+                    k8.metric("Pico Horario Extremo", f"{r_an['pico_anual_horario']:.1f} mm/h")
+
+            rename_an = {
+                'anio': 'AÃ±o',
+                'lluvia_anual': 'Lluvia Acum. Anual (mm)',
+                'pico_diario_max': 'MÃ¡x Lluvia en 24h (mm)',
+                'pico_anual_horario': 'Pico Horario Extremo (mm/h)',
+                'dias_con_lluvia': 'DÃ­as Lluviosos',
+                'temp_min_anual': 'Cota MÃ­n (msnm)' if es_embalse else 'Temp MÃ­nima (Â°C)',
+                'temp_max_anual': 'Cota MÃ¡x (msnm)' if es_embalse else 'Temp MÃ¡xima (Â°C)',
+                'temp_prom_anual': 'Cota Media (msnm)' if es_embalse else 'Temp Media (Â°C)',
+                'dias_monitoreados': 'DÃ­as Registrados'
+            }
+            df_show_an = df_anual.rename(columns=rename_an)
+            st.dataframe(df_show_an, use_container_width=True, hide_index=True)
+
+            csv_a = df_show_an.to_csv(index=False).encode('utf-8')
+            st.download_button(
+                label=f"ðŸ“¥ Descargar Consolidado Anual ({est_stat}) en CSV",
+                data=csv_a,
+                file_name=f"estadisticas_anuales_{est_stat}.csv",
+                mime="text/csv"
+            )
+
+# ============================================================
+# 8. PESTAÃ‘AS PRINCIPALES DEL SISTEMA (8 PESTAÃ‘AS)
+# ============================================================
+tab_situacion, tab_embalse_2026, tab_radar_72h, tab_series, tab_ia, tab_resumen_alertas, tab_eventos, tab_matematica = st.tabs([
+    "ðŸ“Š SituaciÃ³n Actual", 
+    "ðŸŒŠ GestiÃ³n Embalse & SequÃ­a 2026", 
+    "ðŸ›°ï¸ Radar Satelital & PronÃ³stico 72h",
+    "ðŸ“ˆ Series de Tiempo & Descargas", 
+    "ðŸ¤– Asistente IA MIMAT-C",
+    "ðŸŒ Panel de Alerta Temprana y Vigilancia de Cuencas",
+    "ðŸš¨ Eventos Significativos & EstadÃ­sticas",
+    "ðŸ“ Fundamento MatemÃ¡tico & AuditorÃ­a"
 ])
+
 
 # ------------------------------------------------------------
 # TAB 1: SITUACIÓN ACTUAL
@@ -5237,6 +5892,12 @@ with tab_ia:
 # ------------------------------------------------------------
 with tab_resumen_alertas:
     render_panel_alertas_tempranas_sat()
+
+# ------------------------------------------------------------
+# TAB 7: EVENTOS SIGNIFICATIVOS & ESTADÃSTICAS HIDROLÃ“GICAS
+# ------------------------------------------------------------
+with tab_eventos:
+    render_eventos_significativos_estadisticas()
 
 # ------------------------------------------------------------
 # TAB 6: FUNDAMENTO MATEMÁTICO & AUDITORÍA DE INGENIERÍA
