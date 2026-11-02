@@ -3452,7 +3452,7 @@ def render_eventos_significativos_estadisticas():
         # ========================================================
         # 1. PICOS DE PRECIPITACIÓN EXTREMA
         # ========================================================
-        st.markdown("### 🌐§ï¸ 1. Picos de Precipitación Extrema en Cuencas")
+        st.markdown("### 🌧️ 1. Picos de Precipitación Extrema en Cuencas")
         filas_lluvia_extrema = []
         if not df_ev_filtro.empty:
             for idx, row in df_ev_filtro.iterrows():
@@ -3592,7 +3592,7 @@ def render_eventos_significativos_estadisticas():
                         "Tránsito a Toma Bosconia": "15 a 25 min"
                     })
         if len(filas_surata) == 0:
-            st.success(f"✅ **Río Suratá en régimen estable:** En los últimos {periodo_dias} días no se registraron crecientes mayores ni ascensos críticos en Majadas.")
+            st.success(f"**Río Suratá en régimen estable:** En los últimos {periodo_dias} días no se registraron crecientes mayores ni ascensos críticos en Majadas.")
         else:
             st.dataframe(pd.DataFrame(filas_surata), use_container_width=True, hide_index=True)
 
@@ -3620,7 +3620,7 @@ def render_eventos_significativos_estadisticas():
         )
         variable_grafica = c_st3.selectbox(
             "Variable principal a visualizar:",
-            ["🌐§ï¸ Precipitación / Lluvia", "🌐¡ï¸ Temperatura / Nivel", "💧 Humedad Relativa"],
+            ["🌧️ Precipitación / Lluvia", "🌡️ Temperatura / Nivel", "💧 Humedad Relativa"],
             key="stat_sel_variable"
         )
         df_est = df_stats_base[df_stats_base['id_estacion'] == est_stat].copy()
@@ -3926,12 +3926,12 @@ def render_eventos_significativos_estadisticas():
 tab_situacion, tab_embalse_2026, tab_radar_72h, tab_series, tab_ia, tab_resumen_alertas, tab_eventos, tab_matematica = st.tabs([
     "📊 Situación Actual",
     "🌊 Gestión Embalse & Sequía 2026",
-    "🛰️ Radar Satelital & Pronóstico 72h",
+    "🛰️ Radar Satelital & Pronóstico 72h",
     "📈 Series de Tiempo & Descargas",
     "🤖 Asistente IA MIMAT-C",
-    "🌐 Panel de Alerta Temprana y Vigilancia de Cuencas",
+    "🌐 Panel de Alerta Temprana y Vigilancia de Cuencas",
     "🚨 Eventos Significativos & Estadísticas",
-    "📐 Fundamento Matemático & Auditoría"
+    "📐 Fundamento Matemático & Auditoría"
 ])
 # ------------------------------------------------------------
 # TAB 1: SITUACIÓN ACTUAL
