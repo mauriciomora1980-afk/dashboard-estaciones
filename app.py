@@ -4835,7 +4835,13 @@ with tab_situacion:
                 </div>
                 """, unsafe_allow_html=True)
                 # Módulo de Inteligencia de Cuenca (Trazabilidad y Atribución Hidrológica)
-                q_afluente_calc_ls = max(0.0, float(q_salida_crc_actual) - bal['q_neto_ls'])
+                q_egresos_totales_ls = float(q_salida_crc_actual) + 51.0 + float(hidro.get('q_rebose_ls', 0.0) or 0.0)
+                if bal["modo_balance"] == "LLENADO":
+                    q_afluente_calc_ls = q_egresos_totales_ls + abs(bal['q_neto_ls'])
+                elif bal["modo_balance"] == "VACIADO":
+                    q_afluente_calc_ls = max(0.0, q_egresos_totales_ls - bal['q_neto_ls'])
+                else:
+                    q_afluente_calc_ls = q_egresos_totales_ls
                 df_cuenca_tona = obtener_precipitacion_cuenca_tona(fecha_inicio, fecha_fin)
                 mostrar_modulo_atribucion_cuenca(df_cuenca_tona, q_afluente_calc_ls, bal['horas'])
             st.info(f"📅 Última lectura: {row['timestamp'].strftime('%Y-%m-%d %H:%M:%S')}")
