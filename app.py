@@ -864,7 +864,7 @@ def sincronizar_fews_ideam_surata_bigquery():
             "?codigoestacion=0023197700&$where=codigosensor%20in('0230','0231','0232')"
             "&$limit=90&$order=fechaobservacion%20DESC"
         )
-        r_soc = requests.get(url_socrata, timeout=4.5)
+        r_soc = requests.get(url_socrata, timeout=1.8)
         if r_soc.status_code == 200:
             datos_soc = r_soc.json()
             if isinstance(datos_soc, list) and len(datos_soc) > 0:
@@ -905,7 +905,7 @@ def sincronizar_fews_ideam_surata_bigquery():
         ]
         for url_fews in urls_fews_candidatas:
             try:
-                r_f = requests.get(url_fews, timeout=2.5, verify=False)
+                r_f = requests.get(url_fews, timeout=1.5, verify=False)
                 if r_f.status_code == 200 and len(r_f.text) > 50 and "obs" in r_f.text:
                     data_f = r_f.json()
                     serie_obs = data_f.get("obs", {}).get("data", [])
@@ -1013,7 +1013,7 @@ def sincronizar_fews_ideam_surata_bigquery():
         "serie_vivo": serie_ideam_vivo,
         "timestamp_utc": serie_ideam_vivo[-1][0] if serie_ideam_vivo else ahora_utc
     }
-@st.cache_data(ttl=60)
+@st.cache_data(ttl=180)
 def get_last_reading(estacion):
     if estacion == "Surata":
         info_s = sincronizar_fews_ideam_surata_bigquery()
@@ -1036,6 +1036,7 @@ def get_last_reading(estacion):
         query = f"""
         SELECT * FROM `gen-lang-client-0342049346.amb_hidrologia.telemetria_estaciones`
         WHERE id_estacion = '{estacion}'
+          AND SAFE_CAST(timestamp AS TIMESTAMP) >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 5 DAY)
         ORDER BY SAFE_CAST(timestamp AS TIMESTAMP) DESC
         LIMIT 1
         """
@@ -1062,7 +1063,7 @@ def get_last_reading(estacion):
         return df
     except Exception as e:
         return pd.DataFrame()
-@st.cache_data(ttl=60)
+@st.cache_data(ttl=180)
 def get_historical_data_range(estacion, fecha_inicio, fecha_fin):
     if estacion == "Surata":
         info_s_h = sincronizar_fews_ideam_surata_bigquery()
@@ -1132,7 +1133,7 @@ def get_historical_data_range(estacion, fecha_inicio, fecha_fin):
         return df
     except Exception as e:
         return pd.DataFrame()
-@st.cache_data(ttl=60)
+@st.cache_data(ttl=180)
 def get_caudal_crc_bosconia_actual():
     """
     Consulta en tiempo real la Ãºltima lectura telemÃ©trica del caudalÃ­metro ET_FIT401
@@ -1144,6 +1145,7 @@ def get_caudal_crc_bosconia_actual():
                SAFE_CAST(timestamp AS TIMESTAMP) as ts
         FROM `gen-lang-client-0342049346.amb_hidrologia.telemetria_estaciones`
         WHERE id_estacion IN ('CRC_Bosconia_Caudal', 'Embalse_Caudal')
+          AND SAFE_CAST(timestamp AS TIMESTAMP) >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 5 DAY)
           AND precipitacion IS NOT NULL
         ORDER BY SAFE_CAST(timestamp AS TIMESTAMP) DESC
         LIMIT 1
@@ -1183,7 +1185,7 @@ def get_historico_crc_bosconia(horas=24):
         print(f"Error consultando histÃ³rico CRC Bosconia: {e}")
         return pd.DataFrame()
 
-@st.cache_data(ttl=60)
+@st.cache_data(ttl=180)
 def get_cota_embalse_actual_segura():
     try:
         # Consulta de los últimos 3 registros con filtro de rango para aplicar mediana anti-glitch (-0.04 m confirmado por Ing. Angarita)
@@ -1192,6 +1194,7 @@ def get_cota_embalse_actual_segura():
         FROM `gen-lang-client-0342049346.amb_hidrologia.telemetria_estaciones`
         WHERE id_estacion = 'Embalse'
           AND SAFE_CAST(temperatura AS FLOAT64) BETWEEN 818.0 AND 886.5
+          AND SAFE_CAST(timestamp AS TIMESTAMP) >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 5 DAY)
         ORDER BY SAFE_CAST(timestamp AS TIMESTAMP) DESC
         LIMIT 3
         """
@@ -1202,7 +1205,7 @@ def get_cota_embalse_actual_segura():
     except:
         pass
     return 885.32
-@st.cache_data(ttl=60)
+@st.cache_data(ttl=180)
 def obtener_novedades_sistema_en_vivo():
     """
     Despachador Inteligente de Novedades Hidrológicas en Vivo (SAT-IA / MIMAT-C26):
@@ -1597,7 +1600,14 @@ def obtener_sensor_virtual_resiliente(estacion):
             df_actual_sat = df_fc_tmp[df_fc_tmp['time_dt'] >= (ahora_dt - timedelta(minutes=55))]
             row_sat = df_actual_sat.iloc[0] if not df_actual_sat.empty else df_fc_tmp.iloc[-1]
             p_sat = float(row_sat.get('precipitation', 0.0) or 0.0)
-            p_virtual = p_sat
+            # Filtro anti-falsa lluvia / sesgo orografico Open-Meteo:
+            p_ref_lluvia = float(df_ref.iloc[0].get('precipitacion', 0.0) or 0.0) if not df_ref.empty else 0.0
+            if p_ref_lluvia <= 0.0 and p_sat < 2.0:
+                p_virtual = 0.0
+            elif p_sat < 0.8:
+                p_virtual = 0.0
+            else:
+                p_virtual = p_sat
             # Fusión Satélite + Gradiente Altimétrico para máxima precisión en páramo (Yerbabuena 3,380 msnm)
             t_sat = row_sat.get('temperature_2m')
             h_sat = row_sat.get('relative_humidity_2m')
@@ -3056,8 +3066,25 @@ def render_panel_alertas_tempranas_sat():
                 lluvia_val = max(lluvia_val, p_ult)
             temp_val = float(r.get('temperatura', 18.0) or 18.0)
             hum_val = float(r.get('humedad', 75.0) or 75.0)
-            # Detectar si está en ceros / caída física de sensores
-            if (temp_val == 0.0 and hum_val == 0.0) or (id_est in ["La_Mariana", "Yerbabuena"]):
+            # EvaluaciÃ³n dinÃ¡mica de conectividad fÃ­sica telemÃ©trica (SIM Card activa):
+            # Una estaciÃ³n se considera transmitiendo en vivo si su Ãºltimo dato es menor a 4 horas
+            # y sus sensores no estÃ¡n en ceros.
+            ahora_col = datetime.now(colombia_tz)
+            es_reciente = False
+            ts_dato = r.get('timestamp')
+            if pd.notna(ts_dato):
+                try:
+                    ts_dt = pd.to_datetime(ts_dato)
+                    if ts_dt.tzinfo is None:
+                        ts_dt = ts_dt.tz_localize(colombia_tz)
+                    else:
+                        ts_dt = ts_dt.tz_convert(colombia_tz)
+                    if (ahora_col - ts_dt).total_seconds() <= 4 * 3600:
+                        es_reciente = True
+                except Exception:
+                    pass
+
+            if (temp_val == 0.0 and hum_val == 0.0) or not es_reciente:
                 sat_info = obtener_sensor_virtual_resiliente(id_est)
                 if sat_info:
                     lluvia_val = float(sat_info.get('precipitacion', 0.0) or 0.0)
@@ -3065,6 +3092,9 @@ def render_panel_alertas_tempranas_sat():
                     hum_val = float(sat_info.get('humedad', hum_val) or hum_val)
                 estado_red = "VIRTUAL_SATELITAL"
                 origen_txt = "Sensor Virtual Satelital Open-Meteo Activo"
+            else:
+                estado_red = "OPERATIVA"
+                origen_txt = "Transmitiendo en vivo"
         else:
             sat_info = obtener_sensor_virtual_resiliente(id_est)
             if sat_info:
@@ -3095,7 +3125,7 @@ def render_panel_alertas_tempranas_sat():
             badge_color = "#FFBB00"
             txt_sem = f"⚡ AVISO AMARILLO ({lluvia_val:.1f} mm/h)"
             badge_html = f'<span class="badge-status" style="background: rgba(255, 187, 0, 0.2); color: #FFBB00; border: 1px solid #FFBB00; font-size: 9.5px; display: inline-flex; align-items: center; gap: 6px;"><span class="beacon-yellow"></span> ⚡ AVISO AMARILLO ({lluvia_val:.1f} mm/h)</span>'
-        elif lluvia_val > 0.05:
+        elif (estado_red == "VIRTUAL_SATELITAL" and lluvia_val >= 1.5) or (estado_red != "VIRTUAL_SATELITAL" and lluvia_val >= 0.5):
             sem = "VERDE"
             css = "card-scada-green"
             beacon_class = "beacon-green"
@@ -3116,17 +3146,17 @@ def render_panel_alertas_tempranas_sat():
             else:
                 badge_html = '<span class="badge-status" style="background: rgba(148, 163, 184, 0.15); color: #94A3B8; border: 1px solid #475569; font-size: 9.5px; display: inline-flex; align-items: center; gap: 6px;"><span class="beacon-gray"></span> ⚪ TIEMPO SECO (En vivo)</span>'
         if es_libre_surata:
-            if lluvia_val > 0.05:
+            if lluvia_val >= 0.5:
                 impacto = "⛰️ Drenaje directo a Río Suratá (cauce libre sin presa) ➔ Majadas ➔ Bosconia"
             else:
                 impacto = "⛰️ Cuenca Alta Río Suratá en tiempo seco (Sin aporte pluvial adicional)"
         elif cota_emb >= NIVEL_REBOSE_EMBALSE:
-            if lluvia_val > 0.05:
+            if lluvia_val >= 0.5:
                 impacto = "🌊 Embalse en rebose: escorrentía pasa sobre vertedero hacia Bosconia"
             else:
                 impacto = "🌊 Embalse en cota de rebose activo (Vertimiento constante por Morning Glory)"
         else:
-            if lluvia_val > 0.05:
+            if lluvia_val >= 0.5:
                 impacto = "🛡️ Cuenca Tona amortiguada en vaso del Embalse (Sin impacto aguas abajo)"
             else:
                 impacto = "🛡️ Tiempo seco en subcuenca (Sin lluvias activas)"
@@ -3346,28 +3376,36 @@ def render_panel_alertas_tempranas_sat():
     # -------------------------------------------------------------
     # FILA 3: ESTACIONES CON RESPALDO VIRTUAL SATELITAL (OPEN-METEO)
     # -------------------------------------------------------------
-    st.markdown("### 🛰️ 3. Estaciones en Mantenimiento con Sensor Virtual Satelital Activo (Open-Meteo)")
+    hay_virtuales = any(s['estado_red'] == 'VIRTUAL_SATELITAL' for s in [info_mar, info_yer])
+    titulo_sec3 = "### ðŸ›°ï¸ 3. Estaciones en Mantenimiento con Sensor Virtual Satelital Activo (Open-Meteo)" if hay_virtuales else "### ðŸ›°ï¸ 3. Estaciones de Alta MontaÃ±a (TelemetrÃ­a FÃ­sica Restablecida)"
+    st.markdown(titulo_sec3)
     col_sat1, col_sat2 = st.columns(2)
     for col_s_target, info_s in [(col_sat1, info_mar), (col_sat2, info_yer)]:
+        es_virt = info_s['estado_red'] == 'VIRTUAL_SATELITAL'
+        header_tag = "RESPALDO METEOROLÃ“GICO SATELITAL" if es_virt else "TELEMETRÃA EN VIVO (SIM RESTABLECIDA)"
+        header_color = "#38BDF8" if es_virt else "#00CC96"
+        lluvia_lbl = "PrecipitaciÃ³n Satelital Estimada" if es_virt else "Lluvia Ãšltima Hora"
+        origen_lbl = "Modelo Satelital" if es_virt else "Temperatura / Hum"
+        impacto_color = "#38BDF8" if es_virt else "#94A3B8"
         with col_s_target:
             st.markdown(f"""
             <div class="{info_s['css']}">
                 <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 8px;">
                     <div>
-                        <div style="color: #38BDF8; font-size: 10px; font-weight: 800; text-transform: uppercase;">RESPALDO METEOROLÓGICO SATELITAL</div>
+                        <div style="color: {header_color}; font-size: 10px; font-weight: 800; text-transform: uppercase;">{header_tag}</div>
                         <h4 style="color: #FFFFFF; margin: 2px 0 0 0; font-size: 16px; font-weight: 800;">{info_s['nombre']}</h4>
-                        <div style="color: #94A3B8; font-size: 11px;">{info_s['cuenca']} • Altitud: {info_s['altitud']}</div>
+                        <div style="color: #94A3B8; font-size: 11px;">{info_s['cuenca']} â€¢ Altitud: {info_s['altitud']}</div>
                     </div>
                     {info_s['badge_html']}
                 </div>
                 <div style="background: rgba(0,0,0,0.3); border-radius: 8px; padding: 10px; margin-bottom: 10px; display: flex; justify-content: space-between; align-items: center;">
                     <div>
-                        <div style="color: #94A3B8; font-size: 10.5px;">Precipitación Satelital Estimada</div>
+                        <div style="color: #94A3B8; font-size: 10.5px;">{lluvia_lbl}</div>
                         <div style="color: #FFFFFF; font-size: 22px; font-weight: 900;">{info_s['lluvia']:.1f} <span style="font-size: 12px; color: {'#00CC96' if info_s['lluvia'] > 0 else '#38BDF8'};">mm/h</span></div>
                     </div>
                     <div style="text-align: right;">
-                        <div style="color: #94A3B8; font-size: 10.5px;">Modelo Satelital</div>
-                        <div style="color: #CBD5E1; font-size: 13px; font-weight: 700;">{info_s['temp']:.1f}°C • {info_s['hum']:.0f}%</div>
+                        <div style="color: #94A3B8; font-size: 10.5px;">{origen_lbl}</div>
+                        <div style="color: #CBD5E1; font-size: 13px; font-weight: 700;">{info_s['temp']:.1f}Â°C â€¢ {info_s['hum']:.0f}%</div>
                     </div>
                 </div>
                 <div style="font-size: 11px; color: #CBD5E1; background: rgba(0,0,0,0.25); padding: 8px 12px; border-radius: 8px;">
@@ -3375,7 +3413,7 @@ def render_panel_alertas_tempranas_sat():
                         <span class="{info_s['beacon_class']}"></span>
                         <strong style="color: {info_s['badge_color']}; font-size: 12px;">{info_s['txt_sem']}</strong>
                     </div>
-                    <div style="color: #38BDF8; margin-top: 3px;">{info_s['impacto']}</div>
+                    <div style="color: {impacto_color}; margin-top: 3px;">{info_s['impacto']}</div>
                 </div>
             </div>
             """, unsafe_allow_html=True)
