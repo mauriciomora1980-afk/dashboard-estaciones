@@ -1151,6 +1151,33 @@ def get_caudal_crc_bosconia_actual():
         print(f"Error consultando CRC_Bosconia_Caudal en BigQuery: {e}")
     return None, None
 
+@st.cache_data(ttl=120)
+def get_historico_crc_bosconia(horas=24):
+    """
+    Consulta el histÃ³rico telemÃ©trico del caudalÃ­metro ET_FIT401 (CRC_Bosconia_Caudal)
+    en la ventana de anÃ¡lisis, para graficar la extracciÃ³n continua (sea pasiva o activa).
+    """
+    try:
+        query = f"""
+        SELECT 
+            SAFE_CAST(timestamp AS TIMESTAMP) as ts,
+            SAFE_CAST(precipitacion AS FLOAT64) as caudal_crc
+        FROM `gen-lang-client-0342049346.amb_hidrologia.telemetria_estaciones`
+        WHERE id_estacion IN ('CRC_Bosconia_Caudal', 'Embalse_Caudal')
+          AND precipitacion IS NOT NULL
+          AND SAFE_CAST(timestamp AS TIMESTAMP) >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL {horas} HOUR)
+        ORDER BY ts ASC
+        """
+        job = client.query(query)
+        rows = [dict(r) for r in job.result()]
+        df_res = pd.DataFrame(rows)
+        if not df_res.empty:
+            df_res['ts'] = pd.to_datetime(df_res['ts']).dt.tz_convert('America/Bogota').dt.tz_localize(None)
+        return df_res
+    except Exception as e:
+        print(f"Error consultando histÃ³rico CRC Bosconia: {e}")
+        return pd.DataFrame()
+
 @st.cache_data(ttl=60)
 def get_cota_embalse_actual_segura():
     try:
@@ -4704,6 +4731,65 @@ with tab_situacion:
                 c4.metric("🌊 Tasa Neta Llenado", f"{abs(bal['q_neto_ls']):.0f} L/s", delta=f"+{abs(bal['vaciado_diario_m3']):,.0f} m³/día recarga", delta_color="normal", help=f"Velocidad neta de llenado en las últimas {bal['horas']:.1f} horas. Aportes de cuenca superan la extracción de la CRC Bosconia.")
             else:
                 c4.metric("⚖️ Régimen Equilibrio", "0 L/s", delta="Equilibrio Dinámico", help="Caudal de entrada igual al caudal de salida.")
+
+            # Sub-panel de Egresos Físicos del Embalse (Conducción CRC + Filtraciones de Presa + Rebose)
+            st.markdown("<div style='margin-top: 14px; margin-bottom: 6px; font-size: 13.5px; font-weight: 700; color: #38BDF8;'>🚰 Caudales de Salida y Egresos del Embalse (Tiempo Real):</div>", unsafe_allow_html=True)
+            col_sal1, col_sal2, col_sal3 = st.columns(3)
+            
+            es_valvula_cerrada = (q_salida_crc_actual <= 30.0)
+            if es_valvula_cerrada:
+                estado_crc_card = "🟡 Válvula Cerrada (Salida Pasiva)"
+                help_crc_card = "La válvula principal CRC se encuentra cerrada. El sensor registra el flujo pasivo continuo (~25 L/s) requerido para presurización de la tubería, protección contra golpe de ariete/cavitación y tolerancia de estanqueidad de sellos a 60m de carga hidrostática. Físicamente ingresa a la conducción y llega a PTAP Bosconia."
+            else:
+                estado_crc_card = "🟢 Válvula Abierta (Descarga Activa)"
+                help_crc_card = "Válvula CRC en maniobra de apertura operativa activa, entregando caudal suplementario hacia PTAP Bosconia."
+
+            col_sal1.metric(
+                "🚰 Conducción CRC Bosconia",
+                f"{q_salida_crc_actual:,.1f} L/s",
+                delta=estado_crc_card,
+                help=help_crc_card
+            )
+            col_sal2.metric(
+                "💧 Filtraciones Presa (Drenes)",
+                "~51 L/s",
+                delta="48 - 54 L/s típicos (Varía con cota)",
+                help="Suma total de aforadores de filtración en galería de presa y cimientos (confirmado en campo por Milton Quintero). Alivia libremente por el cauce natural del Río Tona hacia Puente Tona."
+            )
+            if hidro["q_rebose_ls"] > 0:
+                col_sal3.metric("🌀 Rebose Morning Glory", f"~{hidro['q_rebose_ls']:,.0f} L/s", delta=f"~{hidro['q_rebose_m3_s']:.2f} m³/s", help="Descarga superficial de alivio por el pozo vertedero Morning Glory hacia Puente Tona.")
+            else:
+                col_sal3.metric("🌀 Rebose Morning Glory", "0 L/s", delta="Bajo vertedero", help="Cota inferior al labio del vertedero (885.75 msnm).")
+
+            # Módulo de Histórico de Caudal Extraído por CRC Bosconia
+            df_crc_hist = get_historico_crc_bosconia(horas)
+            with st.expander(f"📈 Ver Histórico de Extracción Válvula CRC Bosconia ({horas}h)", expanded=False):
+                if not df_crc_hist.empty and len(df_crc_hist) > 1:
+                    fig_crc = go.Figure()
+                    fig_crc.add_trace(go.Scatter(
+                        x=df_crc_hist['ts'],
+                        y=df_crc_hist['caudal_crc'],
+                        mode='lines+markers',
+                        name='Caudal Conducción CRC (L/s)',
+                        line=dict(color='#00E676', width=2),
+                        marker=dict(size=4)
+                    ))
+                    fig_crc.add_hline(
+                        y=25.0, line_dash="dash", line_color="#FFBB00",
+                        annotation_text="Línea Base Pasiva (~25 L/s Válvula Cerrada)"
+                    )
+                    fig_crc.update_layout(
+                        title=f"Evolución Histórica de Caudal CRC Bosconia — Últimas {horas} horas",
+                        xaxis_title="Fecha / Hora",
+                        yaxis_title="Caudal (L/s)",
+                        template="plotly_dark",
+                        height=300,
+                        hovermode="x unified"
+                    )
+                    st.plotly_chart(fig_crc, use_container_width=True)
+                    st.caption("ℹ️ **Análisis de Operación:** Caudales sostenidos en el rango de ~20-25 L/s indican válvula cerrada en régimen de salida pasiva/presurizada. Ascensos por encima de 30 L/s corresponden a maniobras activas de apertura hacia PTAP Bosconia.")
+                else:
+                    st.info(f"No se registran suficientes lecturas telemétricas de CRC_Bosconia_Caudal en las últimas {horas} horas (telemetría recién conectada).")
             # Tarjeta de Balance Dinámico en Tiempo Real (Derivada Batimétrica)
             if bal:
                 st.markdown("---")
@@ -4734,7 +4820,7 @@ with tab_situacion:
                 <div style="background: rgba(0,80,115,0.06); padding: 14px 18px; border-radius: 8px; border-left: 4px solid #005073; margin-top: 10px; font-size: 13px; line-height: 1.5;">
                     <strong style="color: #005073; font-size: 14px;">⚖️ Principio Físico: Balance de Masas & Continuidad Hidráulica</strong><br>
                     <div style="margin-top: 6px; font-family: monospace; background: rgba(255,255,255,0.7); padding: 6px 10px; border-radius: 4px; border: 1px solid #cce0eb;">
-                        <strong>Q_Salida_CRC_Bosconia ({q_salida_crc_actual:,.0f} L/s)</strong> = <strong>Q_Tasa_Neta ({bal['q_neto_ls']:.0f} L/s)</strong> + <strong>∑ Q_Afluentes_Cuenca_Tona (~{max(0, q_salida_crc_actual - bal['q_neto_ls']):,.0f} L/s)</strong>
+                        <strong>Egresos_Totales (~{q_salida_crc_actual + 51.0 + hidro['q_rebose_ls']:,.0f} L/s)</strong> = <strong>CRC_Bosconia ({q_salida_crc_actual:,.1f} L/s)</strong> + <strong>Filtraciones_Presa (~51 L/s)</strong> + <strong>Rebose_MG ({hidro['q_rebose_ls']:,.0f} L/s)</strong> | <strong>Tasa_Neta: {bal['q_neto_ls']:.0f} L/s</strong> + <strong>∑ Q_Afluentes_Cuenca_Tona (~{max(0, q_salida_crc_actual - bal['q_neto_ls']):,.0f} L/s)</strong>
                     </div>
                     <div style="margin-top: 8px;">
                         <strong>🌊 Interpretación de Volúmenes & Descenso del Embalse:</strong><br>
