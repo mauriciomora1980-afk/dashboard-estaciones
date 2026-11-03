@@ -1128,6 +1128,30 @@ def get_historical_data_range(estacion, fecha_inicio, fecha_fin):
     except Exception as e:
         return pd.DataFrame()
 @st.cache_data(ttl=60)
+def get_caudal_crc_bosconia_actual():
+    """
+    Consulta en tiempo real la Ãºltima lectura telemÃ©trica del caudalÃ­metro ET_FIT401
+    transmitido desde SCADA AVEVA Edge como CRC_Bosconia_Caudal.
+    """
+    try:
+        query = """
+        SELECT SAFE_CAST(precipitacion AS FLOAT64) as caudal_crc,
+               SAFE_CAST(timestamp AS TIMESTAMP) as ts
+        FROM `gen-lang-client-0342049346.amb_hidrologia.telemetria_estaciones`
+        WHERE id_estacion IN ('CRC_Bosconia_Caudal', 'Embalse_Caudal')
+          AND precipitacion IS NOT NULL
+        ORDER BY SAFE_CAST(timestamp AS TIMESTAMP) DESC
+        LIMIT 1
+        """
+        job = client.query(query)
+        rows = list(job.result())
+        if rows and rows[0]['caudal_crc'] is not None:
+            return float(rows[0]['caudal_crc']), rows[0]['ts']
+    except Exception as e:
+        print(f"Error consultando CRC_Bosconia_Caudal en BigQuery: {e}")
+    return None, None
+
+@st.cache_data(ttl=60)
 def get_cota_embalse_actual_segura():
     try:
         # Consulta de los últimos 3 registros con filtro de rango para aplicar mediana anti-glitch (-0.04 m confirmado por Ing. Angarita)
@@ -2434,14 +2458,27 @@ if seleccion_sidebar != seleccion:
     st.session_state.estacion_seleccionada = seleccion_sidebar
     st.rerun()
 horas = st.sidebar.slider("⏱️ Horas históricas:", 1, 168, 24, step=1, help="Rango de horas para consultar y graficar telemetría histórica")
+caudal_scada_crc, ts_crc_scada = get_caudal_crc_bosconia_actual()
+val_default_crc = int(round(caudal_scada_crc)) if caudal_scada_crc is not None else 200
+
+if caudal_scada_crc is not None:
+    hora_ts_crc = ts_crc_scada.astimezone(colombia_tz).strftime('%H:%M') if hasattr(ts_crc_scada, 'astimezone') else str(ts_crc_scada)[11:16]
+    if caudal_scada_crc <= 30.0:
+        badge_crc = f"\U0001F7E1 **Salida Pasiva (V\u00E1lvula en Cierre \u2014 Flujo Base: {caudal_scada_crc:.1f} L/s)** \u2014 *{hora_ts_crc}*"
+    else:
+        badge_crc = f"\U0001F7E2 **Descarga Activa (V\u00E1lvula CRC en Apertura: {caudal_scada_crc:.1f} L/s)** \u2014 *{hora_ts_crc}*"
+else:
+    badge_crc = "\u26AA *SCADA Offline (Usando valor operativo nominal)*"
+
 q_salida_crc_actual = st.sidebar.number_input(
-    "🚰 Caudal Válvula CRC Bosconia (L/s):",
+    "\U0001FA70 Caudal V\u00E1lvula CRC Bosconia (L/s):",
     min_value=0,
     max_value=3000,
-    value=200,
-    step=50,
-    help="Caudal extraído actualmente del Embalse Tona hacia PTAP Bosconia: 200 L/s confirmados en operación."
+    value=val_default_crc,
+    step=10,
+    help="Lectura telemetrica en vivo desde SCADA AVEVA Edge (Tag ET_FIT401 / CRC_Bosconia_Caudal). Distingue entre 'Salida Pasiva' (valvula cerrada con flujo base de sello ~25 L/s) y 'Descarga Activa' (valvula en apertura hacia Bosconia). Modificable si se requiere simular maniobras."
 )
+st.sidebar.caption(badge_crc)
 fecha_fin = datetime.now(colombia_tz)
 fecha_inicio = fecha_fin - timedelta(hours=horas)
 with st.spinner("🔄 Consultando telemetría en tiempo real..."):
