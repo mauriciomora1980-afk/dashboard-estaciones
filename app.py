@@ -735,12 +735,17 @@ def calcular_balance_dinamico(df_hist):
     vol_util_m3 = max(0.0, (interpolar_volumen(c_fin) - 1.980) * 1_000_000.0)
     vol_rebose_m3 = interpolar_volumen(NIVEL_REBOSE_EMBALSE) * 1_000_000.0
     vol_faltante_rebose_m3 = max(0.0, vol_rebose_m3 - v_fin_m3)
-    # Clasificación Dinámica: Vaciado vs Llenado vs Equilibrio
+    # Clasificación Dinámica: Vaciado vs Llenado vs Equilibrio (Sensibilidad Plena a Crecientes)
     if q_neto_m3_s > 0.005:  # Vaciado neto (> 5 L/s)
         modo_balance = "VACIADO"
-        dias_autonomia = vol_util_m3 / (q_neto_m3_s * 86400.0)
+        # La neutralidad aplica EXCLUSIVAMENTE al conteo de días de reserva útil:
+        # En cota >= 885.75 msnm el vaso está al 100% y en rebose (sin agotamiento útil)
+        if c_fin >= NIVEL_REBOSE_EMBALSE:
+            dias_autonomia = None
+        else:
+            dias_autonomia = vol_util_m3 / (q_neto_m3_s * 86400.0)
         dias_para_llenar = None
-    elif q_neto_m3_s < -0.005:  # Llenado neto (Recarga de cuenca > Salida CRC Bosconia)
+    elif q_neto_m3_s < -0.005:  # Llenado neto (Recarga / Creciente de cuenca > Salidas)
         modo_balance = "LLENADO"
         dias_autonomia = None
         q_llenado_m3_s = -q_neto_m3_s
@@ -4719,18 +4724,29 @@ with tab_situacion:
                 descenso_real_cm = (NIVEL_REBOSE_EMBALSE - cota_actual) * 100.0
                 txt_delta_desalm = f"{descenso_real_cm:.1f} cm cedidos ({txt_maniobra_corto})"
                 color_delta_desalm = "inverse"
+            # Balance Continuo de Caudales: Egresos Totales y Recarga de Afluentes Naturales
+            q_egresos_totales_ls = float(q_salida_crc_actual) + 51.0 + float(hidro.get('q_rebose_ls', 0.0) or 0.0)
+            if bal:
+                if bal["modo_balance"] == "LLENADO":
+                    q_afluente_calc_ls = q_egresos_totales_ls + abs(bal['q_neto_ls'])
+                elif bal["modo_balance"] in ("VACIADO", "REBOSE"):
+                    q_afluente_calc_ls = max(0.0, q_egresos_totales_ls - bal['q_neto_ls'])
+                else:
+                    q_afluente_calc_ls = q_egresos_totales_ls
+            else:
+                q_afluente_calc_ls = q_egresos_totales_ls
+
             c1, c2, c3, c4 = st.columns(4)
             c1.metric("🌊 Cota Calibrada", f"{cota_actual:.2f} msnm", delta=f"{descenso_total_cm:+.1f} cm vs Rebose (885.75)", help=f"Sensor OTT: {cota_raw:.2f} msnm | Offset calibrado: -{OFFSET_RADAR_EMBALSE*100:.0f} cm")
             c2.metric("💧 Volumen Útil", f"{hidro['volumen_util_hm3']:.2f} hm³", delta=f"{hidro['porcentaje_util']:.1f}% útil")
             c3.metric("📦 Desalmacenamiento Vaso", f"{vol_entregado_total_m3:,.0f} m³", delta=txt_delta_desalm, delta_color=color_delta_desalm, help=f"Volumen neto cedido por el vaso del embalse desde el inicio de maniobra el martes 22 de septiembre a la 1:00 PM ({txt_maniobra_largo}). En cota >= 885.75 msnm el vaso se encuentra al 100% de capacidad útil.")
-            if hidro["q_rebose_ls"] > 0:
-                c4.metric("🌊 Rebose MG", f"~{hidro['q_rebose_m3_s']:.2f} m³/s", delta=f"~{hidro['q_rebose_ls']:,.0f} L/s (cascadas)", help="Caudal de vertimiento por el pozo Morning Glory hacia las cascadas escalonadas y piscina de aquietamiento de Puente Tona")
-            elif bal and bal["modo_balance"] == "VACIADO":
-                c4.metric("⚡ Tasa Neta Vaciado", f"{bal['q_neto_ls']:.0f} L/s", delta=f"{bal['vaciado_diario_m3']:,.0f} m³/día", delta_color="inverse", help=f"Velocidad neta de vaciado en las últimas {bal['horas']:.1f} horas. Salida Válvula CRC = Tasa Neta + Aporte Río Tona.")
-            elif bal and bal["modo_balance"] == "LLENADO":
-                c4.metric("🌊 Tasa Neta Llenado", f"{abs(bal['q_neto_ls']):.0f} L/s", delta=f"+{abs(bal['vaciado_diario_m3']):,.0f} m³/día recarga", delta_color="normal", help=f"Velocidad neta de llenado en las últimas {bal['horas']:.1f} horas. Aportes de cuenca superan la extracción de la CRC Bosconia.")
-            else:
-                c4.metric("⚖️ Régimen Equilibrio", "0 L/s", delta="Equilibrio Dinámico", help="Caudal de entrada igual al caudal de salida.")
+            # c4: Aporte de Cuenca Tona (reemplaza el duplicado superior de Rebose MG que ya se presenta en los egresos)
+            c4.metric(
+                "📥 Aporte Afluentes Cuenca",
+                f"~{q_afluente_calc_ls:,.0f} L/s",
+                delta=f"~{q_afluente_calc_ls/1000.0:.2f} m³/s (Recarga total)",
+                help="Caudal continuo total de entrada que llega al embalse (Río Tona cabecera, Quebrada Ranás, El Gualilo, La Reforma y Los Monos) calculado por balance continuo de masas antes de salidas y vertimientos."
+            )
 
             # Sub-panel de Egresos Físicos del Embalse (Conducción CRC + Filtraciones de Presa + Rebose)
             st.markdown("<div style='margin-top: 14px; margin-bottom: 6px; font-size: 13.5px; font-weight: 700; color: #38BDF8;'>🚰 Caudales de Salida y Egresos del Embalse (Tiempo Real):</div>", unsafe_allow_html=True)
@@ -4800,48 +4816,54 @@ with tab_situacion:
                 if bal["modo_balance"] == "VACIADO":
                     bc2.metric("⚡ Tasa Neta Reciente", f"{bal['q_neto_ls']:.0f} L/s", delta=f"{bal['vel_cm_dia']:+.1f} cm/día", delta_color="inverse", help=f"Velocidad neta de vaciado en las últimas {bal['horas']:.1f} horas")
                     bc3.metric(f"🚰 Desalmacenado ({bal['horas']:.1f}h)", f"{abs(bal['delta_v_m3']):,.0f} m³", delta=f"{bal['delta_cota_cm']:+.1f} cm en ventana", delta_color="inverse", help=f"Metros cúbicos cedidos exclusivamente en el período de análisis de las últimas {bal['horas']:.1f} horas")
-                    bc4.metric("⏳ Autonomía Dinámica", f"{bal['dias_autonomia']:.0f} Días" if bal['dias_autonomia'] else "N/A", help="Días restantes de agua continua a la tasa neta actual hasta el Nivel Mínimo Técnico (841 msnm)")
+                    if cota_actual >= NIVEL_REBOSE_EMBALSE:
+                        bc4.metric("♾️ Autonomía Dinámica", "Excedente Continuo", delta="Vaso al 100% (En Rebose)", delta_color="normal", help="El embalse se encuentra en o por encima de la cota de rebose (885.75 msnm). No hay agotamiento de reserva útil; los afluentes de cuenca cubren las extracciones y mantienen el vertimiento por Morning Glory hacia Puente Tona.")
+                    else:
+                        bc4.metric("⏳ Autonomía Dinámica", f"{bal['dias_autonomia']:.0f} Días" if bal['dias_autonomia'] else "N/A", help="Días restantes de agua continua a la tasa neta actual hasta el Nivel Mínimo Técnico (841 msnm)")
                 elif bal["modo_balance"] == "LLENADO":
                     bc2.metric("🌊 Tasa Neta de Llenado", f"{abs(bal['q_neto_ls']):.0f} L/s", delta=f"+{abs(bal['vel_cm_dia']):.1f} cm/día ascenso", delta_color="normal", help=f"Velocidad neta de recarga y ascenso de cota en las últimas {bal['horas']:.1f} horas")
                     bc3.metric(f"📥 Recuperado ({bal['horas']:.1f}h)", f"{abs(bal['delta_v_m3']):,.0f} m³", delta=f"+{abs(bal['delta_cota_cm']):.1f} cm ganados", delta_color="normal", help=f"Metros cúbicos recuperados en el vaso por recarga de quebradas en las últimas {bal['horas']:.1f} horas")
-                    bc4.metric("📈 Días para Llenarse", f"{bal['dias_para_llenar']:.0f} Días" if bal.get('dias_para_llenar') is not None else "En Rebose (100%)", delta=f"{bal['vol_faltante_rebose_m3']:,.0f} m³ a rebose", delta_color="normal", help="Días proyectados para alcanzar la cota de rebose (885.75 msnm) al ritmo actual de recarga de cuenca")
+                    if cota_actual >= NIVEL_REBOSE_EMBALSE:
+                        bc4.metric("♾️ Autonomía Dinámica", "Excedente Continuo", delta="Vaso al 100% (En Rebose)", delta_color="normal", help="El embalse se encuentra en o por encima de la cota de rebose (885.75 msnm). Creciente / recarga activa en cuenca aportante sobre vertedero.")
+                    else:
+                        bc4.metric("📈 Días para Llenarse", f"{bal['dias_para_llenar']:.0f} Días" if bal.get('dias_para_llenar') is not None else "En Rebose (100%)", delta=f"{bal['vol_faltante_rebose_m3']:,.0f} m³ a rebose", delta_color="normal", help="Días proyectados para alcanzar la cota de rebose (885.75 msnm) al ritmo actual de recarga de cuenca")
                 else:
                     bc2.metric("⚖️ Tasa Neta", "0 L/s", delta="0.0 cm/día", help="Entradas de cuenca equivalentes a salida de válvula CRC")
                     bc3.metric(f"⚖️ Delta ({bal['horas']:.1f}h)", "0 m³", delta="0.0 cm", help="Nivel estático")
                     bc4.metric("♾️ Tiempo Proyectado", "Indefinido (Equilibrio)", help="Empate exacto entre afluentes de cuenca y salida de válvula CRC Bosconia")
+
                 if bal["modo_balance"] == "VACIADO":
-                    txt_variacion_bal = f"<li><strong>Variación Neta de Almacenamiento (ΔV/Δt):</strong> El vaso del embalse solo cede la diferencia neta (<strong>{bal['q_neto_ls']:.0f} L/s</strong>), garantizando una autonomía dinámica proyectada de <strong>{bal['dias_autonomia']:.0f} días</strong> a este régimen.</li>"
+                    if cota_actual >= NIVEL_REBOSE_EMBALSE:
+                        txt_variacion_bal = f"<li><strong>Variación Neta de Almacenamiento (ΔV/Δt):</strong> El embalse se encuentra en <strong>RÉGIMEN DE REBOSE ACTIVO Y PLENA CAPACIDAD ÚTIL (100% - 13.38 hm³)</strong>. La tasa registrada ({bal['q_neto_ls']:.0f} L/s, {bal['delta_cota_cm']:+.1f} cm en {bal['horas']:.1f}h) refleja la dinámica superficial sobre la cresta del vertedero. Al estar sobre cota de rebose (885.75 msnm), no hay consumo de reserva útil; autonomía proyectada: <strong>Excedente Continuo</strong>.</li>"
+                    else:
+                        txt_variacion_bal = f"<li><strong>Variación Neta de Almacenamiento (ΔV/Δt):</strong> El vaso del embalse cede volumen útil a una tasa de <strong>{bal['q_neto_ls']:.0f} L/s</strong> ({bal['delta_cota_cm']:+.1f} cm en {bal['horas']:.1f}h), garantizando una autonomía dinámica proyectada de <strong>{bal['dias_autonomia']:.0f} días</strong> a este régimen hasta el nivel mínimo técnico.</li>"
                 elif bal["modo_balance"] == "LLENADO":
-                    dias_txt_llenado = f"{bal['dias_para_llenar']:.0f} días" if bal.get('dias_para_llenar') is not None else "0 días (en rebose)"
-                    txt_variacion_bal = f"<li><strong>Variación Neta de Almacenamiento (ΔV/Δt):</strong> El embalse está en <strong>RÉGIMEN DE LLENADO / RECUPERACIÓN</strong>. Los afluentes de cuenca superan el consumo de Bosconia en <strong>+{abs(bal['q_neto_ls']):.0f} L/s</strong> netos, con un tiempo estimado de <strong>{dias_txt_llenado}</strong> para alcanzar el labio de rebose (885.75 msnm).</li>"
+                    if cota_actual >= NIVEL_REBOSE_EMBALSE:
+                        txt_variacion_bal = f"<li><strong>Variación Neta de Almacenamiento (ΔV/Δt):</strong> El embalse está recibiendo un <strong>PULSO DE RECARGA / CRECIENTE (+{abs(bal['q_neto_ls']):.0f} L/s)</strong> sobre la cresta de rebose (+{abs(bal['delta_cota_cm']):.1f} cm ganados en {bal['horas']:.1f}h). Todo el exceso alivia continuamente por el vertedero Morning Glory hacia Puente Tona. Autonomía: <strong>Excedente Continuo (Vaso al 100%)</strong>.</li>"
+                    else:
+                        dias_txt_llenado = f"{bal['dias_para_llenar']:.0f} días" if bal.get('dias_para_llenar') is not None else "0 días (en rebose)"
+                        txt_variacion_bal = f"<li><strong>Variación Neta de Almacenamiento (ΔV/Δt):</strong> El embalse está en <strong>RÉGIMEN DE LLENADO / RECUPERACIÓN</strong>. Los afluentes de cuenca superan el consumo en <strong>+{abs(bal['q_neto_ls']):.0f} L/s</strong> netos, con un tiempo estimado de <strong>{dias_txt_llenado}</strong> para alcanzar el labio de rebose (885.75 msnm).</li>"
                 else:
                     txt_variacion_bal = "<li><strong>Variación Neta de Almacenamiento (ΔV/Δt):</strong> El embalse está en <strong>RÉGIMEN DE EQUILIBRIO DINÁMICO</strong> (entradas iguales a salidas). Autonomía proyectada: <strong>Indefinida</strong>.</li>"
                 st.markdown(f"""
                 <div style="background: rgba(0,80,115,0.06); padding: 14px 18px; border-radius: 8px; border-left: 4px solid #005073; margin-top: 10px; font-size: 13px; line-height: 1.5;">
                     <strong style="color: #005073; font-size: 14px;">⚖️ Principio Físico: Balance de Masas & Continuidad Hidráulica</strong><br>
                     <div style="margin-top: 6px; font-family: monospace; background: rgba(255,255,255,0.7); padding: 6px 10px; border-radius: 4px; border: 1px solid #cce0eb;">
-                        <strong>Egresos_Totales (~{q_salida_crc_actual + 51.0 + hidro['q_rebose_ls']:,.0f} L/s)</strong> = <strong>CRC_Bosconia ({q_salida_crc_actual:,.1f} L/s)</strong> + <strong>Filtraciones_Presa (~51 L/s)</strong> + <strong>Rebose_MG ({hidro['q_rebose_ls']:,.0f} L/s)</strong> | <strong>Tasa_Neta: {bal['q_neto_ls']:.0f} L/s</strong> + <strong>∑ Q_Afluentes_Cuenca_Tona (~{max(0, q_salida_crc_actual - bal['q_neto_ls']):,.0f} L/s)</strong>
+                        <strong>Egresos_Totales (~{q_egresos_totales_ls:,.0f} L/s)</strong> = <strong>CRC_Bosconia ({q_salida_crc_actual:,.1f} L/s)</strong> + <strong>Filtraciones_Presa (~51 L/s)</strong> + <strong>Rebose_MG ({hidro['q_rebose_ls']:,.0f} L/s)</strong> | <strong>Tasa_Neta: {bal['q_neto_ls']:.0f} L/s</strong> | <strong>∑ Q_Afluentes_Cuenca_Tona (~{q_afluente_calc_ls:,.0f} L/s)</strong>
                     </div>
                     <div style="margin-top: 8px;">
                         <strong>🌊 Interpretación de Volúmenes & Descenso del Embalse:</strong><br>
                         <ul style="margin: 4px 0 6px 18px; padding: 0;">
                             <li><strong>📦 Consumo Total Acumulado por Bosconia ({txt_maniobra_largo} de Maniobra / desde Martes 22 Sept 1:00 PM):</strong> <strong>{vol_entregado_total_m3:,.0f} m³</strong> (descenso acumulado total de <strong>{abs(descenso_total_cm):.1f} cm</strong> desde que se abrió la válvula CRC en la cota máxima de rebose de <strong>885.75 msnm</strong>).</li>
                             <li><strong>⏱️ Balance en la Ventana de Análisis Seleccionada ({bal['horas']:.1f}h):</strong> <strong>{abs(bal['delta_v_m3']):,.0f} m³</strong> ({'cedidos' if bal['delta_cota_cm'] < 0 else 'ganados'}, variación de <strong>{bal['delta_cota_cm']:+.1f} cm</strong>).</li>
-                            <li><strong>Entradas (Remanentes de Captaciones + Afluentes Directos):</strong> El Embalse Tona recibe la recarga continua de los <strong>caudales remanentes no derivados de las 3 captaciones con sensor RQ30 del Sistema Tona (Captación Carrizal en Río Tona, Captación Golondrinas y Captación Arnania)</strong>, más los 4 afluentes directos al vaso: <strong>Quebrada Ranás</strong> (desemboca en fondo cola), <strong>Quebrada el Gualilo</strong> (mitad del vaso), <strong>Quebrada La Reforma</strong> (cercana a la presa/radar) y <strong>Quebrada Los Monos</strong> (litoral derecho norte, frente a La Reforma) con un aporte sumado estimado en cola de <strong>~{max(0, q_salida_crc_actual - bal['q_neto_ls']):,.0f} L/s</strong>.</li>
-                            <li><strong>Salida (Consumo PTAP):</strong> Conducción y entrega por gravedad hacia la válvula <strong>CRC Bosconia</strong> (operando a <strong>~{q_salida_crc_actual:,.0f} L/s</strong> por contingencia de turbiedad en Río Suratá).</li>
+                            <li><strong>Entradas (Remanentes de Captaciones + Afluentes Directos):</strong> El Embalse Tona recibe la recarga continua de los remanentes no derivados del Sistema Tona (Río Tona cabecera, Captación Arnania y Captación Golondrinas), más los 4 afluentes directos al vaso: <strong>Quebrada Ranás</strong> (desemboca en fondo cola), <strong>Quebrada El Gualilo</strong> (mitad del vaso), <strong>Quebrada La Reforma</strong> y <strong>Quebrada Los Monos</strong> con un aporte sumado estimado en cola de <strong>~{q_afluente_calc_ls:,.0f} L/s</strong> (~{q_afluente_calc_ls/1000.0:.2f} m³/s).</li>
+                            <li><strong>Salida (Consumo PTAP):</strong> Conducción y entrega por gravedad hacia la válvula <strong>CRC Bosconia</strong> ({'operando a salida pasiva de ~25 L/s con válvula cerrada' if es_valvula_cerrada else f'operando en descarga activa de {q_salida_crc_actual:,.1f} L/s'}).</li>
                             {txt_variacion_bal}
                         </ul>
                     </div>
                 </div>
                 """, unsafe_allow_html=True)
                 # Módulo de Inteligencia de Cuenca (Trazabilidad y Atribución Hidrológica)
-                q_egresos_totales_ls = float(q_salida_crc_actual) + 51.0 + float(hidro.get('q_rebose_ls', 0.0) or 0.0)
-                if bal["modo_balance"] == "LLENADO":
-                    q_afluente_calc_ls = q_egresos_totales_ls + abs(bal['q_neto_ls'])
-                elif bal["modo_balance"] == "VACIADO":
-                    q_afluente_calc_ls = max(0.0, q_egresos_totales_ls - bal['q_neto_ls'])
-                else:
-                    q_afluente_calc_ls = q_egresos_totales_ls
                 df_cuenca_tona = obtener_precipitacion_cuenca_tona(fecha_inicio, fecha_fin)
                 mostrar_modulo_atribucion_cuenca(df_cuenca_tona, q_afluente_calc_ls, bal['horas'])
             st.info(f"📅 Última lectura: {row['timestamp'].strftime('%Y-%m-%d %H:%M:%S')}")
