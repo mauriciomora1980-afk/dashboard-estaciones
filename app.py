@@ -1,3 +1,8 @@
+# ==============================================================================
+# PROYECTO: MIMAT-C26 (Monitoreo Inteligente de Meteorología, Análisis de Telemetría y Cuencas)
+# ENTIDAD:  Acueducto Metropolitano de Bucaramanga S.A. E.S.P. (amb)
+# AUTOR Y ARQUITECTO LÍDER: Ing. Edgar Mauricio Mora Rivera
+# =============================================================================
 import streamlit as st
 import pandas as pd
 import numpy as np
