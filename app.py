@@ -1136,7 +1136,7 @@ def get_historical_data_range(estacion, fecha_inicio, fecha_fin):
 @st.cache_data(ttl=180)
 def get_caudal_crc_bosconia_actual():
     """
-    Consulta en tiempo real la Ãºltima lectura telemÃ©trica del caudalÃ­metro ET_FIT401
+    Consulta en tiempo real la ultima lectura telemetrica del caudalimetro ET_FIT401
     transmitido desde SCADA AVEVA Edge como CRC_Bosconia_Caudal.
     """
     try:
@@ -1161,8 +1161,8 @@ def get_caudal_crc_bosconia_actual():
 @st.cache_data(ttl=120)
 def get_historico_crc_bosconia(horas=24):
     """
-    Consulta el histÃ³rico telemÃ©trico del caudalÃ­metro ET_FIT401 (CRC_Bosconia_Caudal)
-    en la ventana de anÃ¡lisis, para graficar la extracciÃ³n continua (sea pasiva o activa).
+    Consulta en tiempo real la ultima lectura telemetrica del caudalimetro ET_FIT401
+    en la ventana de analisis, para graficar la extraccion continua (sea pasiva o activa).
     """
     try:
         query = f"""
@@ -1182,7 +1182,7 @@ def get_historico_crc_bosconia(horas=24):
             df_res['ts'] = pd.to_datetime(df_res['ts']).dt.tz_convert('America/Bogota').dt.tz_localize(None)
         return df_res
     except Exception as e:
-        print(f"Error consultando histÃ³rico CRC Bosconia: {e}")
+        print(f"Error consultando historico CRC Bosconia: {e}")
         return pd.DataFrame()
 
 @st.cache_data(ttl=180)
@@ -3057,6 +3057,7 @@ def render_panel_alertas_tempranas_sat():
         hum_val = 75.0
         estado_red = "OPERATIVA"
         origen_txt = "Transmitiendo en vivo"
+        es_fisico_vivo = False
         if not df_est.empty:
             r = df_est.iloc[0]
             p_ult = float(r.get('precipitacion', 0.0) or 0.0)
@@ -3064,38 +3065,26 @@ def render_panel_alertas_tempranas_sat():
                 lluvia_val = p_ult
             else:
                 lluvia_val = max(lluvia_val, p_ult)
-            temp_val = float(r.get('temperatura', 18.0) or 18.0)
-            hum_val = float(r.get('humedad', 75.0) or 75.0)
-            # EvaluaciÃ³n dinÃ¡mica de conectividad fÃ­sica telemÃ©trica (SIM Card activa):
-            # Una estaciÃ³n se considera transmitiendo en vivo si su Ãºltimo dato es menor a 4 horas
-            # y sus sensores no estÃ¡n en ceros.
-            ahora_col = datetime.now(colombia_tz)
-            es_reciente = False
+            temp_raw = r.get('temperatura')
+            hum_raw = r.get('humedad')
             ts_dato = r.get('timestamp')
-            if pd.notna(ts_dato):
+            # Validar frescura del paquete telemétrico en UTC (últimas 2 horas)
+            if pd.notna(ts_dato) and temp_raw is not None and hum_raw is not None:
                 try:
                     ts_dt = pd.to_datetime(ts_dato)
                     if ts_dt.tzinfo is None:
-                        ts_dt = ts_dt.tz_localize(colombia_tz)
+                        ts_dt = ts_dt.tz_localize(timezone.utc)
                     else:
-                        ts_dt = ts_dt.tz_convert(colombia_tz)
-                    if (ahora_col - ts_dt).total_seconds() <= 4 * 3600:
-                        es_reciente = True
+                        ts_dt = ts_dt.tz_convert(timezone.utc)
+                    delta_s = (datetime.now(timezone.utc) - ts_dt).total_seconds()
+                    if 0 <= delta_s <= 7200 and float(temp_raw) > 0.0 and float(hum_raw) > 1.0:
+                        es_fisico_vivo = True
+                        temp_val = float(temp_raw)
+                        hum_val = float(hum_raw)
                 except Exception:
                     pass
-
-            if (temp_val == 0.0 and hum_val == 0.0) or not es_reciente:
-                sat_info = obtener_sensor_virtual_resiliente(id_est)
-                if sat_info:
-                    lluvia_val = float(sat_info.get('precipitacion', 0.0) or 0.0)
-                    temp_val = float(sat_info.get('temperatura', temp_val) or temp_val)
-                    hum_val = float(sat_info.get('humedad', hum_val) or hum_val)
-                estado_red = "VIRTUAL_SATELITAL"
-                origen_txt = "Sensor Virtual Satelital Open-Meteo Activo"
-            else:
-                estado_red = "OPERATIVA"
-                origen_txt = "Transmitiendo en vivo"
-        else:
+        # Si no transmite en vivo o es estación de alta montaña con SIM suspendida, activa Sensor Virtual
+        if not es_fisico_vivo:
             sat_info = obtener_sensor_virtual_resiliente(id_est)
             if sat_info:
                 lluvia_val = float(sat_info.get('precipitacion', 0.0) or 0.0)
@@ -3103,6 +3092,9 @@ def render_panel_alertas_tempranas_sat():
                 hum_val = float(sat_info.get('humedad', 75.0) or 75.0)
             estado_red = "VIRTUAL_SATELITAL"
             origen_txt = "Sensor Virtual Satelital Open-Meteo Activo"
+        else:
+            estado_red = "OPERATIVA"
+            origen_txt = "Transmitiendo en vivo"
         u = umbrales.get(id_est, {"amarilla": 15.0, "naranja": 25.0, "roja": 40.0})
         if lluvia_val >= u["roja"]:
             sem = "ROJA"
@@ -3377,14 +3369,14 @@ def render_panel_alertas_tempranas_sat():
     # FILA 3: ESTACIONES CON RESPALDO VIRTUAL SATELITAL (OPEN-METEO)
     # -------------------------------------------------------------
     hay_virtuales = any(s['estado_red'] == 'VIRTUAL_SATELITAL' for s in [info_mar, info_yer])
-    titulo_sec3 = "### ðŸ›°ï¸ 3. Estaciones en Mantenimiento con Sensor Virtual Satelital Activo (Open-Meteo)" if hay_virtuales else "### ðŸ›°ï¸ 3. Estaciones de Alta MontaÃ±a (TelemetrÃ­a FÃ­sica Restablecida)"
+    titulo_sec3 = "### 🛰️ 3. Estaciones en Mantenimiento con Sensor Virtual Satelital Activo (Open-Meteo)" if hay_virtuales else "### 🛰️ 3. Estaciones de Alta Montaña (Telemetría Física Restablecida)"
     st.markdown(titulo_sec3)
     col_sat1, col_sat2 = st.columns(2)
     for col_s_target, info_s in [(col_sat1, info_mar), (col_sat2, info_yer)]:
         es_virt = info_s['estado_red'] == 'VIRTUAL_SATELITAL'
-        header_tag = "RESPALDO METEOROLÃ“GICO SATELITAL" if es_virt else "TELEMETRÃA EN VIVO (SIM RESTABLECIDA)"
+        header_tag = "RESPALDO METEOROLÓGICO SATELITAL" if es_virt else "TELEMETRÍA EN VIVO (SIM RESTABLECIDA)"
         header_color = "#38BDF8" if es_virt else "#00CC96"
-        lluvia_lbl = "PrecipitaciÃ³n Satelital Estimada" if es_virt else "Lluvia Ãšltima Hora"
+        lluvia_lbl = "Precipitación Satelital Estimada" if es_virt else "Lluvia Última Hora"
         origen_lbl = "Modelo Satelital" if es_virt else "Temperatura / Hum"
         impacto_color = "#38BDF8" if es_virt else "#94A3B8"
         with col_s_target:
@@ -3394,7 +3386,7 @@ def render_panel_alertas_tempranas_sat():
                     <div>
                         <div style="color: {header_color}; font-size: 10px; font-weight: 800; text-transform: uppercase;">{header_tag}</div>
                         <h4 style="color: #FFFFFF; margin: 2px 0 0 0; font-size: 16px; font-weight: 800;">{info_s['nombre']}</h4>
-                        <div style="color: #94A3B8; font-size: 11px;">{info_s['cuenca']} â€¢ Altitud: {info_s['altitud']}</div>
+                        <div style="color: #94A3B8; font-size: 11px;">{info_s['cuenca']} • Altitud: {info_s['altitud']}</div>
                     </div>
                     {info_s['badge_html']}
                 </div>
@@ -3405,7 +3397,7 @@ def render_panel_alertas_tempranas_sat():
                     </div>
                     <div style="text-align: right;">
                         <div style="color: #94A3B8; font-size: 10.5px;">{origen_lbl}</div>
-                        <div style="color: #CBD5E1; font-size: 13px; font-weight: 700;">{info_s['temp']:.1f}Â°C â€¢ {info_s['hum']:.0f}%</div>
+                        <div style="color: #CBD5E1; font-size: 13px; font-weight: 700;">{info_s['temp']:.1f}°C • {info_s['hum']:.0f}%</div>
                     </div>
                 </div>
                 <div style="font-size: 11px; color: #CBD5E1; background: rgba(0,0,0,0.25); padding: 8px 12px; border-radius: 8px;">
@@ -3417,7 +3409,6 @@ def render_panel_alertas_tempranas_sat():
                 </div>
             </div>
             """, unsafe_allow_html=True)
-# ============================================================
 # 7.6 CONSULTAS Y VISTA DE EVENTOS SIGNIFICATIVOS & ESTADÍSTICAS
 # ============================================================
 @st.cache_data(ttl=300)
