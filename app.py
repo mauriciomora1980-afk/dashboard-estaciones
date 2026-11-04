@@ -311,13 +311,16 @@ intervalo_segundos = {
 }.get(opcion_autorefresh, 0)
 
 if intervalo_segundos > 0:
-    # Auto-refresco por reejecucion del servidor (conserva sesion y cache; NO recarga la pagina).
-    # Requiere "streamlit-autorefresh" en requirements.txt.
-    try:
-        from streamlit_autorefresh import st_autorefresh
-        st_autorefresh(interval=intervalo_segundos * 1000, key="mimat_live_autorefresh")
-    except ImportError:
-        st.sidebar.warning("Auto-recarga inactiva: agrega streamlit-autorefresh a requirements.txt")
+    # Auto-refresco 100% nativo de Streamlit via WebSocket (sin componentes externos ni recarga de navegador)
+    _frag_deco = getattr(st, "fragment", getattr(st, "experimental_fragment", None))
+    if _frag_deco is not None:
+        _es_corrida_principal = [True]
+        @_frag_deco(run_every=timedelta(seconds=intervalo_segundos))
+        def _mimat_native_autorefresh():
+            if not _es_corrida_principal[0]:
+                st.rerun()
+        _mimat_native_autorefresh()
+        _es_corrida_principal[0] = False
 
 st.sidebar.caption(f"\U0001F551 Hora local: {datetime.now(colombia_tz).strftime('%I:%M:%S %p COT')}")
 
