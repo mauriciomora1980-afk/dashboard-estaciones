@@ -30,15 +30,15 @@ st.set_page_config(
     initial_sidebar_state='expanded'
 )
 
-# Estilos CSS Avanzados (amb minuscula + Flecha lateral destacada + UI Ejecutiva)
-st.markdown('''
+# Estilos CSS institucionales completos (SCADA, semaforos, edicion 110 anios)
+st.markdown("""
 <style>
-    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700;800&display=swap');
-    html, body, [class*='css'] { font-family: 'Inter', sans-serif; }
-    
-    [data-testid='stSidebarCollapsedControl'] {
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap');
+    html, body, [class*="css"] { font-family: 'Inter', sans-serif; }
+    /* Control de barra lateral estilizada */
+    [data-testid="stSidebarCollapsedControl"] {
         display: block !important;
-        background: linear-gradient(135deg, #005073 0%, #0A192F 100%) !important;
+        background: linear-gradient(135deg, #005073 0%, #00223D 100%) !important;
         color: #64FFDA !important;
         border-radius: 10px !important;
         padding: 8px 12px !important;
@@ -46,23 +46,61 @@ st.markdown('''
         box-shadow: 0 4px 15px rgba(0, 80, 115, 0.4) !important;
         transform: scale(1.15) !important;
     }
-    [data-testid='stSidebarCollapsedControl']:hover {
+    [data-testid="stSidebarCollapsedControl"]:hover {
         transform: scale(1.25) !important;
         box-shadow: 0 6px 20px rgba(100, 255, 218, 0.6) !important;
     }
-    
-    .mimat-header {
-        background: linear-gradient(135deg, #0A192F 0%, #172A45 50%, #005073 100%);
-        padding: 20px 24px;
-        border-radius: 16px;
-        color: white;
-        margin-bottom: 15px;
-        box-shadow: 0 10px 30px rgba(0, 80, 115, 0.25);
-        border: 1px solid rgba(255, 255, 255, 0.1);
+    /* Barra Superior de Contact Center Institucional */
+    .amb-top-bar {
+        background: #003358;
+        color: #E2E8F0;
+        padding: 6px 18px;
+        border-radius: 10px 10px 0 0;
+        font-size: 11.5px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        flex-wrap: wrap;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.15);
     }
-    .mimat-title { font-size: 24px; font-weight: 800; color: #64FFDA; margin: 0; }
-    .mimat-subtitle { font-size: 13px; color: #8892B0; margin-top: 4px; }
-    
+    /* Hero Header Oficial con Ondas Azules y 110 Años */
+    .amb-hero-header {
+        background: linear-gradient(135deg, #002A4A 0%, #005073 35%, #0077B6 70%, #0096C7 100%);
+        padding: 22px 26px;
+        border-radius: 0 0 16px 16px;
+        color: white;
+        margin-bottom: 12px;
+        box-shadow: 0 12px 32px rgba(0, 80, 115, 0.28);
+        border: 1px solid rgba(255, 255, 255, 0.12);
+        position: relative;
+        overflow: hidden;
+    }
+    /* Píldora de Noticias / Novedades del Servicio */
+    .amb-ticker-bar {
+        background: #00223D;
+        color: #E2E8F0;
+        padding: 10px 18px;
+        border-radius: 10px;
+        margin-bottom: 16px;
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        font-size: 12.5px;
+        border-left: 4px solid #7CB342;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+    }
+    .badge-ticker {
+        background: #7CB342;
+        color: #003300;
+        padding: 3px 10px;
+        border-radius: 12px;
+        font-weight: 800;
+        font-size: 10.5px;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        white-space: nowrap;
+    }
+    /* Tarjetas de Alerta y Métricas */
     .alert-box {
         padding: 14px 18px;
         border-radius: 12px;
@@ -76,44 +114,171 @@ st.markdown('''
     .alert-yellow { background: rgba(255, 187, 0, 0.15); color: #FFBB00; border: 1px solid #FFBB00; }
     .alert-orange { background: rgba(255, 128, 0, 0.15); color: #FF8000; border: 1px solid #FF8000; }
     .alert-red { background: rgba(255, 75, 75, 0.15); color: #FF4B4B; border: 1px solid #FF4B4B; }
-    
-    .badge-status {
-        display: inline-block;
-        padding: 4px 10px;
-        border-radius: 20px;
-        font-size: 11px;
-        font-weight: 700;
-        text-transform: uppercase;
+    /* Animaciones Luminosas y Parpadeantes para Pantalla SCADA / Alerta Temprana */
+    @keyframes pulse-red-glow {
+        0% { box-shadow: 0 0 8px rgba(255, 75, 75, 0.4), inset 0 0 6px rgba(255, 75, 75, 0.2); border-color: #FF4B4B; }
+        50% { box-shadow: 0 0 28px rgba(255, 75, 75, 0.95), inset 0 0 16px rgba(255, 75, 75, 0.5); border-color: #FF0000; }
+        100% { box-shadow: 0 0 8px rgba(255, 75, 75, 0.4), inset 0 0 6px rgba(255, 75, 75, 0.2); border-color: #FF4B4B; }
+    }
+    @keyframes pulse-orange-glow {
+        0% { box-shadow: 0 0 6px rgba(255, 128, 0, 0.4); border-color: #FF8000; }
+        50% { box-shadow: 0 0 22px rgba(255, 128, 0, 0.9); border-color: #FFA500; }
+        100% { box-shadow: 0 0 6px rgba(255, 128, 0, 0.4); border-color: #FF8000; }
+    }
+    @keyframes pulse-yellow-glow {
+        0% { box-shadow: 0 0 5px rgba(255, 187, 0, 0.35); border-color: #FFBB00; }
+        50% { box-shadow: 0 0 18px rgba(255, 187, 0, 0.85); border-color: #FFD700; }
+        100% { box-shadow: 0 0 5px rgba(255, 187, 0, 0.35); border-color: #FFBB00; }
+    }
+    @keyframes pulse-cyan-glow {
+        0% { box-shadow: 0 0 6px rgba(0, 200, 255, 0.4); border-color: #00BFFF; }
+        50% { box-shadow: 0 0 22px rgba(0, 200, 255, 0.9); border-color: #64FFDA; }
+        100% { box-shadow: 0 0 6px rgba(0, 200, 255, 0.4); border-color: #00BFFF; }
+    }
+    .card-scada-red {
+        background: linear-gradient(145deg, rgba(60, 10, 10, 0.92), rgba(30, 5, 5, 0.96)) !important;
+        border: 2px solid #FF4B4B !important;
+        animation: pulse-red-glow 1.1s infinite ease-in-out !important;
+        border-radius: 14px;
+        padding: 18px;
+        margin-bottom: 14px;
+    }
+    .card-scada-orange {
+        background: linear-gradient(145deg, rgba(55, 25, 5, 0.92), rgba(28, 12, 2, 0.96)) !important;
+        border: 2px solid #FF8000 !important;
+        animation: pulse-orange-glow 1.5s infinite ease-in-out !important;
+        border-radius: 14px;
+        padding: 18px;
+        margin-bottom: 14px;
+    }
+    .card-scada-yellow {
+        background: linear-gradient(145deg, rgba(48, 42, 5, 0.92), rgba(24, 20, 2, 0.96)) !important;
+        border: 2px solid #FFBB00 !important;
+        animation: pulse-yellow-glow 2.0s infinite ease-in-out !important;
+        border-radius: 14px;
+        padding: 18px;
+        margin-bottom: 14px;
+    }
+    .card-scada-cyan {
+        background: linear-gradient(145deg, rgba(5, 40, 60, 0.92), rgba(2, 20, 35, 0.96)) !important;
+        border: 2px solid #00BFFF !important;
+        animation: pulse-cyan-glow 1.8s infinite ease-in-out !important;
+        border-radius: 14px;
+        padding: 18px;
+        margin-bottom: 14px;
+    }
+    @keyframes pulse-green-glow {
+        0% { box-shadow: 0 0 6px rgba(0, 204, 150, 0.35); border-color: #00CC96; }
+        50% { box-shadow: 0 0 18px rgba(0, 204, 150, 0.75); border-color: #64FFDA; }
+        100% { box-shadow: 0 0 6px rgba(0, 204, 150, 0.35); border-color: #00CC96; }
+    }
+    .card-scada-green {
+        background: linear-gradient(145deg, rgba(6, 42, 28, 0.94), rgba(2, 22, 14, 0.98)) !important;
+        border: 1.8px solid #00CC96 !important;
+        animation: pulse-green-glow 2.4s infinite ease-in-out !important;
+        border-radius: 14px;
+        padding: 18px;
+        margin-bottom: 14px;
+    }
+    .card-scada-gray {
+        background: linear-gradient(145deg, rgba(20, 26, 36, 0.94), rgba(12, 16, 24, 0.98)) !important;
+        border: 1.5px solid #334155 !important;
+        box-shadow: 0 0 10px rgba(51, 65, 85, 0.25);
+        border-radius: 14px;
+        padding: 18px;
+        margin-bottom: 14px;
+    }
+    .card-scada-blue {
+        background: linear-gradient(145deg, rgba(8, 28, 48, 0.90), rgba(4, 15, 28, 0.96)) !important;
+        border: 1.5px solid #38BDF8 !important;
+        box-shadow: 0 0 12px rgba(56, 189, 248, 0.25);
+        border-radius: 14px;
+        padding: 18px;
+        margin-bottom: 14px;
+    }
+    /* Faros Parpadeantes (Beacon) de Semáforo Luminoso */
+    @keyframes blink-beacon {
+        0%, 100% { opacity: 1; transform: scale(1); filter: drop-shadow(0 0 8px currentColor); }
+        50% { opacity: 0.25; transform: scale(0.85); filter: drop-shadow(0 0 1px currentColor); }
+    }
+    .beacon-red {
+        display: inline-block; width: 14px; height: 14px; border-radius: 50%;
+        background: #FF4B4B; color: #FF4B4B;
+        animation: blink-beacon 0.7s infinite ease-in-out;
+        box-shadow: 0 0 12px #FF4B4B;
+    }
+    .beacon-orange {
+        display: inline-block; width: 14px; height: 14px; border-radius: 50%;
+        background: #FF8000; color: #FF8000;
+        animation: blink-beacon 1.0s infinite ease-in-out;
+        box-shadow: 0 0 10px #FF8000;
+    }
+    .beacon-yellow {
+        display: inline-block; width: 14px; height: 14px; border-radius: 50%;
+        background: #FFBB00; color: #FFBB00;
+        animation: blink-beacon 1.5s infinite ease-in-out;
+        box-shadow: 0 0 10px #FFBB00;
+    }
+    .beacon-cyan {
+        display: inline-block; width: 14px; height: 14px; border-radius: 50%;
+        background: #00BFFF; color: #00BFFF;
+        animation: blink-beacon 1.4s infinite ease-in-out;
+        box-shadow: 0 0 12px #00BFFF;
+    }
+    .beacon-green {
+        display: inline-block; width: 13px; height: 13px; border-radius: 50%;
+        background: #00CC96; color: #00CC96;
+        animation: blink-beacon 2.0s infinite ease-in-out;
+        box-shadow: 0 0 10px #00CC96;
+    }
+    .beacon-gray {
+        display: inline-block; width: 12px; height: 12px; border-radius: 50%;
+        background: #94A3B8; color: #94A3B8;
+        box-shadow: 0 0 6px rgba(148, 163, 184, 0.4);
+    }
+    .beacon-blue {
+        display: inline-block; width: 13px; height: 13px; border-radius: 50%;
+        background: #38BDF8; color: #38BDF8;
+        box-shadow: 0 0 8px #38BDF8;
     }
 </style>
-''', unsafe_allow_html=True)
+""", unsafe_allow_html=True)
 
 colombia_tz = timezone('America/Bogota')
 utc_tz = timezone('UTC')
-
-# Carga de Logo amb en barra lateral
+# ============================================================
+# LOGO SIDEBAR (con distintivo opcional Edicion 110 Anios)
+# ============================================================
 def render_logo_sidebar(es_edicion_110=False):
     posibles_rutas = [
-        'amb_4_punto_cero.jpg',
-        os.path.join(os.path.dirname(__file__), 'amb_4_punto_cero.jpg'),
-        os.path.join(os.getcwd(), 'amb_4_punto_cero.jpg'),
-        'amb.jpg'
+        "amb_4_punto_cero.jpg",
+        os.path.join(os.path.dirname(__file__), "amb_4_punto_cero.jpg"),
+        os.path.join(os.getcwd(), "amb_4_punto_cero.jpg"),
+        "amb.jpg"
     ]
     for ruta in posibles_rutas:
         if os.path.exists(ruta):
             try:
                 img = Image.open(ruta)
                 st.sidebar.image(img, use_container_width=True)
+                if es_edicion_110:
+                    st.sidebar.markdown("""
+                    <div style="text-align: center; margin: -6px 0 12px 0;">
+                        <span style="background: rgba(124, 179, 66, 0.2); color: #7CB342; border: 1px solid #7CB342; padding: 2px 8px; border-radius: 12px; font-size: 10px; font-weight: 800;">💧 110 AÑOS amb</span>
+                    </div>
+                    """, unsafe_allow_html=True)
                 return
             except:
                 pass
-    st.sidebar.markdown('''
-    <div style='background: linear-gradient(135deg, #005073, #0A192F); padding: 16px; border-radius: 12px; text-align: center; margin-bottom: 15px; border: 1px solid #64FFDA;'>
-        <h1 style='color: #64FFDA; margin: 0; font-size: 32px; font-weight: 900; letter-spacing: -1px;'>amb</h1>
-        <div style='color: #E6F1FF; font-size: 11px; text-transform: lowercase; margin-top: 2px;'>acueducto metropolitano de bucaramanga</div>
+    st.sidebar.markdown(f"""
+    <div style="background: linear-gradient(135deg, #002A4A, #005073); padding: 16px; border-radius: 12px; text-align: center; margin-bottom: 15px; border: 1px solid #64FFDA; box-shadow: 0 4px 12px rgba(0,0,0,0.15);">
+        <div style="font-size: 28px; line-height: 1;">💧</div>
+        <h1 style="color: #64FFDA; margin: 4px 0 0 0; font-size: 32px; font-weight: 900; letter-spacing: -1px;">amb</h1>
+        <div style="color: #E6F1FF; font-size: 11px; text-transform: lowercase; margin-top: 2px;">acueducto metropolitano de bucaramanga</div>
+        {"<div style='margin-top: 8px; padding-top: 6px; border-top: 1px solid rgba(255,255,255,0.15);'><span style='background: rgba(124, 179, 66, 0.25); color: #7CB342; border: 1px solid #7CB342; padding: 2px 8px; border-radius: 10px; font-size: 10px; font-weight: 800;'>EDICIÓN 110 AÑOS</span></div>" if es_edicion_110 else ""}
     </div>
-    ''', unsafe_allow_html=True)
-
+    """, unsafe_allow_html=True)
+# Selector dinámico de ambientación visual para pruebas y comparación
 modo_visual = st.sidebar.radio(
     "🎨 Ambientación Visual:",
     ["⚡ SCADA Clásico (Ingeniería Dark)", "💧 Portal amb (Edición 110 Años)"],
@@ -130,8 +295,8 @@ col_ref1, col_ref2 = st.sidebar.columns([3, 1])
 with col_ref1:
     opcion_autorefresh = st.selectbox(
         '\U0001F504 Auto-recarga en vivo:',
-        ['Cada 3 minutos (Recomendado)', 'Cada 5 minutos', 'Cada 10 minutos', 'Desactivada (Manual)'],
-        index=0,
+        ['Cada 3 minutos', 'Cada 5 minutos (Recomendado)', 'Cada 10 minutos', 'Desactivada (Manual)'],
+        index=1,
         help='Actualiza periodicamente la telemetria y niveles del embalse en segundo plano sin intervencion humana.'
     )
 with col_ref2:
@@ -140,33 +305,19 @@ with col_ref2:
         st.rerun()
 
 intervalo_segundos = {
-    'Cada 3 minutos (Recomendado)': 180,
-    'Cada 5 minutos': 300,
+    'Cada 3 minutos': 180,
+    'Cada 5 minutos (Recomendado)': 300,
     'Cada 10 minutos': 600
 }.get(opcion_autorefresh, 0)
 
 if intervalo_segundos > 0:
+    # Auto-refresco por reejecucion del servidor (conserva sesion y cache; NO recarga la pagina).
+    # Requiere "streamlit-autorefresh" en requirements.txt.
     try:
         from streamlit_autorefresh import st_autorefresh
-        st_autorefresh(interval=intervalo_segundos * 1000, key='mimat_live_autorefresh')
+        st_autorefresh(interval=intervalo_segundos * 1000, key="mimat_live_autorefresh")
     except ImportError:
-        import streamlit.components.v1 as components
-        components.html(
-            f'''
-            <script>
-                var milisegundos = {intervalo_segundos * 1000};
-                window.setTimeout(function() {{
-                    try {{
-                        window.parent.location.reload();
-                    }} catch (e) {{
-                        window.location.reload();
-                    }}
-                }}, milisegundos);
-            </script>
-            ''',
-            height=0,
-            width=0
-        )
+        st.sidebar.warning("Auto-recarga inactiva: agrega streamlit-autorefresh a requirements.txt")
 
 st.sidebar.caption(f"\U0001F551 Hora local: {datetime.now(colombia_tz).strftime('%I:%M:%S %p COT')}")
 
@@ -713,7 +864,86 @@ def init_bigquery_client():
         st.error(f"❌ Error al conectar con BigQuery: {e}")
         st.stop()
 client = init_bigquery_client()
-@st.cache_data(ttl=180, show_spinner=False)
+# ============================================================
+# CACHE "STALE-WHILE-REVALIDATE" PARA FUENTES EXTERNAS (IDEAM / Open-Meteo)
+# Muestra de inmediato el ultimo dato recibido y refresca en segundo plano,
+# para que una fuente lenta o caida NO bloquee el resto del panel.
+# ============================================================
+import threading
+import copy
+import functools
+
+@st.cache_resource
+def _almacen_swr():
+    return {"datos": {}, "hilos": {}, "lock": threading.Lock()}
+
+def cache_swr(ttl, ttl_fn=None, reintento_s=60, espera_max_s=2.0, valor_inicial=None):
+    """
+    ttl           : segundos que un dato se considera fresco.
+    ttl_fn        : opcional, calcula el ttl segun el valor (ej. reintento corto si es respaldo).
+    reintento_s   : si el refresco falla, se reintenta pasado este tiempo (se conserva el ultimo dato).
+    espera_max_s  : maximo que se espera al refresco antes de mostrar el ultimo dato guardado.
+    valor_inicial : opcional, funcion con los mismos argumentos que devuelve un dato provisional
+                    inmediato la primera vez (evita bloquear la primera carga).
+    """
+    def decorador(fn):
+        def _refrescar(alm, clave, args, kwargs):
+            try:
+                valor = fn(*args, **kwargs)
+                vida = ttl_fn(valor) if ttl_fn else ttl
+                with alm["lock"]:
+                    alm["datos"][clave] = {"valor": valor, "vence": time.time() + vida}
+            except Exception:
+                with alm["lock"]:
+                    if clave in alm["datos"]:
+                        alm["datos"][clave]["vence"] = time.time() + reintento_s
+            finally:
+                with alm["lock"]:
+                    alm["hilos"].pop(clave, None)
+
+        @functools.wraps(fn)
+        def envoltura(*args, **kwargs):
+            alm = _almacen_swr()
+            clave = (fn.__name__, repr(args), repr(sorted(kwargs.items())))
+            ahora = time.time()
+            sincrono = False
+            hilo_info = None
+            with alm["lock"]:
+                ent = alm["datos"].get(clave)
+                if ent is None and valor_inicial is None:
+                    sincrono = True
+                else:
+                    if ent is None:
+                        ent = {"valor": valor_inicial(*args, **kwargs), "vence": 0.0}
+                        alm["datos"][clave] = ent
+                    hilo_info = alm["hilos"].get(clave)
+                    if hilo_info is None and ahora >= ent["vence"]:
+                        t = threading.Thread(target=_refrescar, args=(alm, clave, args, kwargs), daemon=True)
+                        hilo_info = (t, ahora)
+                        alm["hilos"][clave] = hilo_info
+                        t.start()
+            if sincrono:
+                valor = fn(*args, **kwargs)
+                vida = ttl_fn(valor) if ttl_fn else ttl
+                with alm["lock"]:
+                    alm["datos"][clave] = {"valor": valor, "vence": time.time() + vida}
+                return copy.deepcopy(valor)
+            if hilo_info is not None:
+                restante = espera_max_s - (time.time() - hilo_info[1])
+                if restante > 0:
+                    hilo_info[0].join(timeout=restante)
+            with alm["lock"]:
+                valor = alm["datos"][clave]["valor"]
+            return copy.deepcopy(valor)
+        return envoltura
+    return decorador
+
+def _ttl_ideam(d):
+    try:
+        return 60 if str(d.get("origen", "")).startswith("RESPALDO") else 180
+    except Exception:
+        return 60
+@cache_swr(ttl=180, ttl_fn=_ttl_ideam, reintento_s=60, espera_max_s=2.5)
 def sincronizar_fews_ideam_surata_bigquery():
     """
     Conector Oficial Multi-Sensor en Vivo IDEAM (`CNE 0023197700`) -> Google BigQuery
@@ -1213,7 +1443,17 @@ def generar_pronostico_respaldo_altimetrico_local(lat: float, lon: float, past_d
         'precipitation_probability': probabilidades,
         'origen_satelital': 'RESPALDO_LOCAL_AMB'
     })
-@st.cache_data(ttl=1800, show_spinner=False)
+def _ttl_open_meteo(df):
+    try:
+        vivo = len(df) > 0 and str(df['origen_satelital'].iloc[0]) == 'OPEN_METEO_VIVO'
+    except Exception:
+        vivo = False
+    return 1800 if vivo else 120
+
+def _pronostico_inicial_local(lat, lon, past_days=7, forecast_days=3):
+    # Dato provisional inmediato (respaldo altimetrico local) mientras llega Open-Meteo
+    return generar_pronostico_respaldo_altimetrico_local(lat, lon, past_days=past_days, forecast_days=forecast_days)
+@cache_swr(ttl=1800, ttl_fn=_ttl_open_meteo, espera_max_s=1.5, valor_inicial=_pronostico_inicial_local)
 def obtener_pronostico_open_meteo(lat: float, lon: float, past_days: int = 7, forecast_days: int = 3):
     url = (
         f"https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}"
@@ -2950,10 +3190,10 @@ def render_panel_alertas_tempranas_sat():
                 try:
                     ts_dt = pd.to_datetime(ts_dato)
                     if ts_dt.tzinfo is None:
-                        ts_dt = ts_dt.tz_localize(timezone.utc)
+                        ts_dt = ts_dt.tz_localize(utc_tz)
                     else:
-                        ts_dt = ts_dt.tz_convert(timezone.utc)
-                    delta_s = (datetime.now(timezone.utc) - ts_dt).total_seconds()
+                        ts_dt = ts_dt.tz_convert(utc_tz)
+                    delta_s = (datetime.now(utc_tz) - ts_dt).total_seconds()
                     if 0 <= delta_s <= 7200 and float(temp_raw) > 0.0 and float(hum_raw) > 1.0:
                         es_fisico_vivo = True
                         temp_val = float(temp_raw)
