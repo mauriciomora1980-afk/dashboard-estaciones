@@ -6947,6 +6947,6 @@ with st.sidebar.expander("📏 Extensómetros (EDV)"):
 # ============================================================
 
 # FIN DEL CÓDIGO — SISTEMA MIMAT-C26 (amb)
-Desarrollado por Mauricio Mora
+# Desarrollado por Mauricio Mora
 
 # ============================================================
