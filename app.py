@@ -256,7 +256,13 @@ utc_tz = timezone('UTC')
 # LOGO SIDEBAR (con distintivo opcional Edicion 110 Anios)
 # ============================================================
 def render_logo_sidebar(es_edicion_110=False):
-    posibles_rutas = [
+    import glob
+    archivos_simetricos = sorted(glob.glob("logo_amb_4_0_lluvia_simetrica*"), reverse=True)
+    posibles_rutas = archivos_simetricos + [
+        "logo_amb_4_0_lluvia_simetrica_exacta_1792249435104.jpg",
+        "logo_amb_4_0_lluvia_simetrica_exacta.jpg",
+        "logo_amb_4_0_oficial.jpg",
+        "logo_amb_4_0_olas_oficiales.jpg",
         "amb_4_punto_cero.jpg",
         os.path.join(os.path.dirname(__file__), "amb_4_punto_cero.jpg"),
         os.path.join(os.getcwd(), "amb_4_punto_cero.jpg"),
