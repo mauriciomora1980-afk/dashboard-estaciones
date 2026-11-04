@@ -2056,6 +2056,7 @@ def obtener_precipitacion_cuenca_tona(fecha_inicio, fecha_fin):
             id_estacion,
             SAFE_CAST(timestamp AS TIMESTAMP) as ts,
             SAFE_CAST(temperatura AS FLOAT64) as temp,
+            SAFE_CAST(humedad AS FLOAT64) as hum,
             SAFE_CAST(precipitacion AS FLOAT64) as precip,
             SAFE_CAST(presion AS FLOAT64) as pres,
             SAFE_CAST(direccion_viento AS FLOAT64) as dir_v,
@@ -2071,6 +2072,8 @@ def obtener_precipitacion_cuenca_tona(fecha_inicio, fecha_fin):
           SELECT
             id_estacion,
             ts,
+            temp,
+            hum,
             -- Filtro Físico Anti-Hold: Si temperatura, presión y viento son idénticos al paquete previo (Hold SCADA), la lluvia es 0.0
             CASE
               WHEN prev_t IS NOT NULL
@@ -2087,7 +2090,8 @@ def obtener_precipitacion_cuenca_tona(fecha_inicio, fecha_fin):
           id_estacion,
           SUM(precip_limpia) as precip_total,
           MAX(precip_limpia) as precip_max_evento,
-          COUNT(*) as num_registros
+          COUNT(*) as num_registros,
+          COUNTIF(hum > 1.0 AND temp > 0.0) as num_registros_vivos
         FROM datos_limpios
         GROUP BY id_estacion
         """
@@ -2096,32 +2100,53 @@ def obtener_precipitacion_cuenca_tona(fecha_inicio, fecha_fin):
         df_res = pd.DataFrame(rows)
         if not df_res.empty:
             df_res['es_estimado_ia'] = False
-        # Resiliencia & Imputación Orográfica / Satelital Inteligente para La Mariana, Yerbabuena y Monsalve (en revisión de campo):
-        if not df_res.empty:
-            map_p = {r['id_estacion']: float(r.get('precip_total', 0) or 0) for _, r in df_res.iterrows()}
-            p_pajal = map_p.get('El_Pajal', 0.0)
-            p_mariana = map_p.get('La_Mariana', 0.0)
-            p_yerba = map_p.get('Yerbabuena', 0.0)
-            p_monsalve = map_p.get('Monsalve', 0.0)
-            if p_mariana == 0.0 and p_pajal > 0.0:
-                if p_pajal <= 40.0:
-                    factor_oro = 1.15
-                elif p_pajal <= 70.0:
-                    factor_oro = 1.08
-                else:
-                    factor_oro = 1.00
-                p_imputada = round(p_pajal * factor_oro, 1)
-                mask = df_res['id_estacion'] == 'La_Mariana'
+        else:
+            df_res = pd.DataFrame(columns=['id_estacion', 'precip_total', 'precip_max_evento', 'num_registros', 'num_registros_vivos', 'es_estimado_ia'])
+        # Resiliencia & Imputación Satelital / Orográfica generalizada para TODAS las estaciones de la cuenca que estén en Sensor Virtual Activo:
+        map_p = {r['id_estacion']: float(r.get('precip_total', 0) or 0) for _, r in df_res.iterrows()}
+        map_vivos = {r['id_estacion']: int(r.get('num_registros_vivos', 0) or 0) for _, r in df_res.iterrows()}
+        p_pajal = map_p.get('El_Pajal', 0.0)
+        dias_atras = max(2, min(14, int(((datetime.now(colombia_tz) - f_ini_dt).total_seconds() / 86400.0) + 2)))
+        for est_virt in estaciones_cuenca:
+            p_actual = map_p.get(est_virt, 0.0)
+            vivos_actual = map_vivos.get(est_virt, 0)
+            # Si la estación está en modo Sensor Virtual (sin tramas físicas vivas en la ventana), sumar toda la precipitación horaria de su Sensor Virtual Satelital
+            if p_actual == 0.0 and vivos_actual < 3:
+                p_sat_tot = 0.0
+                p_sat_max = 0.0
+                meta_v = METADATA_ESTACIONES_AMB.get(est_virt, {})
+                lat_v = meta_v.get('lat')
+                lon_v = meta_v.get('lon')
+                if lat_v is not None and lon_v is not None:
+                    df_sat_v = obtener_pronostico_open_meteo(lat_v, lon_v, past_days=dias_atras, forecast_days=1)
+                    if not df_sat_v.empty and 'time' in df_sat_v.columns and 'precipitation' in df_sat_v.columns:
+                        df_sv = df_sat_v.copy()
+                        t_sv = pd.to_datetime(df_sv['time'])
+                        df_sv['ts_col'] = t_sv.dt.tz_localize(colombia_tz) if t_sv.dt.tz is None else t_sv.dt.tz_convert(colombia_tz)
+                        df_sv = df_sv[(df_sv['ts_col'] >= f_ini_dt - timedelta(hours=1)) & (df_sv['ts_col'] <= f_fin_dt)]
+                        if not df_sv.empty:
+                            s_prec = pd.to_numeric(df_sv['precipitation'], errors='coerce').fillna(0.0)
+                            p_sat_tot = round(float(s_prec.sum()), 1)
+                            p_sat_max = round(float(s_prec.max()), 1)
+                # Respaldo orográfico adicional para La Mariana cuando llueve en El Pajal
+                if est_virt == 'La_Mariana' and p_pajal > 0.0:
+                    factor_oro = 1.15 if p_pajal <= 40.0 else (1.08 if p_pajal <= 70.0 else 1.00)
+                    p_oro = round(p_pajal * factor_oro, 1)
+                    if p_oro > p_sat_tot:
+                        p_sat_tot = p_oro
+                        p_sat_max = round(p_oro * 0.6, 1)
+                mask = df_res['id_estacion'] == est_virt
                 if mask.any():
-                    df_res.loc[mask, 'precip_total'] = p_imputada
-                    df_res.loc[mask, 'precip_max_evento'] = round(p_imputada * 0.6, 1)
+                    df_res.loc[mask, 'precip_total'] = p_sat_tot
+                    df_res.loc[mask, 'precip_max_evento'] = p_sat_max
                     df_res.loc[mask, 'es_estimado_ia'] = True
                 else:
                     nuevo = pd.DataFrame([{
-                        'id_estacion': 'La_Mariana',
-                        'precip_total': p_imputada,
-                        'precip_max_evento': round(p_imputada * 0.6, 1),
+                        'id_estacion': est_virt,
+                        'precip_total': p_sat_tot,
+                        'precip_max_evento': p_sat_max,
                         'num_registros': 1,
+                        'num_registros_vivos': 0,
                         'es_estimado_ia': True
                     }])
                     df_res = pd.concat([df_res, nuevo], ignore_index=True)
@@ -2515,6 +2540,10 @@ def mostrar_modulo_atribucion_cuenca(df_cuenca, q_afluente_ls, horas):
         fig_donut.update_layout(height=300, template='plotly_white', margin=dict(t=40, b=10, l=10, r=10))
         st.plotly_chart(fig_donut, use_container_width=True)
     with col_g2:
+        df_atrib['etiqueta_lluvia'] = df_atrib.apply(
+            lambda r: f"{r['precipitacion_mm']:.1f} mm (Sat)" if (bool(r.get('es_estimado_ia')) and float(r['precipitacion_mm']) > 0) else f"{r['precipitacion_mm']:.1f} mm",
+            axis=1
+        )
         fig_bar = px.bar(
             df_atrib,
             x='id_estacion',
@@ -2522,9 +2551,9 @@ def mostrar_modulo_atribucion_cuenca(df_cuenca, q_afluente_ls, horas):
             title='🌧️ Precipitación Registrada en Cuenca (mm)',
             color='id_estacion',
             color_discrete_map={row['id_estacion']: row['color'] for _, row in df_atrib.iterrows()},
-            text='precipitacion_mm'
+            text='etiqueta_lluvia'
         )
-        fig_bar.update_traces(texttemplate='%{text:.1f} mm', textposition='outside')
+        fig_bar.update_traces(texttemplate='%{text}', textposition='outside', cliponaxis=False)
         fig_bar.update_layout(height=300, template='plotly_white', xaxis_title="Estación Meteorológica", yaxis_title="Lluvia Acumulada (mm)", showlegend=False, margin=dict(t=40, b=10, l=10, r=10))
         st.plotly_chart(fig_bar, use_container_width=True)
     st.markdown("#### 📋 Matriz Hidrológica de Cuenca Tona & Tiempos de Tránsito (Lag Time):")
@@ -6918,5 +6947,6 @@ with st.sidebar.expander("📏 Extensómetros (EDV)"):
 # ============================================================
 
 # FIN DEL CÓDIGO — SISTEMA MIMAT-C26 (amb)
+Desarrollado por Mauricio Mora
 
 # ============================================================
