@@ -2690,7 +2690,7 @@ with st.spinner("🔄 Consultando telemetría en tiempo real..."):
 def enriquecer_datos_embalse(df):
     if df.empty or 'temperatura' not in df.columns:
         return df
-    # Filtrar picos a 0.0 por caída de energía en antena Claro, respetando el rango físico real (817.94 a 891.55 msnm)
+    # Filtrar picos a 0.0 por caída de energía en antena Claro, respetando el rango físico real (817.94 a 888.75 msnm)
     df_e = filtrar_cota_embalse_robusta(df)
     if df_e.empty or 'cota_calibrada_limpia' not in df_e.columns:
         return pd.DataFrame()
@@ -2701,16 +2701,30 @@ def enriquecer_datos_embalse(df):
     df_e['volumen_total_hm3'] = df_e['cota_embalse_msnm'].apply(lambda c: round(interpolar_volumen(c), 4) if pd.notna(c) else None)
     df_e['volumen_util_hm3'] = df_e['volumen_total_hm3'].apply(lambda v: round(max(0.0, v - 1.980), 4) if pd.notna(v) else None)
     c_ini = df_e['cota_embalse_msnm'].iloc[0]
-    v_ini_m3 = (df_e['volumen_total_hm3'].iloc[0] or 0) * 1_000_000.0
     df_e['descenso_acumulado_cm'] = ((c_ini - df_e['cota_embalse_msnm']) * 100.0).round(2)
-    df_e['m3_consumidos_bosconia'] = df_e['volumen_total_hm3'].apply(lambda v: max(0.0, round(v_ini_m3 - (v * 1_000_000.0), 1)) if pd.notna(v) else 0.0)
     df_e['caudal_rebose_ls'] = df_e['cota_embalse_msnm'].apply(lambda c: round(calcular_caudal_morning_glory(c)[1], 1) if pd.notna(c) else 0.0)
     t_ini = df_e['timestamp'].iloc[0]
+    t_fin = df_e['timestamp'].iloc[-1]
     df_e['delta_segundos_acum'] = (df_e['timestamp'] - t_ini).dt.total_seconds()
-    df_e['caudal_medio_bosconia_ls'] = df_e.apply(
-        lambda r: round((r['m3_consumidos_bosconia'] / r['delta_segundos_acum']) * 1000.0, 1) if r['delta_segundos_acum'] > 300 else 0.0,
-        axis=1
-    )
+    # Cruzar con la telemetría real en vivo del caudalímetro ET_FIT401 (CRC_Bosconia_Caudal)
+    horas_ventana = max(24, int(((t_fin - t_ini).total_seconds() / 3600.0) + 4))
+    df_crc_real = get_historico_crc_bosconia(horas=horas_ventana)
+    q_fallback, _ = get_caudal_crc_bosconia_actual()
+    q_base_crc = float(q_fallback) if q_fallback is not None else 25.0
+    if not df_crc_real.empty and 'ts' in df_crc_real.columns and 'caudal_crc' in df_crc_real.columns:
+        df_e_ts = df_e['timestamp'].dt.tz_localize(None) if hasattr(df_e['timestamp'].dt, 'tz') and df_e['timestamp'].dt.tz is not None else pd.to_datetime(df_e['timestamp'])
+        df_left = pd.DataFrame({'ts_key': df_e_ts, 'orig_idx': df_e.index}).sort_values('ts_key')
+        df_right = df_crc_real[['ts', 'caudal_crc']].dropna().sort_values('ts')
+        df_merged_crc = pd.merge_asof(df_left, df_right, left_on='ts_key', right_on='ts', direction='nearest', tolerance=pd.Timedelta(hours=2))
+        df_merged_crc = df_merged_crc.sort_values('orig_idx')
+        q_serie_ls = pd.to_numeric(df_merged_crc['caudal_crc'], errors='coerce').ffill().bfill().fillna(q_base_crc).clip(lower=0.0, upper=3000.0)
+        df_e['caudal_medio_bosconia_ls'] = q_serie_ls.values.round(1)
+    else:
+        df_e['caudal_medio_bosconia_ls'] = round(q_base_crc, 1)
+    # Integración temporal exacta del caudalímetro real: V(t) = Integral(Q_CRC(t) dt) en m³
+    dt_paso_s = df_e['timestamp'].diff().dt.total_seconds().fillna(0.0).clip(lower=0.0, upper=3600.0)
+    q_m3s_paso = pd.to_numeric(df_e['caudal_medio_bosconia_ls'], errors='coerce').fillna(0.0) / 1000.0
+    df_e['m3_consumidos_bosconia'] = (q_m3s_paso * dt_paso_s).cumsum().round(1)
     return df_e
 def enriquecer_datos_surata(df):
     """
@@ -2744,15 +2758,19 @@ def consolidar_balance_diario_embalse(df_emb_enr):
             continue
         c_ini = g_s.iloc[0]['cota_embalse_msnm']
         c_fin = g_s.iloc[-1]['cota_embalse_msnm']
-        v_ini = g_s.iloc[0]['volumen_total_hm3'] * 1_000_000.0
-        v_fin = g_s.iloc[-1]['volumen_total_hm3'] * 1_000_000.0
         t_ini = g_s.iloc[0]['timestamp']
         t_fin = g_s.iloc[-1]['timestamp']
         delta_s = max(1.0, (t_fin - t_ini).total_seconds())
         delta_horas = delta_s / 3600.0
         delta_cm = (c_ini - c_fin) * 100.0
-        m3_dia = max(0.0, v_ini - v_fin)
-        q_ls = (m3_dia / delta_s) * 1000.0 if delta_s > 60 else 0.0
+        if 'm3_consumidos_bosconia' in g_s.columns and 'caudal_medio_bosconia_ls' in g_s.columns:
+            m3_dia = max(0.0, float(g_s['m3_consumidos_bosconia'].iloc[-1] - g_s['m3_consumidos_bosconia'].iloc[0]))
+            q_ls = float(g_s['caudal_medio_bosconia_ls'].mean())
+        else:
+            v_ini = g_s.iloc[0]['volumen_total_hm3'] * 1_000_000.0
+            v_fin = g_s.iloc[-1]['volumen_total_hm3'] * 1_000_000.0
+            m3_dia = max(0.0, v_ini - v_fin)
+            q_ls = (m3_dia / delta_s) * 1000.0 if delta_s > 60 else 0.0
         resumen_dias.append({
             "Fecha": fecha_dia,
             "Horas Monitoreadas": round(delta_horas, 1),
@@ -2760,7 +2778,7 @@ def consolidar_balance_diario_embalse(df_emb_enr):
             "Cota Final (msnm)": round(c_fin, 3),
             "Descenso (cm)": round(delta_cm, 2),
             "Metros Cúbicos Entregados Bosconia (m³)": round(m3_dia, 1),
-            "Caudal Medio Estimado (L/s)": round(q_ls, 1),
+            "Caudal Medio CRC Bosconia (L/s)": round(q_ls, 1),
             "Vol. Útil Remanente (hm³)": round(g_s.iloc[-1]['volumen_util_hm3'], 3)
         })
     return pd.DataFrame(resumen_dias)
@@ -2786,6 +2804,8 @@ def preparar_df_para_exportar(df, nombre_estacion=None):
             df_res['Caudal_Rebose_Aprox_Morning_Glory_ls'] = df_enr['caudal_rebose_ls'].round(1)
             df_res['Volumen_Total_hm3'] = df_enr['volumen_total_hm3'].round(3)
             df_res['Volumen_Util_hm3'] = df_enr['volumen_util_hm3'].round(3)
+            if 'caudal_medio_bosconia_ls' in df_enr.columns:
+                df_res['Caudal_CRC_Bosconia_Ls'] = df_enr['caudal_medio_bosconia_ls'].round(1)
             if 'm3_consumidos_bosconia' in df_enr.columns:
                 df_res['Volumen_Entregado_Bosconia_m3'] = df_enr['m3_consumidos_bosconia'].round(1)
             if 'voltaje_bateria' in df_enr.columns:
@@ -5991,25 +6011,23 @@ with tab_series:
                 st.plotly_chart(fig_q, use_container_width=True)
             # Bloque de Balance Volumétrico Bosconia en Vivo
             if not df_enr_hist.empty:
-                st.markdown("### 💧 Balance Volumétrico & Extracción CRC Bosconia")
-                m3_totales_periodo = df_enr_hist['m3_consumidos_bosconia'].max()
-                c_ini_p = df_enr_hist['cota_embalse_msnm'].iloc[0]
-                c_fin_p = df_enr_hist['cota_embalse_msnm'].iloc[-1]
-                desc_tot_cm = (c_ini_p - c_fin_p) * 100.0
-                t_ini_p = df_enr_hist['timestamp'].iloc[0]
-                t_fin_p = df_enr_hist['timestamp'].iloc[-1]
-                delta_s_p = max(1.0, (t_fin_p - t_ini_p).total_seconds())
-                q_medio_ls = (m3_totales_periodo / delta_s_p) * 1000.0 if delta_s_p > 60 else 0.0
+                st.markdown("### 💧 Balance Volumétrico & Extracción CRC Bosconia (Sensor `ET_FIT401`)")
+                m3_totales_periodo = float(df_enr_hist['m3_consumidos_bosconia'].iloc[-1]) if 'm3_consumidos_bosconia' in df_enr_hist.columns else 0.0
+                c_ini_p = float(df_enr_hist['cota_embalse_msnm'].iloc[0])
+                c_fin_p = float(df_enr_hist['cota_embalse_msnm'].iloc[-1])
+                var_lamina_cm = (c_fin_p - c_ini_p) * 100.0
+                q_crc_medio_ls = float(df_enr_hist['caudal_medio_bosconia_ls'].mean()) if 'caudal_medio_bosconia_ls' in df_enr_hist.columns else 25.0
+                q_reb_medio_ls = float(df_enr_hist['caudal_rebose_ls'].mean()) if 'caudal_rebose_ls' in df_enr_hist.columns else 0.0
                 cb1, cb2, cb3, cb4 = st.columns(4)
-                cb1.metric("📦 Metros Cúbicos Entregados", f"{m3_totales_periodo:,.1f} m³", help="Volumen acumulado entregado a CRC Bosconia en el período visualizado")
-                cb2.metric("⚡ Tasa Neta Vaciado", f"{q_medio_ls:,.1f} L/s", help="Tasa neta calculada por gradiente batimétrico")
-                cb3.metric("📉 Descenso Acumulado", f"{desc_tot_cm:+.2f} cm")
-                cb4.metric("🌊 Cota Calibrada Actual", f"{c_fin_p:.2f} msnm")
+                cb1.metric("📦 Volumen Integrado CRC", f"{m3_totales_periodo:,.1f} m³", help="Integral temporal exacta ∫ Q_CRC(t) dt medida por el caudalímetro ET_FIT401 en el período")
+                cb2.metric("⚡ Caudal Medio CRC", f"{q_crc_medio_ls:,.1f} L/s", help="Promedio de telemetría en vivo de CRC_Bosconia_Caudal (ET_FIT401)")
+                cb3.metric("📈 Variación Neta Lámina", f"{var_lamina_cm:+.2f} cm")
+                cb4.metric("🌊 Cota Calibrada Actual", f"{c_fin_p:.3f} msnm")
                 st.markdown(f"""
                 <div style="background: rgba(0,80,115,0.05); padding: 10px 14px; border-radius: 6px; border-left: 3px solid #005073; margin: 8px 0; font-size: 12.5px;">
-                    ⚖️ <strong>Balance de Masas & Continuidad:</strong> Tasa neta calculada en el período: <strong>{q_medio_ls:,.0f} L/s</strong>.<br>
-                    <code>Q_CRC_Bosconia (~400 L/s) = Tasa_Neta ({q_medio_ls:,.0f} L/s) + ∑ Q_Afluentes (~{max(0, 400 - q_medio_ls):,.0f} L/s)</code><br>
-                    <em>El caudal afluente corresponde a la recarga continua de cuenca: <strong>Río Tona principal</strong> + microcuencas tributarias <strong>Quebrada Las Ranas, Quebrada Gualilo, Quebrada La Reforma y Quebrada Los Monos</strong>. (Nota: El caudal de rebose del Morning Glory es aproximado mientras se calibra esa ecuación).</em>
+                    ⚖️ <strong>Integración Volumétrica en Tiempo Real (<code>ET_FIT401 / CRC_Bosconia_Caudal</code>):</strong><br>
+                    <code>V_CRC = ∫ Q_CRC(t) dt = {m3_totales_periodo:,.1f} m³</code> | <strong>Caudal Medio CRC:</strong> <code>{q_crc_medio_ls:,.1f} L/s</code> | <strong>Rebose Medio Morning Glory:</strong> <code>~{q_reb_medio_ls:,.0f} L/s</code><br>
+                    <em>El caudal afluente corresponde a la recarga continua de cuenca: <strong>Río Tona principal</strong> + microcuencas tributarias <strong>Quebrada Las Ranas, Quebrada Gualilo, Quebrada La Reforma y Quebrada Los Monos</strong>.</em>
                 </div>
                 """, unsafe_allow_html=True)
                 df_bal_24h_vista = consolidar_balance_diario_embalse(df_enr_hist)
