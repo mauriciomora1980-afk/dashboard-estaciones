@@ -2,7 +2,8 @@
 # PROYECTO: MIMAT-C26 (Monitoreo Inteligente de Meteorología, Análisis de Telemetría y Cuencas)
 # ENTIDAD:  Acueducto Metropolitano de Bucaramanga S.A. E.S.P. (amb)
 # AUTOR Y ARQUITECTO LÍDER: Ing. Edgar Mauricio Mora Rivera
-# =============================================================================
+# PROPIEDAD INTELECTUAL Y DERECHOS DE AUTOR PROTEGIDOS © 2026
+# ==============================================================================
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -713,7 +714,10 @@ def filtrar_nivel_ott_majadas_robusto(df_sur_hist):
 def filtrar_cota_embalse_robusta(df_emb_hist):
     """
     Filtro Hidráulico Físico Anti-Spike para Radar OTT del Embalse:
-    1. Descarta ceros o valores fuera de rango físico (818.0 - 886.5 msnm).
+    1. Descarta ceros por caída de energía en antena Claro (< 817.94 msnm, solera de fondo)
+       y valores superiores a la altura física de instalación del radar OTT (888.75 msnm,
+       a +3.00 m sobre la lámina de rebose 885.75 msnm).
+       Nota: Preparado para futura reubicación del radar a un punto más central del vaso.
     2. Aplica filtro de gradiente físico: ningún embalse de 46 ha cambia más de 3.5 cm en 10 min.
     3. Si ocurre un glitch transitorio por caída/reconexión de energía de la antena Claro,
        el algoritmo rechaza el salto abrupto y mantiene la cota suave.
@@ -722,8 +726,8 @@ def filtrar_cota_embalse_robusta(df_emb_hist):
         return df_emb_hist
     df_s = df_emb_hist.sort_values('timestamp').copy()
     c_raw = pd.to_numeric(df_s['temperatura'], errors='coerce') - OFFSET_RADAR_EMBALSE
-    # 1. Filtro de Rango Físico
-    c_raw = c_raw.apply(lambda c: c if (pd.notna(c) and 818.0 <= c <= 886.5) else np.nan)
+    # 1. Filtro de Rango Físico Real del Sensor OTT (817.94 msnm fondo a 888.75 msnm cota del radar +3.0 m)
+    c_raw = c_raw.apply(lambda c: c if (pd.notna(c) and 817.94 <= c <= 888.75) else np.nan)
     # 2. Filtro de Continuidad Hidráulica (|dc/dt| <= 3.5 cm / 10 min)
     cotas_limpias = []
     c_prev = None
@@ -2686,12 +2690,14 @@ with st.spinner("🔄 Consultando telemetría en tiempo real..."):
 def enriquecer_datos_embalse(df):
     if df.empty or 'temperatura' not in df.columns:
         return df
-    df_e = df.copy().sort_values('timestamp')
-    c_raw = pd.to_numeric(df_e['temperatura'], errors='coerce')
-    # Validación física estricta: sólo procede si son cotas físicas reales (> 800 msnm)
-    if c_raw.dropna().empty or c_raw.dropna().mean() < 800:
+    # Filtrar picos a 0.0 por caída de energía en antena Claro, respetando el rango físico real (817.94 a 891.55 msnm)
+    df_e = filtrar_cota_embalse_robusta(df)
+    if df_e.empty or 'cota_calibrada_limpia' not in df_e.columns:
         return pd.DataFrame()
-    df_e['cota_embalse_msnm'] = (c_raw - OFFSET_RADAR_EMBALSE).round(3)
+    df_e = df_e.dropna(subset=['cota_calibrada_limpia']).sort_values('timestamp').copy()
+    if df_e.empty:
+        return pd.DataFrame()
+    df_e['cota_embalse_msnm'] = pd.to_numeric(df_e['cota_calibrada_limpia'], errors='coerce').round(3)
     df_e['volumen_total_hm3'] = df_e['cota_embalse_msnm'].apply(lambda c: round(interpolar_volumen(c), 4) if pd.notna(c) else None)
     df_e['volumen_util_hm3'] = df_e['volumen_total_hm3'].apply(lambda v: round(max(0.0, v - 1.980), 4) if pd.notna(v) else None)
     c_ini = df_e['cota_embalse_msnm'].iloc[0]
@@ -5953,9 +5959,21 @@ with tab_series:
     if not df_hist.empty:
         if seleccion == "Embalse":
             df_enr_hist = enriquecer_datos_embalse(df_hist)
-            # Gráfica 1: Cota de Nivel del Embalse
+            # Gráfica 1: Cota de Nivel del Embalse con Span Dinámico de Alta Resolución (Colinas y Valles)
             fig_emb = px.line(df_enr_hist, x='timestamp', y='cota_embalse_msnm', title='🌊 Evolución de la Cota del Embalse (msnm)', labels={'cota_embalse_msnm': 'Cota (msnm)', 'timestamp': 'Fecha/Hora'})
             fig_emb.add_hline(y=NIVEL_REBOSE_EMBALSE, line_dash="dash", line_color="red", annotation_text="Rebose Morning Glory (885.75 msnm)")
+            if not df_enr_hist.empty and 'cota_embalse_msnm' in df_enr_hist.columns:
+                c_min_v = float(df_enr_hist['cota_embalse_msnm'].min())
+                c_max_v = float(df_enr_hist['cota_embalse_msnm'].max())
+                # Si está cerca del rebose (>= 885.00), incluir siempre la referencia 885.75 msnm en el encuadre;
+                # si baja más (descarga de fondo / vaciado profundo hasta 817.94 msnm), abrir el span hasta donde baje el agua
+                base_min = min(c_min_v, NIVEL_REBOSE_EMBALSE) if c_min_v >= 885.00 else c_min_v
+                base_max = max(c_max_v, NIVEL_REBOSE_EMBALSE)
+                amp_v = max(0.015, base_max - base_min)
+                pad_v = max(0.008, amp_v * 0.25)
+                y_min_span = max(817.94, round(base_min - pad_v, 3))
+                y_max_span = min(891.55, round(base_max + pad_v, 3))
+                fig_emb.update_yaxes(range=[y_min_span, y_max_span], tickformat=".3f")
             fig_emb.update_layout(height=320, template='plotly_white')
             st.plotly_chart(fig_emb, use_container_width=True)
             # Gráficas 2 y 3: Metros Cúbicos Consumidos y Caudal (L/s)
@@ -6952,6 +6970,5 @@ with st.sidebar.expander("📏 Extensómetros (EDV)"):
 # ============================================================
 
 # FIN DEL CÓDIGO — SISTEMA MIMAT-C26 (amb)
-# Desarrollado por Mauricio Mora
 
 # ============================================================
