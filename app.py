@@ -161,7 +161,7 @@ if intervalo_segundos > 0:
             width=0
         )
 
-st.sidebar.caption(f"\U0001F551 Hora local: {datetime.now(timezone(timedelta(hours=-5))).strftime('%I:%M:%S %p COT')}")
+st.sidebar.caption(f"\U0001F551 Hora local: {datetime.now(colombia_tz).strftime('%I:%M:%S %p COT')}")
 
 # ============================================================
 # 1. FUNCION DE RENDERIZADO DE ENCABEZADO Y NOVEDADES DINAMICAS
