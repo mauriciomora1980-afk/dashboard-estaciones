@@ -114,7 +114,14 @@ def render_logo_sidebar(es_edicion_110=False):
     </div>
     ''', unsafe_allow_html=True)
 
-render_logo_sidebar()
+modo_visual = st.sidebar.radio(
+    "🎨 Ambientación Visual:",
+    ["⚡ SCADA Clásico (Ingeniería Dark)", "💧 Portal amb (Edición 110 Años)"],
+    index=0,
+    help="Permite alternar entre el diseño técnico SCADA clásico preferido y la nueva imagen conmemorativa institucional."
+)
+es_110 = (modo_visual == "💧 Portal amb (Edición 110 Años)")
+render_logo_sidebar(es_edicion_110=es_110)
 
 # ============================================================
 # CONTROL DE AUTO-REFRESCO AUTOMATICO EN VIVO
