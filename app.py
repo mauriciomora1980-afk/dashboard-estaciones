@@ -2739,17 +2739,25 @@ def enriquecer_datos_embalse(df):
         df_e['caudal_medio_bosconia_ls'] = q_serie_ls.values.round(1)
     else:
         df_e['caudal_medio_bosconia_ls'] = round(q_base_crc, 1)
-    # Integración temporal exacta del caudalímetro real: V(t) = Integral(Q_CRC(t) dt) en m³
+    # 1. SALIDAS: Integración temporal exacta de CRC Bosconia, Rebose Morning Glory y Salidas Totales
     dt_paso_s = df_e['timestamp'].diff().dt.total_seconds().fillna(0.0).clip(lower=0.0, upper=3600.0)
-    q_m3s_paso = pd.to_numeric(df_e['caudal_medio_bosconia_ls'], errors='coerce').fillna(0.0) / 1000.0
-    df_e['m3_consumidos_bosconia'] = (q_m3s_paso * dt_paso_s).cumsum().round(1)
-    # Caudal de Llegada / Carga de Cuenca (Aporte Afluentes Q_in en L/s): Q_in = dV/dt + Q_salidas
     q_filtraciones_ls = 51.0
+    q_crc_m3s = pd.to_numeric(df_e['caudal_medio_bosconia_ls'], errors='coerce').fillna(0.0) / 1000.0
+    q_reb_m3s = pd.to_numeric(df_e['caudal_rebose_ls'], errors='coerce').fillna(0.0) / 1000.0
+    df_e['m3_consumidos_bosconia'] = (q_crc_m3s * dt_paso_s).cumsum().round(1)
+    df_e['m3_rebose_mg_acum'] = (q_reb_m3s * dt_paso_s).cumsum().round(1)
+    df_e['caudal_salidas_totales_ls'] = (df_e['caudal_medio_bosconia_ls'] + df_e['caudal_rebose_ls'] + q_filtraciones_ls).round(1)
+    q_sal_tot_m3s = df_e['caudal_salidas_totales_ls'] / 1000.0
+    df_e['m3_salidas_totales_acum'] = (q_sal_tot_m3s * dt_paso_s).cumsum().round(1)
+    # 2. ENTRADAS: Caudal de Llegada / Carga de Cuenca (Cola + Subsidiarias) y Volumen Acumulado de Entrada (m³)
     v_m3_serie = df_e['volumen_total_hm3'] * 1_000_000.0
     dv_dt_m3s = (v_m3_serie.diff() / dt_paso_s.replace(0, np.nan)).fillna(0.0)
     dv_dt_ls_suave = (dv_dt_m3s * 1000.0).rolling(window=3, min_periods=1, center=True).mean().fillna(0.0)
-    q_salidas_totales_ls = df_e['caudal_medio_bosconia_ls'] + df_e['caudal_rebose_ls'] + q_filtraciones_ls
-    df_e['caudal_afluentes_ls'] = (dv_dt_ls_suave + q_salidas_totales_ls).clip(lower=0.0, upper=9000.0).round(1)
+    df_e['caudal_afluentes_ls'] = (dv_dt_ls_suave + df_e['caudal_salidas_totales_ls']).clip(lower=0.0, upper=9000.0).round(1)
+    q_in_m3s = df_e['caudal_afluentes_ls'] / 1000.0
+    df_e['m3_entrada_cuenca_acum'] = (q_in_m3s * dt_paso_s).cumsum().round(1)
+    # 3. BALANCE DE CAUDALES: Entrada Neta menos Salida Total (dV/dt en L/s)
+    df_e['balance_neto_caudales_ls'] = (df_e['caudal_afluentes_ls'] - df_e['caudal_salidas_totales_ls']).round(1)
     return df_e
 def enriquecer_datos_surata(df):
     """
@@ -2781,31 +2789,69 @@ def consolidar_balance_diario_embalse(df_emb_enr):
         g_s = grupo.sort_values('timestamp')
         if len(g_s) < 2:
             continue
-        c_ini = g_s.iloc[0]['cota_embalse_msnm']
-        c_fin = g_s.iloc[-1]['cota_embalse_msnm']
+        c_ini = float(g_s.iloc[0]['cota_embalse_msnm'])
+        c_fin = float(g_s.iloc[-1]['cota_embalse_msnm'])
         t_ini = g_s.iloc[0]['timestamp']
         t_fin = g_s.iloc[-1]['timestamp']
         delta_s = max(1.0, (t_fin - t_ini).total_seconds())
         delta_horas = delta_s / 3600.0
         delta_cm = (c_ini - c_fin) * 100.0
-        if 'm3_consumidos_bosconia' in g_s.columns and 'caudal_medio_bosconia_ls' in g_s.columns:
-            m3_dia = max(0.0, float(g_s['m3_consumidos_bosconia'].iloc[-1] - g_s['m3_consumidos_bosconia'].iloc[0]))
-            q_ls = float(g_s['caudal_medio_bosconia_ls'].mean())
+        dt_g = g_s['timestamp'].diff().dt.total_seconds().fillna(0.0).clip(lower=0.0, upper=3600.0)
+        # 1. ENTRADAS (Cola + Subsidiarias)
+        q_in_medio = float(g_s['caudal_afluentes_ls'].mean()) if 'caudal_afluentes_ls' in g_s.columns else 0.0
+        m3_in_dia = float(((g_s['caudal_afluentes_ls'] / 1000.0) * dt_g).sum()) if 'caudal_afluentes_ls' in g_s.columns else 0.0
+        # 2. SALIDAS: Válvula CRC Bosconia + Rebose Morning Glory + Salida Total
+        if 'caudal_medio_bosconia_ls' in g_s.columns:
+            q_crc_ls = float(g_s['caudal_medio_bosconia_ls'].mean())
+            m3_crc_dia = float(((g_s['caudal_medio_bosconia_ls'] / 1000.0) * dt_g).sum())
         else:
             v_ini = g_s.iloc[0]['volumen_total_hm3'] * 1_000_000.0
             v_fin = g_s.iloc[-1]['volumen_total_hm3'] * 1_000_000.0
-            m3_dia = max(0.0, v_ini - v_fin)
-            q_ls = (m3_dia / delta_s) * 1000.0 if delta_s > 60 else 0.0
+            m3_crc_dia = max(0.0, v_ini - v_fin)
+            q_crc_ls = (m3_crc_dia / delta_s) * 1000.0 if delta_s > 60 else 0.0
+        q_reb_ls = float(g_s['caudal_rebose_ls'].mean()) if 'caudal_rebose_ls' in g_s.columns else 0.0
+        m3_reb_dia = float(((g_s['caudal_rebose_ls'] / 1000.0) * dt_g).sum()) if 'caudal_rebose_ls' in g_s.columns else 0.0
+        q_sal_tot_ls = float(g_s['caudal_salidas_totales_ls'].mean()) if 'caudal_salidas_totales_ls' in g_s.columns else (q_crc_ls + q_reb_ls + 51.0)
+        m3_sal_tot_dia = float(((g_s['caudal_salidas_totales_ls'] / 1000.0) * dt_g).sum()) if 'caudal_salidas_totales_ls' in g_s.columns else (m3_crc_dia + m3_reb_dia)
+        # 3. BALANCE NETO DE CAUDALES
+        q_bal_neto_ls = float(g_s['balance_neto_caudales_ls'].mean()) if 'balance_neto_caudales_ls' in g_s.columns else (q_in_medio - q_sal_tot_ls)
         resumen_dias.append({
             "Fecha": fecha_dia,
             "Horas Monitoreadas": round(delta_horas, 1),
             "Cota Inicial (msnm)": round(c_ini, 3),
             "Cota Final (msnm)": round(c_fin, 3),
             "Descenso (cm)": round(delta_cm, 2),
-            "Metros Cúbicos Entregados Bosconia (m³)": round(m3_dia, 1),
-            "Caudal Medio CRC Bosconia (L/s)": round(q_ls, 1),
-            "Vol. Útil Remanente (hm³)": round(g_s.iloc[-1]['volumen_util_hm3'], 3)
+            "📥 Caudal Medio Entrada Cuenca (L/s)": round(q_in_medio, 1),
+            "📥 Volumen Entrada Cuenca (m³)": round(m3_in_dia, 1),
+            "🚰 Caudal Medio CRC Bosconia (L/s)": round(q_crc_ls, 1),
+            "🚰 Metros Cúbicos Entregados Bosconia (m³)": round(m3_crc_dia, 1),
+            "🌀 Caudal Medio Rebose MG (L/s)": round(q_reb_ls, 1),
+            "🌀 Volumen Rebose MG (m³)": round(m3_reb_dia, 1),
+            "📤 Caudal Medio Salida Total (L/s)": round(q_sal_tot_ls, 1),
+            "📤 Volumen Salida Total (m³)": round(m3_sal_tot_dia, 1),
+            "⚖️ Balance Neto Caudales (L/s)": round(q_bal_neto_ls, 1),
+            "Vol. Útil Remanente (hm³)": round(float(g_s.iloc[-1]['volumen_util_hm3']), 3)
         })
+    if len(resumen_dias) >= 1:
+        df_tmp = pd.DataFrame(resumen_dias)
+        fila_prom = {
+            "Fecha": "📊 PROMEDIO / TOTAL PERÍODO",
+            "Horas Monitoreadas": round(float(df_tmp["Horas Monitoreadas"].sum()), 1),
+            "Cota Inicial (msnm)": round(float(df_tmp["Cota Inicial (msnm)"].iloc[0]), 3),
+            "Cota Final (msnm)": round(float(df_tmp["Cota Final (msnm)"].iloc[-1]), 3),
+            "Descenso (cm)": round(float((df_tmp["Cota Inicial (msnm)"].iloc[0] - df_tmp["Cota Final (msnm)"].iloc[-1]) * 100.0), 2),
+            "📥 Caudal Medio Entrada Cuenca (L/s)": round(float(df_tmp["📥 Caudal Medio Entrada Cuenca (L/s)"].mean()), 1),
+            "📥 Volumen Entrada Cuenca (m³)": round(float(df_tmp["📥 Volumen Entrada Cuenca (m³)"].sum()), 1),
+            "🚰 Caudal Medio CRC Bosconia (L/s)": round(float(df_tmp["🚰 Caudal Medio CRC Bosconia (L/s)"].mean()), 1),
+            "🚰 Metros Cúbicos Entregados Bosconia (m³)": round(float(df_tmp["🚰 Metros Cúbicos Entregados Bosconia (m³)"].sum()), 1),
+            "🌀 Caudal Medio Rebose MG (L/s)": round(float(df_tmp["🌀 Caudal Medio Rebose MG (L/s)"].mean()), 1),
+            "🌀 Volumen Rebose MG (m³)": round(float(df_tmp["🌀 Volumen Rebose MG (m³)"].sum()), 1),
+            "📤 Caudal Medio Salida Total (L/s)": round(float(df_tmp["📤 Caudal Medio Salida Total (L/s)"].mean()), 1),
+            "📤 Volumen Salida Total (m³)": round(float(df_tmp["📤 Volumen Salida Total (m³)"].sum()), 1),
+            "⚖️ Balance Neto Caudales (L/s)": round(float(df_tmp["⚖️ Balance Neto Caudales (L/s)"].mean()), 1),
+            "Vol. Útil Remanente (hm³)": round(float(df_tmp["Vol. Útil Remanente (hm³)"].iloc[-1]), 3)
+        }
+        resumen_dias.append(fila_prom)
     return pd.DataFrame(resumen_dias)
 def preparar_df_para_exportar(df, nombre_estacion=None):
     if df.empty:
@@ -2817,7 +2863,7 @@ def preparar_df_para_exportar(df, nombre_estacion=None):
     es_embalse = (nombre_estacion == "Embalse" or id_est == "Embalse") and (c_mean > 800)
     es_surata = (nombre_estacion == "Surata" or id_est == "Surata")
     if es_embalse and 'temperatura' in df_export.columns:
-        # Exportación especializada para Embalse Tona (Limpia y con Encabezados Hidráulicos Oficiales)
+        # Exportación especializada para Embalse Tona (Limpia y con Encabezados Hidráulicos Oficiales: Entradas, Salidas y Balance)
         df_enr = enriquecer_datos_embalse(df)
         if not df_enr.empty and 'cota_embalse_msnm' in df_enr.columns:
             df_res = pd.DataFrame()
@@ -2826,13 +2872,25 @@ def preparar_df_para_exportar(df, nombre_estacion=None):
             df_res['Cota_Calibrada_msnm'] = df_enr['cota_embalse_msnm'].round(3)
             df_res['Lectura_Cruda_Radar_msnm'] = pd.to_numeric(df_enr['temperatura'], errors='coerce').round(3)
             df_res['Margen_a_Rebose_cm'] = ((885.75 - df_enr['cota_embalse_msnm']) * 100.0).round(2)
-            df_res['Caudal_Rebose_Aprox_Morning_Glory_ls'] = df_enr['caudal_rebose_ls'].round(1)
             df_res['Volumen_Total_hm3'] = df_enr['volumen_total_hm3'].round(3)
             df_res['Volumen_Util_hm3'] = df_enr['volumen_util_hm3'].round(3)
+            if 'caudal_afluentes_ls' in df_enr.columns:
+                df_res['Caudal_Entrada_Cuenca_Ls'] = df_enr['caudal_afluentes_ls'].round(1)
+            if 'm3_entrada_cuenca_acum' in df_enr.columns:
+                df_res['Volumen_Entrada_Cuenca_Acum_m3'] = df_enr['m3_entrada_cuenca_acum'].round(1)
             if 'caudal_medio_bosconia_ls' in df_enr.columns:
-                df_res['Caudal_CRC_Bosconia_Ls'] = df_enr['caudal_medio_bosconia_ls'].round(1)
+                df_res['Caudal_Salida_CRC_Bosconia_Ls'] = df_enr['caudal_medio_bosconia_ls'].round(1)
             if 'm3_consumidos_bosconia' in df_enr.columns:
-                df_res['Volumen_Entregado_Bosconia_m3'] = df_enr['m3_consumidos_bosconia'].round(1)
+                df_res['Volumen_Entregado_Bosconia_Acum_m3'] = df_enr['m3_consumidos_bosconia'].round(1)
+            df_res['Caudal_Salida_Rebose_Morning_Glory_Ls'] = df_enr['caudal_rebose_ls'].round(1)
+            if 'm3_rebose_mg_acum' in df_enr.columns:
+                df_res['Volumen_Salida_Rebose_MG_Acum_m3'] = df_enr['m3_rebose_mg_acum'].round(1)
+            if 'caudal_salidas_totales_ls' in df_enr.columns:
+                df_res['Caudal_Salida_Total_Embalse_Ls'] = df_enr['caudal_salidas_totales_ls'].round(1)
+            if 'm3_salidas_totales_acum' in df_enr.columns:
+                df_res['Volumen_Salida_Total_Acum_m3'] = df_enr['m3_salidas_totales_acum'].round(1)
+            if 'balance_neto_caudales_ls' in df_enr.columns:
+                df_res['Balance_Neto_Caudales_Ls'] = df_enr['balance_neto_caudales_ls'].round(1)
             if 'voltaje_bateria' in df_enr.columns:
                 df_res['Voltaje_Bateria_V'] = pd.to_numeric(df_enr['voltaje_bateria'], errors='coerce').round(2)
             if 'estado_bateria' in df_enr.columns:
@@ -3040,35 +3098,50 @@ def generar_resumen_estadistico(df, nombre_estacion=""):
         c_max = df_enr['cota_embalse_msnm'].max()
         c_min = df_enr['cota_embalse_msnm'].min()
         c_mean = df_enr['cota_embalse_msnm'].mean()
-        m3_tot = df_enr['m3_consumidos_bosconia'].max()
         desc_cm = (c_ini - c_fin) * 100.0
-        t_ini = df_enr['timestamp'].iloc[0]
-        t_fin = df_enr['timestamp'].iloc[-1]
-        delta_s = max(1.0, (t_fin - t_ini).total_seconds())
-        q_medio_ls = (m3_tot / delta_s) * 1000.0 if delta_s > 60 else 0.0
         vol_util_act = df_enr['volumen_util_hm3'].iloc[-1]
-        dias_aut = (vol_util_act * 1_000_000.0) / (q_medio_ls * 86.4) if q_medio_ls > 0 else None
-        resumen.append("🌊 PARÁMETROS HIDRÁULICOS DEL EMBALSE:")
+        # Entradas
+        q_in_mean = float(df_enr['caudal_afluentes_ls'].mean()) if 'caudal_afluentes_ls' in df_enr.columns else 0.0
+        q_in_max = float(df_enr['caudal_afluentes_ls'].max()) if 'caudal_afluentes_ls' in df_enr.columns else 0.0
+        q_in_min = float(df_enr['caudal_afluentes_ls'].min()) if 'caudal_afluentes_ls' in df_enr.columns else 0.0
+        m3_in_tot = float(df_enr['m3_entrada_cuenca_acum'].max()) if 'm3_entrada_cuenca_acum' in df_enr.columns else 0.0
+        # Salidas
+        q_crc_mean = float(df_enr['caudal_medio_bosconia_ls'].mean()) if 'caudal_medio_bosconia_ls' in df_enr.columns else 0.0
+        m3_crc_tot = float(df_enr['m3_consumidos_bosconia'].max()) if 'm3_consumidos_bosconia' in df_enr.columns else 0.0
+        q_reb_mean = float(df_enr['caudal_rebose_ls'].mean()) if 'caudal_rebose_ls' in df_enr.columns else 0.0
+        m3_reb_tot = float(df_enr['m3_rebose_mg_acum'].max()) if 'm3_rebose_mg_acum' in df_enr.columns else 0.0
+        q_sal_tot_mean = float(df_enr['caudal_salidas_totales_ls'].mean()) if 'caudal_salidas_totales_ls' in df_enr.columns else (q_crc_mean + q_reb_mean + 51.0)
+        m3_sal_tot = float(df_enr['m3_salidas_totales_acum'].max()) if 'm3_salidas_totales_acum' in df_enr.columns else (m3_crc_tot + m3_reb_tot)
+        # Balance neto
+        q_bal_mean = float(df_enr['balance_neto_caudales_ls'].mean()) if 'balance_neto_caudales_ls' in df_enr.columns else (q_in_mean - q_sal_tot_mean)
+        dias_aut = (vol_util_act * 1_000_000.0) / (q_crc_mean * 86.4) if q_crc_mean > 0 else None
+        resumen.append("🌊 1. PARÁMETROS HIDRÁULICOS DEL EMBALSE:")
         resumen.append(f"   • Cota Actual:                 {c_fin:.3f} msnm")
         resumen.append(f"   • Cota Inicial del Período:    {c_ini:.3f} msnm")
         resumen.append(f"   • Cota Promedio:               {c_mean:.3f} msnm")
-        resumen.append(f"   • Cota Máxima:                 {c_max:.3f} msnm")
-        resumen.append(f"   • Cota Mínima:                 {c_min:.3f} msnm")
-        resumen.append(f"   • Descenso Acumulado:          {desc_cm:+.2f} cm")
+        resumen.append(f"   • Cota Máxima / Mínima:        {c_max:.3f} msnm / {c_min:.3f} msnm")
+        resumen.append(f"   • Descenso / Variación Nivel:  {desc_cm:+.2f} cm")
+        resumen.append(f"   • Volumen Útil Remanente:      {vol_util_act:.3f} hm³")
         resumen.append("")
-        resumen.append("💧 EXTRACCIÓN & BALANCE DE MASAS PTAP BOSCONIA:")
-        resumen.append(f"   • Metros Cúbicos Entregados:   {m3_tot:,.1f} m³")
-        resumen.append(f"   • Tasa Neta Vaciado Embalse:    {q_medio_ls:,.1f} L/s ({q_medio_ls/1000.0:.3f} m³/s)")
-        resumen.append(f"   • Volumen Útil Remanente:       {vol_util_act:.3f} hm³")
-        resumen.append(f"   • Autonomía Hídrica:           {f'{dias_aut:.1f} Días' if dias_aut else 'Indefinida'}")
-        resumen.append(f"   • Registros Analizados:         {len(df)}")
+        resumen.append("📥 2. ENTRADAS AL EMBALSE (LLEGADA DESDE COLA Y QUEBRADAS SUBSIDIARIAS):")
+        resumen.append(f"   • Caudal Medio de Entrada:     {q_in_mean:,.1f} L/s ({q_in_mean/1000.0:.3f} m³/s)")
+        resumen.append(f"   • Caudal Máximo / Mínimo:      {q_in_max:,.1f} L/s / {q_in_min:,.1f} L/s")
+        resumen.append(f"   • Volumen Total Ingresado:     {m3_in_tot:,.1f} m³")
         resumen.append("")
-        resumen.append("⚖️ ECUACIÓN DE BALANCE HIDROLÓGICO:")
-        resumen.append(f"   Q_CRC_Bosconia (~400 L/s) = Q_Tasa_Neta ({q_medio_ls:,.0f} L/s) + Q_Afluentes_Cuenca (~{max(0, 400 - q_medio_ls):,.0f} L/s)")
-        resumen.append("   * Afluentes tributarios: Río Tona + Qda. Ranás (fondo cola) + Qda. el Gualilo (mitad) + Qda. La Reforma (presa) + Qda. Los Monos (litoral derecho frente a Reforma).")
-        resumen.append("   * Nota: El caudal de rebose del Morning Glory (885.75 msnm) es un dato aproximado mientras se calibra esa ecuación.")
+        resumen.append("📤 3. SALIDAS DEL EMBALSE (CRC BOSCONIA + REBOSE MORNING GLORY + FILTRACIONES):")
+        resumen.append(f"   • Caudal Medio CRC Bosconia:   {q_crc_mean:,.1f} L/s (Sensor ET_FIT401)")
+        resumen.append(f"   • Volumen Entregado Bosconia:  {m3_crc_tot:,.1f} m³")
+        resumen.append(f"   • Caudal Medio Rebose MG:      {q_reb_mean:,.1f} L/s")
+        resumen.append(f"   • Volumen Evacuado Rebose MG:  {m3_reb_tot:,.1f} m³")
+        resumen.append(f"   • Caudal Medio Salida Total:   {q_sal_tot_mean:,.1f} L/s (Incluye ~51 L/s filtraciones)")
+        resumen.append(f"   • Volumen Salida Total:        {m3_sal_tot:,.1f} m³")
         resumen.append("")
-        resumen.append("ℹ️ NOTA TÉCNICA: La estación Embalse registra exclusivamente niveles hidrométricos (msnm) y volúmenes hídricos.")
+        resumen.append("⚖️ 4. BALANCE DE CAUDALES (ENTRADAS VS. SALIDAS):")
+        resumen.append(f"   • Balance Neto Promedio (dV/dt): {q_bal_mean:+,.1f} L/s")
+        resumen.append(f"   • Ecuación Verificada:           Entrada ({q_in_mean:,.1f} L/s) - Salida Total ({q_sal_tot_mean:,.1f} L/s) = {q_bal_mean:+,.1f} L/s")
+        resumen.append(f"   • Autonomía Hídrica Estimada:    {f'{dias_aut:.1f} Días' if dias_aut else 'Indefinida'}")
+        resumen.append(f"   • Registros Analizados:          {len(df_enr)}")
+        resumen.append("   * Afluentes tributarios: Río Tona + Qda. Ranás (fondo cola) + Qda. el Gualilo (mitad) + Qda. La Reforma (presa) + Qda. Los Monos (litoral derecho).")
         return "\n".join(resumen)
     # Manejo especializado para Estación Hidrológica Río Suratá — Sector Majadas
     if nombre_estacion == "Surata":
@@ -6224,47 +6297,158 @@ with tab_series:
                 fig_emb.update_yaxes(range=[y_min_span, y_max_span], tickformat=".3f")
             fig_emb.update_layout(height=320, template='plotly_white')
             st.plotly_chart(fig_emb, use_container_width=True)
-            # Gráficas 2 y 3: Metros Cúbicos Consumidos y Caudal (L/s)
+            # 3 Gráficas Hidrodinámicas Oficiales: 1) Entradas, 2) Salidas y 3) Balance de Caudales
             col_emb1, col_emb2 = st.columns(2)
             with col_emb1:
-                fig_m3 = px.area(df_enr_hist, x='timestamp', y='m3_consumidos_bosconia', title='📦 Volumen Entregado a CRC Bosconia (m³ Acumulados)', labels={'m3_consumidos_bosconia': 'Metros Cúbicos (m³)', 'timestamp': 'Fecha/Hora'}, color_discrete_sequence=['#00CC96'])
-                fig_m3.update_layout(height=280, template='plotly_white')
-                st.plotly_chart(fig_m3, use_container_width=True)
+                fig_entradas = go.Figure()
+                if 'caudal_afluentes_ls' in df_enr_hist.columns:
+                    fig_entradas.add_trace(go.Scatter(
+                        x=df_enr_hist['timestamp'],
+                        y=df_enr_hist['caudal_afluentes_ls'],
+                        mode='lines',
+                        name='📥 Caudal Entrada Cuenca (L/s)',
+                        line=dict(color='#00CC96', width=2.5),
+                        fill='tozeroy',
+                        fillcolor='rgba(0, 204, 150, 0.14)'
+                    ))
+                if 'm3_entrada_cuenca_acum' in df_enr_hist.columns:
+                    fig_entradas.add_trace(go.Scatter(
+                        x=df_enr_hist['timestamp'],
+                        y=df_enr_hist['m3_entrada_cuenca_acum'],
+                        mode='lines',
+                        name='📦 Vol. Acumulado Entrada (m³)',
+                        line=dict(color='#00897B', width=2, dash='dot'),
+                        yaxis='y2'
+                    ))
+                fig_entradas.update_layout(
+                    title='📥 1. Entradas al Embalse: Llegada desde Cola y Subsidiarias',
+                    xaxis_title='Fecha/Hora',
+                    yaxis=dict(title='Caudal Entrada (L/s)'),
+                    yaxis2=dict(title='Vol. Acumulado (m³)', overlaying='y', side='right', showgrid=False),
+                    height=300,
+                    template='plotly_white',
+                    legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
+                )
+                st.plotly_chart(fig_entradas, use_container_width=True)
             with col_emb2:
-                fig_q = go.Figure()
-                if 'caudal_afluentes_ls' in df_enr_hist.columns and df_enr_hist['caudal_afluentes_ls'].max() > 0:
-                    fig_q.add_trace(go.Scatter(x=df_enr_hist['timestamp'], y=df_enr_hist['caudal_afluentes_ls'], mode='lines', name='📥 Llegada / Carga Cuenca (Afluentes L/s)', line=dict(color='#00CC96', width=2.5)))
-                fig_q.add_trace(go.Scatter(x=df_enr_hist['timestamp'], y=df_enr_hist['caudal_medio_bosconia_ls'], mode='lines', name='🚰 Salida CRC Bosconia (L/s)', line=dict(color='#005073', width=2)))
+                fig_salidas = go.Figure()
+                fig_salidas.add_trace(go.Scatter(
+                    x=df_enr_hist['timestamp'],
+                    y=df_enr_hist['m3_consumidos_bosconia'],
+                    mode='lines',
+                    name='📦 Vol. Entregado CRC Bosconia (m³)',
+                    line=dict(color='#005073', width=2.2),
+                    fill='tozeroy',
+                    fillcolor='rgba(0, 80, 115, 0.14)',
+                    yaxis='y2'
+                ))
+                fig_salidas.add_trace(go.Scatter(
+                    x=df_enr_hist['timestamp'],
+                    y=df_enr_hist['caudal_medio_bosconia_ls'],
+                    mode='lines',
+                    name='🚰 Caudal Salida CRC Bosconia (L/s)',
+                    line=dict(color='#0288D1', width=2.3)
+                ))
                 if df_enr_hist['caudal_rebose_ls'].max() > 0:
-                    fig_q.add_trace(go.Scatter(x=df_enr_hist['timestamp'], y=df_enr_hist['caudal_rebose_ls'], mode='lines', name='🌀 Rebose MG (L/s)', line=dict(color='#FF4B4B', width=2, dash='dot')))
-                fig_q.update_layout(title='⚡ Balance de Caudales del Embalse: Entradas vs. Salidas (L/s)', xaxis_title='Fecha/Hora', yaxis_title='Caudal (L/s)', height=280, template='plotly_white', legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1))
-                st.plotly_chart(fig_q, use_container_width=True)
-            # Bloque de Balance Volumétrico Bosconia en Vivo
+                    fig_salidas.add_trace(go.Scatter(
+                        x=df_enr_hist['timestamp'],
+                        y=df_enr_hist['caudal_rebose_ls'],
+                        mode='lines',
+                        name='🌀 Salida Rebose MG (L/s)',
+                        line=dict(color='#FF4B4B', width=2, dash='dot')
+                    ))
+                fig_salidas.update_layout(
+                    title='📤 2. Salidas del Embalse: Válvula CRC Bosconia y Rebose MG',
+                    xaxis_title='Fecha/Hora',
+                    yaxis=dict(title='Caudal Salida (L/s)'),
+                    yaxis2=dict(title='Vol. Entregado CRC (m³)', overlaying='y', side='right', showgrid=False),
+                    height=300,
+                    template='plotly_white',
+                    legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
+                )
+                st.plotly_chart(fig_salidas, use_container_width=True)
+            # Gráfica 3: Balance de Caudales (Entradas vs. Salidas Totales y Balance Neto dV/dt)
+            fig_q = go.Figure()
+            if 'caudal_afluentes_ls' in df_enr_hist.columns:
+                fig_q.add_trace(go.Scatter(
+                    x=df_enr_hist['timestamp'],
+                    y=df_enr_hist['caudal_afluentes_ls'],
+                    mode='lines',
+                    name='📥 Entrada Cuenca (Cola + Subsidiarias) [L/s]',
+                    line=dict(color='#00CC96', width=2.6)
+                ))
+            if 'caudal_salidas_totales_ls' in df_enr_hist.columns:
+                fig_q.add_trace(go.Scatter(
+                    x=df_enr_hist['timestamp'],
+                    y=df_enr_hist['caudal_salidas_totales_ls'],
+                    mode='lines',
+                    name='📤 Salida Total (CRC + Rebose MG + Filtraciones) [L/s]',
+                    line=dict(color='#E65100', width=2.4)
+                ))
+            fig_q.add_trace(go.Scatter(
+                x=df_enr_hist['timestamp'],
+                y=df_enr_hist['caudal_medio_bosconia_ls'],
+                mode='lines',
+                name='🚰 Salida CRC Bosconia [L/s]',
+                line=dict(color='#005073', width=2)
+            ))
+            if df_enr_hist['caudal_rebose_ls'].max() > 0:
+                fig_q.add_trace(go.Scatter(
+                    x=df_enr_hist['timestamp'],
+                    y=df_enr_hist['caudal_rebose_ls'],
+                    mode='lines',
+                    name='🌀 Salida Rebose MG [L/s]',
+                    line=dict(color='#FF4B4B', width=2, dash='dot')
+                ))
+            if 'balance_neto_caudales_ls' in df_enr_hist.columns:
+                fig_q.add_trace(go.Scatter(
+                    x=df_enr_hist['timestamp'],
+                    y=df_enr_hist['balance_neto_caudales_ls'],
+                    mode='lines',
+                    name='⚖️ Balance Neto dV/dt (Entrada - Salida) [L/s]',
+                    line=dict(color='#7E57C2', width=2, dash='dash')
+                ))
+            fig_q.add_hline(y=0.0, line_dash="dot", line_color="gray")
+            fig_q.update_layout(
+                title='⚖️ 3. Balance de Caudales del Embalse: Entradas vs. Salidas y Balance Neto (L/s)',
+                xaxis_title='Fecha/Hora',
+                yaxis_title='Caudal (L/s)',
+                height=320,
+                template='plotly_white',
+                legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
+            )
+            st.plotly_chart(fig_q, use_container_width=True)
+            # Bloque de Balance Volumétrico y Promedios en Vivo
             if not df_enr_hist.empty:
-                st.markdown("### 💧 Balance Hidrodinámico del Embalse (Entradas de Cuenca vs. Salidas)")
+                st.markdown("### 💧 Balance Hidrodinámico y Promedios del Período (Entradas, Salidas y Balance)")
+                m3_in_periodo = float(df_enr_hist['m3_entrada_cuenca_acum'].iloc[-1]) if 'm3_entrada_cuenca_acum' in df_enr_hist.columns else 0.0
                 m3_totales_periodo = float(df_enr_hist['m3_consumidos_bosconia'].iloc[-1]) if 'm3_consumidos_bosconia' in df_enr_hist.columns else 0.0
+                m3_sal_tot_periodo = float(df_enr_hist['m3_salidas_totales_acum'].iloc[-1]) if 'm3_salidas_totales_acum' in df_enr_hist.columns else 0.0
                 c_ini_p = float(df_enr_hist['cota_embalse_msnm'].iloc[0])
                 c_fin_p = float(df_enr_hist['cota_embalse_msnm'].iloc[-1])
                 var_lamina_cm = (c_fin_p - c_ini_p) * 100.0
                 q_crc_medio_ls = float(df_enr_hist['caudal_medio_bosconia_ls'].mean()) if 'caudal_medio_bosconia_ls' in df_enr_hist.columns else 25.0
                 q_reb_medio_ls = float(df_enr_hist['caudal_rebose_ls'].mean()) if 'caudal_rebose_ls' in df_enr_hist.columns else 0.0
                 q_afl_medio_ls = float(df_enr_hist['caudal_afluentes_ls'].mean()) if 'caudal_afluentes_ls' in df_enr_hist.columns else 0.0
-                cb1, cb2, cb3, cb4 = st.columns(4)
-                cb1.metric("📥 Aporte Medio Cuenca", f"~{q_afl_medio_ls:,.0f} L/s", help="Caudal medio de llegada desde la cola del embalse y microcuencas tributarias (Ranas, Gualilo, Reforma, Monos)")
-                cb2.metric("🌀 Rebose Medio Morning Glory", f"~{q_reb_medio_ls:,.0f} L/s", help="Vertimiento medio evacuado por el cáliz hacia Puente Tona")
-                cb3.metric("🚰 Caudal Medio CRC Bosconia", f"{q_crc_medio_ls:,.1f} L/s", help="Promedio de extracción o salida pasiva medido por el caudalímetro ET_FIT401")
-                cb4.metric("🌊 Cota Calibrada Actual", f"{c_fin_p:.3f} msnm", delta=f"{var_lamina_cm:+.2f} cm en el período")
+                q_sal_tot_medio_ls = float(df_enr_hist['caudal_salidas_totales_ls'].mean()) if 'caudal_salidas_totales_ls' in df_enr_hist.columns else (q_crc_medio_ls + q_reb_medio_ls + 51.0)
+                q_bal_neto_medio_ls = float(df_enr_hist['balance_neto_caudales_ls'].mean()) if 'balance_neto_caudales_ls' in df_enr_hist.columns else (q_afl_medio_ls - q_sal_tot_medio_ls)
+                cb1, cb2, cb3, cb4, cb5 = st.columns(5)
+                cb1.metric("📥 Entrada Media Cuenca", f"~{q_afl_medio_ls:,.1f} L/s", delta=f"{m3_in_periodo:,.0f} m³ ingresados", help="Caudal medio y volumen total de llegada desde la cola del embalse y quebradas subsidiarias")
+                cb2.metric("🚰 Salida Media CRC Bosconia", f"{q_crc_medio_ls:,.1f} L/s", delta=f"{m3_totales_periodo:,.1f} m³ entregados", help="Promedio y volumen entregado medido por el caudalímetro ET_FIT401")
+                cb3.metric("🌀 Salida Media Rebose MG", f"~{q_reb_medio_ls:,.1f} L/s", help="Vertimiento medio evacuado por el Morning Glory hacia Puente Tona")
+                cb4.metric("📤 Salida Total Media", f"~{q_sal_tot_medio_ls:,.1f} L/s", delta=f"{m3_sal_tot_periodo:,.0f} m³ evacuados", help="Suma de CRC Bosconia + Rebose Morning Glory + Filtraciones (~51 L/s)")
+                cb5.metric("⚖️ Balance Neto Caudales", f"{q_bal_neto_medio_ls:+,.1f} L/s", delta=f"{var_lamina_cm:+.2f} cm ({c_fin_p:.3f} msnm)", help="Diferencia neta entre Entrada de Cuenca y Salida Total (dV/dt)")
                 st.markdown(f"""
                 <div style="background: rgba(0,80,115,0.05); padding: 10px 14px; border-radius: 6px; border-left: 3px solid #005073; margin: 8px 0; font-size: 12.5px;">
                     ⚖️ <strong>Ecuación de Continuidad e Hidrodinámica del Vaso:</strong><br>
-                    <code>Entrada Cuenca (~{q_afl_medio_ls:,.0f} L/s) = dV/dt ({var_lamina_cm:+.2f} cm) + Rebose Morning Glory (~{q_reb_medio_ls:,.0f} L/s) + Salida CRC ({q_crc_medio_ls:,.1f} L/s) + Filtraciones (~51 L/s)</code><br>
-                    <em>Volumen total integrado entregado a Bosconia en el período: <strong>{m3_totales_periodo:,.1f} m³</strong>.</em>
+                    <code>Entrada Cuenca (~{q_afl_medio_ls:,.1f} L/s | {m3_in_periodo:,.0f} m³) - Salida Total (~{q_sal_tot_medio_ls:,.1f} L/s | {m3_sal_tot_periodo:,.0f} m³) = Balance Neto dV/dt ({q_bal_neto_medio_ls:+,.1f} L/s | ΔH {var_lamina_cm:+.2f} cm)</code><br>
+                    <em>Detalle Salidas: Válvula CRC Bosconia = <strong>{q_crc_medio_ls:,.1f} L/s ({m3_totales_periodo:,.1f} m³)</strong> • Rebose Morning Glory = <strong>~{q_reb_medio_ls:,.1f} L/s</strong> • Filtraciones = <strong>~51.0 L/s</strong>.</em>
                 </div>
                 """, unsafe_allow_html=True)
                 df_bal_24h_vista = consolidar_balance_diario_embalse(df_enr_hist)
                 if not df_bal_24h_vista.empty:
-                    st.markdown("#### 📅 Consolidado por Bloques de 24 Horas Exactas:")
-                    st.dataframe(df_bal_24h_vista, use_container_width=True)
+                    st.markdown("#### 📅 Tabla de Promedios y Consolidado Diario (Entradas, Salidas y Balance — 24 Horas Exactas):")
+                    st.dataframe(df_bal_24h_vista, use_container_width=True, hide_index=True)
         elif seleccion == "Surata":
             df_enr_sur_s = enriquecer_datos_surata(df_hist)
             if not df_enr_sur_s.empty:
@@ -6485,10 +6669,11 @@ with tab_series:
             if not df_enr_exp.empty:
                 df_bal_exp = consolidar_balance_diario_embalse(df_enr_exp)
                 if not df_bal_exp.empty:
-                    st.markdown("### 📊 Balance Diario Consolidado hacia PTAP Bosconia (24 Horas Exactas):")
-                    st.dataframe(df_bal_exp, use_container_width=True)
-                with st.expander("📋 Ver Matriz Detallada Enriquecida"):
-                    st.dataframe(df_enr_exp, use_container_width=True)
+                    st.markdown("### 📊 Balance Diario Consolidado y Promedios (Entradas, Salidas y Balance de Caudales — 24h):")
+                    st.dataframe(df_bal_exp, use_container_width=True, hide_index=True)
+                with st.expander("📋 Ver Matriz Detallada Enriquecida (Entradas, Salidas y Balance)"):
+                    df_vista_exp = preparar_df_para_exportar(df_exp, "Embalse")
+                    st.dataframe(df_vista_exp, use_container_width=True, hide_index=True)
             else:
                 with st.expander("📋 Ver Matriz de Datos"):
                     st.dataframe(df_exp, use_container_width=True)
