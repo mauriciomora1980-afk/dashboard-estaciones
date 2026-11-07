@@ -535,21 +535,23 @@ def obtener_semaforo_hidrologico_surata(
     delta_cota_embalse_cm_1h: float = 0.0,
     q_rebose_mg_ls: float = 0.0,
     sensor_activo_ideam: str = "0230",
-    cota_embalse_msnm: float = 885.79
+    cota_embalse_msnm: float = 885.79,
+    detalle_lluvias_parte_alta: str = "",
+    lluvia_acum_parte_alta_mm: float = 0.0
 ) -> dict:
     r"""
     Semáforo Hidrológico Dual de Alerta Temprana hacia Toma Bosconia (`MIMAT-C26 BigQuery` vs. `IDEAM CNE 0023197700`):
-    1. ALERTA TEMPRANA DETERMINÍSTICA ("A LA FIJA" — BigQuery amb en Tiempo Real, Lag ~0 min):
+    1. ALERTA TEMPRANA POR REBOSE EN EMBALSE + LLUVIAS EN PARTE ALTA (`BigQuery amb` en Tiempo Real, Lag ~0 min):
        - Cuenca Alta Suratá (`Monsalve`): Cauce libre sin embalse; toda lluvia fuerte en Monsalve baja directo por el Río Suratá hacia Majadas y Bosconia.
-       - Cuenca Tona + Embalse (`Yerbabuena`, `La Mariana`, `El Pajal`, `Vegas del Quemado` y Radar OTT `Embalse`):
-         * Si el Embalse está EN REBOSE (`cota_embalse_msnm > 885.75 msnm`), la creciente rebosa por el Morning Glory
-           hacia Puente Tona y llega SÍ O SÍ al Río Suratá y Bosconia.
+       - Cuenca Tona + Embalse (`Yerbabuena`, `Vegas del Quemado`, `El Pajal`, `La Mariana` y Radar OTT `Embalse`):
+         * Si el Embalse está EN REBOSE (`cota_embalse_msnm > 885.75 msnm`), el alto valor de rebose por el Morning Glory
+           más la escorrentía acumulada de las lluvias en la parte alta transitan hacia Puente Tona y el Río Suratá (Majadas -> Toma Bosconia).
          * Si el Embalse está BAJO COTA DE REBOSE (`cota_embalse_msnm <= 885.75 msnm`), el vaso del embalse AMORTIGUA
            Y DETIENE esa creciente (almacenando el volumen sin pasar al Morning Glory).
-    2. PREDICCIÓN CONDICIONAL DE CURVA EN ASCENSO (Sensor IDEAM Majadas — Lag de publicación 30–90 min):
-       Por el rezago de transmisión del IDEAM, un incremento en Majadas ($\Delta H / \Delta t > 0$) opera como una
-       proyección cinemática condicional: si mantiene esa pendiente alcanzará un caudal máximo proyectado $Q_{\text{proy}}$,
-       aunque la curva puede estancarse y entrar en recesión si arriba ya dejó de llover.
+    2. COMPENSACIÓN DEL REZAGO DE ACTUALIZACIÓN DEL IDEAM (Sensor IDEAM Majadas — Lag de publicación 30–180+ min):
+       Cuando la estación del IDEAM tarda varias horas en actualizar sus datos mientras el río viene creciendo desde la noche
+       o horas previas por lluvias en la parte alta (`El Pajal`, `Vegas del Quemado`, `Yerbabuena`, `La Mariana`), el sistema
+       advierte explícitamente el rezago del IDEAM y sostiene la alerta por alto valor de rebose y lluvias acumuladas aguas arriba.
     """
     h_ideam_ref = h_m + OFFSET_SENSOR_IDEAM_MAJADAS
     etiqueta_canal = {
@@ -557,32 +559,42 @@ def obtener_semaforo_hidrologico_surata(
         "0232": "Mín. Intra-Horario [0232]",
         "0230": "Corte Horario [0230]"
     }.get(str(sensor_activo_ideam), f"Compilado [{sensor_activo_ideam}]")
-    # Proyección condicional a 60 min si la curva del IDEAM viene en ascenso (sujeta a estancamiento o descenso)
+    estaciones_afectando_txt = (
+        detalle_lluvias_parte_alta.strip()
+        if detalle_lluvias_parte_alta and detalle_lluvias_parte_alta.strip()
+        else "Yerbabuena, Vegas del Quemado, El Pajal, La Mariana"
+    )
+    # Proyección condicional a 60 min o diagnóstico de crecimiento acumulado ante rezago del IDEAM
     if delta_h_30m > 0.01:
         h_proy_1h = min(3.20, h_m + (delta_h_30m * 1.5))
         _, q_proy_1h_ls = calcular_caudal_mira_majadas(h_proy_1h, aplicar_offset_ideam=False)
         txt_proyeccion_curva = (
-            f"📈 Proyección condicional de curva en ascenso: si mantiene pendiente (+{delta_h_30m*100:.0f} cm) "
-            f"llegaría a ~{q_proy_1h_ls:,.0f} L/s ({h_proy_1h:.2f} m), o puede estancarse/descender si cesa el aporte arriba"
+            f"📈 Curva en ascenso (+{delta_h_30m*100:.0f} cm): proyección condicional ~{q_proy_1h_ls:,.0f} L/s ({h_proy_1h:.2f} m)"
         )
     elif delta_h_30m < -0.01:
         txt_proyeccion_curva = f"📉 Curva en recesión/descenso ({delta_h_30m*100:+.0f} cm en últimos cortes)"
+    elif q_ls >= 6500.0 or q_rebose_mg_ls >= 1500.0 or lluvia_acum_parte_alta_mm >= 12.0:
+        txt_proyeccion_curva = (
+            "⏳ Crecimiento acumulado desde horas previas / anoche "
+            "(Nota: estación IDEAM presenta rezago de actualización frente al tránsito real de la creciente)"
+        )
     else:
         txt_proyeccion_curva = "➡️ Curva limnimétrica estable (sin rampa brusca en últimos cortes)"
     # Condición física de vertimiento del Embalse de Tona (Cota > 885.75 msnm)
-    # Si la cota no supera 885.75 msnm (ni proyecta superarla en la hora actual), el Embalse detiene/amortigua la creciente del Río Tona
     cota_proyectada_1h = cota_embalse_msnm + (max(0.0, delta_cota_embalse_cm_1h) / 100.0)
     embalse_en_rebose_activo = (cota_embalse_msnm > NIVEL_REBOSE_EMBALSE) or (cota_proyectada_1h > NIVEL_REBOSE_EMBALSE)
-    # Detectar forzamiento determinístico aguas arriba (Cuenca Suratá libre + Cuenca Tona condicionada a rebose del Embalse)
+    # Detectar forzamiento aguas arriba (Cuenca Suratá libre + Cuenca Tona con Embalse en rebose + lluvias acumuladas en parte alta)
     pulso_critico_tona_rebosando = embalse_en_rebose_activo and (
         lluvia_max_cuenca_tona_mmh >= 22.0
         or delta_cota_embalse_cm_1h >= 3.0
         or q_rebose_mg_ls >= 1800.0
+        or (q_rebose_mg_ls >= 1200.0 and lluvia_acum_parte_alta_mm >= 15.0)
     )
     pulso_moderado_tona_rebosando = embalse_en_rebose_activo and (
         lluvia_max_cuenca_tona_mmh >= 10.0
         or delta_cota_embalse_cm_1h >= 1.5
         or q_rebose_mg_ls >= 900.0
+        or lluvia_acum_parte_alta_mm >= 10.0
     )
     pulso_critico_arriba = (lluvia_max_cuenca_surata_mmh >= 20.0) or pulso_critico_tona_rebosando
     pulso_moderado_arriba = (lluvia_max_cuenca_surata_mmh >= 10.0) or pulso_moderado_tona_rebosando
@@ -592,14 +604,14 @@ def obtener_semaforo_hidrologico_surata(
         faltante_cm = (NIVEL_REBOSE_EMBALSE - cota_embalse_msnm) * 100.0
         estado_rebose_txt = f"BAJO REBOSE ({cota_embalse_msnm:.2f} msnm, a -{faltante_cm:.1f} cm de 885.75 • El Embalse DETIENE creciente de Tona)"
     resumen_arriba = (
-        f"BigQuery Tiempo Real: Lluvia Suratá {lluvia_max_cuenca_surata_mmh:.1f} mm/h • "
-        f"Lluvia Tona {lluvia_max_cuenca_tona_mmh:.1f} mm/h • "
+        f"Parte Alta ({estaciones_afectando_txt}) • "
+        f"Lluvia actual: Suratá {lluvia_max_cuenca_surata_mmh:.1f} mm/h | Tona {lluvia_max_cuenca_tona_mmh:.1f} mm/h • "
         f"ΔRadar Embalse {delta_cota_embalse_cm_1h:+.1f} cm/h [{estado_rebose_txt}]"
     )
     if q_ls >= 14000.0 or h_m >= 1.66 or delta_h_30m >= 0.25 or (q_ls >= 9000.0 and pulso_critico_arriba):
         return {
             "icono": "🚨",
-            "titulo": "ALERTA ROJA — CRECIENTE CONFIRMADA / ARRIBO INMINENTE A BOSCONIA",
+            "titulo": f"ALERTA ROJA — ALTO VALOR DE REBOSE (~{q_rebose_mg_ls:,.0f} L/s) + CRECIENTE DESDE PARTE ALTA ({estaciones_afectando_txt})",
             "mensaje": (
                 f"Majadas ({etiqueta_canal}): {q_ls:,.0f} L/s ({q_ls/1000.0:.2f} m³/s | "
                 f"Mira amb: {h_m:.2f} m • IDEAM: {h_ideam_ref:.2f} m) | {txt_proyeccion_curva} | {resumen_arriba}."
@@ -611,9 +623,9 @@ def obtener_semaforo_hidrologico_surata(
         }
     elif q_ls >= 9000.0 or h_m >= 1.48 or delta_h_30m >= 0.15 or pulso_critico_arriba:
         motivo_naranja = (
-            "ALERTA TEMPRANA DETERMINÍSTICA (EMBALSE EN REBOSE + ESTACIONES ARRIBA: EL AGUA VA A LLEGAR SÍ O SÍ)"
+            f"ALTO VALOR DE REBOSE EN EMBALSE (~{q_rebose_mg_ls:,.0f} L/s) + LLUVIAS EN LA PARTE ALTA ({estaciones_afectando_txt})"
             if pulso_critico_arriba
-            else "PREDICCIÓN DE CURVA EN ASCENSO IMPORTANTE EN LAS MAJADAS"
+            else f"CRECIENTE EN LAS MAJADAS + APORTE DE LLUVIAS EN LA PARTE ALTA ({estaciones_afectando_txt})"
         )
         return {
             "icono": "⚠️",
@@ -622,16 +634,16 @@ def obtener_semaforo_hidrologico_surata(
                 f"Majadas ({etiqueta_canal}): {q_ls:,.0f} L/s ({q_ls/1000.0:.2f} m³/s | "
                 f"Mira amb: {h_m:.2f} m • IDEAM: {h_ideam_ref:.2f} m) | {txt_proyeccion_curva} | {resumen_arriba}."
             ),
-            "accion": "Alistar desarenadores, vigilar rejillas y preparar dosificación en Toma Bosconia (agua en tránsito hacia el Río Suratá).",
+            "accion": "Alistar desarenadores, vigilar rejillas y preparar dosificación en Toma Bosconia (agua en tránsito hacia el Río Suratá; IDEAM con rezago de reporte).",
             "color": "#FF9933",
             "text_color": "#111111",
             "vel": "1.2s"
         }
     elif q_ls >= 6500.0 or h_m >= 1.36 or pulso_moderado_arriba:
         motivo_amarillo = (
-            "AVISO TEMPRANO POR ASCENSO SOBRE REBOSE EN EMBALSE / LLUVIAS ARRIBA (AGUA EN TRÁNSITO)"
+            f"REBOSE ACTIVO EN EMBALSE (~{q_rebose_mg_ls:,.0f} L/s) + LLUVIAS EN LA PARTE ALTA ({estaciones_afectando_txt})"
             if pulso_moderado_arriba
-            else "VIGILANCIA DE CURVA DE CAUDAL EN LAS MAJADAS (PUEDE ESTANCARSE O DESCENDER)"
+            else f"VIGILANCIA DE CAUDAL EN LAS MAJADAS + APORTES DE PARTE ALTA ({estaciones_afectando_txt})"
         )
         return {
             "icono": "🟡",
@@ -640,7 +652,7 @@ def obtener_semaforo_hidrologico_surata(
                 f"Majadas ({etiqueta_canal}): {q_ls:,.0f} L/s ({q_ls/1000.0:.2f} m³/s | "
                 f"Mira amb: {h_m:.2f} m • IDEAM: {h_ideam_ref:.2f} m) | {txt_proyeccion_curva} | {resumen_arriba}."
             ),
-            "accion": "Monitorear evolución de pendiente de la curva y turbiedad en Toma Bosconia (Extracción CRC Embalse actual: 200 L/s).",
+            "accion": "Monitorear evolución de pendiente de la curva y turbiedad en Toma Bosconia (atención a rezago de actualización del sensor IDEAM).",
             "color": "#FFBB00",
             "text_color": "#111111",
             "vel": "2.0s"
@@ -2731,6 +2743,13 @@ def enriquecer_datos_embalse(df):
     dt_paso_s = df_e['timestamp'].diff().dt.total_seconds().fillna(0.0).clip(lower=0.0, upper=3600.0)
     q_m3s_paso = pd.to_numeric(df_e['caudal_medio_bosconia_ls'], errors='coerce').fillna(0.0) / 1000.0
     df_e['m3_consumidos_bosconia'] = (q_m3s_paso * dt_paso_s).cumsum().round(1)
+    # Caudal de Llegada / Carga de Cuenca (Aporte Afluentes Q_in en L/s): Q_in = dV/dt + Q_salidas
+    q_filtraciones_ls = 51.0
+    v_m3_serie = df_e['volumen_total_hm3'] * 1_000_000.0
+    dv_dt_m3s = (v_m3_serie.diff() / dt_paso_s.replace(0, np.nan)).fillna(0.0)
+    dv_dt_ls_suave = (dv_dt_m3s * 1000.0).rolling(window=3, min_periods=1, center=True).mean().fillna(0.0)
+    q_salidas_totales_ls = df_e['caudal_medio_bosconia_ls'] + df_e['caudal_rebose_ls'] + q_filtraciones_ls
+    df_e['caudal_afluentes_ls'] = (dv_dt_ls_suave + q_salidas_totales_ls).clip(lower=0.0, upper=9000.0).round(1)
     return df_e
 def enriquecer_datos_surata(df):
     """
@@ -3597,40 +3616,94 @@ def render_panel_alertas_tempranas_sat():
             """, unsafe_allow_html=True)
 # 7.6 CONSULTAS Y VISTA DE EVENTOS SIGNIFICATIVOS & ESTADÍSTICAS
 # ============================================================
-@st.cache_data(ttl=300)
+@st.cache_data(ttl=120)
 def consultar_eventos_significativos_bigquery(dias=90):
     """
     Consulta en BigQuery los registros históricos de eventos extremos:
-    - Picos de lluvia que superaron umbrales de alerta
+    - Picos de lluvia que superaron umbrales de alerta en ventana móvil de 1 hora (60 min / 6 paquetes de 10 min)
+      o en paquete horario consolidado, aplicando filtro anti-Hold SCADA.
     - Picos del radar del Embalse de Tona (cota >= 885.70 msnm)
     - Crecientes en Río Suratá (Majadas)
     """
     try:
         filtro_tiempo = f"SAFE_CAST(timestamp AS TIMESTAMP) >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL {dias} DAY)" if dias < 365 else "1=1"
         query = f"""
+        WITH base_limpia AS (
+            SELECT
+                id_estacion,
+                SAFE_CAST(timestamp AS TIMESTAMP) AS ts,
+                UNIX_SECONDS(SAFE_CAST(timestamp AS TIMESTAMP)) AS ts_unix,
+                SAFE_CAST(precipitacion AS FLOAT64) AS precip_raw,
+                SAFE_CAST(temperatura AS FLOAT64) AS temp,
+                SAFE_CAST(humedad AS FLOAT64) AS hum,
+                SAFE_CAST(velocidad_viento AS FLOAT64) AS viento,
+                LAG(SAFE_CAST(precipitacion AS FLOAT64)) OVER (PARTITION BY id_estacion ORDER BY SAFE_CAST(timestamp AS TIMESTAMP)) AS prev_p,
+                LAG(SAFE_CAST(temperatura AS FLOAT64)) OVER (PARTITION BY id_estacion ORDER BY SAFE_CAST(timestamp AS TIMESTAMP)) AS prev_t,
+                LAG(SAFE_CAST(humedad AS FLOAT64)) OVER (PARTITION BY id_estacion ORDER BY SAFE_CAST(timestamp AS TIMESTAMP)) AS prev_h
+            FROM `gen-lang-client-0342049346.amb_hidrologia.telemetria_estaciones`
+            WHERE {filtro_tiempo}
+              AND timestamp IS NOT NULL
+        ),
+        con_anti_hold AS (
+            SELECT
+                id_estacion,
+                ts,
+                ts_unix,
+                CASE
+                    WHEN id_estacion IN ('El_Pajal', 'Yerbabuena', 'La_Mariana', 'Vegas_del_Quemado', 'Monsalve')
+                         AND precip_raw > 0 AND precip_raw < 10.0
+                         AND precip_raw = prev_p AND temp = prev_t AND hum = prev_h
+                    THEN 0.0
+                    ELSE IFNULL(precip_raw, 0.0)
+                END AS precip_limpia,
+                IFNULL(precip_raw, 0.0) AS precip_raw,
+                temp,
+                hum,
+                viento
+            FROM base_limpia
+        ),
+        ventana_horaria AS (
+            SELECT
+                id_estacion,
+                ts,
+                ROUND(
+                    GREATEST(
+                        precip_raw,
+                        SUM(precip_limpia) OVER (
+                            PARTITION BY id_estacion
+                            ORDER BY ts_unix
+                            RANGE BETWEEN 3599 PRECEDING AND CURRENT ROW
+                        )
+                    ),
+                    2
+                ) AS precip,
+                temp,
+                hum,
+                viento
+            FROM con_anti_hold
+        )
         SELECT
             id_estacion,
-            SAFE_CAST(timestamp AS TIMESTAMP) as ts,
-            SAFE_CAST(precipitacion AS FLOAT64) as precip,
-            SAFE_CAST(temperatura AS FLOAT64) as temp,
-            SAFE_CAST(humedad AS FLOAT64) as hum,
-            SAFE_CAST(velocidad_viento AS FLOAT64) as viento
-        FROM `gen-lang-client-0342049346.amb_hidrologia.telemetria_estaciones`
-        WHERE {filtro_tiempo}
-          AND (
-            (id_estacion = 'Embalse' AND SAFE_CAST(temperatura AS FLOAT64) >= 885.70)
-            OR (id_estacion = 'El_Pajal' AND SAFE_CAST(precipitacion AS FLOAT64) >= 12.3)
-            OR (id_estacion = 'Yerbabuena' AND SAFE_CAST(precipitacion AS FLOAT64) >= 10.9)
-            OR (id_estacion = 'La_Mariana' AND SAFE_CAST(precipitacion AS FLOAT64) >= 11.7)
-            OR (id_estacion = 'Vegas_del_Quemado' AND SAFE_CAST(precipitacion AS FLOAT64) >= 27.2)
-            OR (id_estacion = 'Monsalve' AND SAFE_CAST(precipitacion AS FLOAT64) >= 10.9)
+            ts,
+            precip,
+            temp,
+            hum,
+            viento
+        FROM ventana_horaria
+        WHERE (
+            (id_estacion = 'Embalse' AND temp >= 885.70)
+            OR (id_estacion = 'El_Pajal' AND precip >= 12.3)
+            OR (id_estacion = 'Yerbabuena' AND precip >= 10.9)
+            OR (id_estacion = 'La_Mariana' AND precip >= 11.7)
+            OR (id_estacion = 'Vegas_del_Quemado' AND precip >= 27.2)
+            OR (id_estacion = 'Monsalve' AND precip >= 10.9)
             OR (id_estacion = 'Surata' AND (
-                SAFE_CAST(precipitacion AS FLOAT64) >= 2800.0
-                OR SAFE_CAST(temperatura AS FLOAT64) >= 1.08
-                OR SAFE_CAST(temperatura AS FLOAT64) >= 2800.0
-                OR (SAFE_CAST(precipitacion AS FLOAT64) >= 1.08 AND SAFE_CAST(precipitacion AS FLOAT64) <= 15.0)
+                precip >= 2800.0
+                OR temp >= 1.08
+                OR temp >= 2800.0
+                OR (precip >= 1.08 AND precip <= 15.0)
             ))
-          )
+        )
         ORDER BY ts DESC
         LIMIT 5000
         """
@@ -3704,16 +3777,51 @@ def consultar_estadisticas_multitemporales_bigquery():
     """
     try:
         query = """
-        WITH base AS (
+        WITH raw_base AS (
           SELECT 
             id_estacion,
+            SAFE_CAST(timestamp AS TIMESTAMP) as ts,
+            UNIX_SECONDS(SAFE_CAST(timestamp AS TIMESTAMP)) as ts_unix,
             DATE(SAFE_CAST(timestamp AS TIMESTAMP), 'America/Bogota') as fecha,
-            SAFE_CAST(precipitacion AS FLOAT64) as precip,
+            SAFE_CAST(precipitacion AS FLOAT64) as precip_raw,
             SAFE_CAST(temperatura AS FLOAT64) as temp,
-            SAFE_CAST(humedad AS FLOAT64) as hum
+            SAFE_CAST(humedad AS FLOAT64) as hum,
+            LAG(SAFE_CAST(precipitacion AS FLOAT64)) OVER (PARTITION BY id_estacion ORDER BY SAFE_CAST(timestamp AS TIMESTAMP)) as prev_p,
+            LAG(SAFE_CAST(temperatura AS FLOAT64)) OVER (PARTITION BY id_estacion ORDER BY SAFE_CAST(timestamp AS TIMESTAMP)) as prev_t,
+            LAG(SAFE_CAST(humedad AS FLOAT64)) OVER (PARTITION BY id_estacion ORDER BY SAFE_CAST(timestamp AS TIMESTAMP)) as prev_h
           FROM `gen-lang-client-0342049346.amb_hidrologia.telemetria_estaciones`
           WHERE timestamp IS NOT NULL
             AND SAFE_CAST(timestamp AS TIMESTAMP) >= TIMESTAMP('2026-01-01 00:00:00 UTC')
+        ),
+        limpia AS (
+          SELECT
+            id_estacion,
+            ts_unix,
+            fecha,
+            CASE
+              WHEN id_estacion IN ('El_Pajal', 'Yerbabuena', 'La_Mariana', 'Vegas_del_Quemado', 'Monsalve')
+                   AND precip_raw > 0 AND precip_raw < 10.0
+                   AND precip_raw = prev_p AND temp = prev_t AND hum = prev_h
+              THEN 0.0
+              ELSE IFNULL(precip_raw, 0.0)
+            END as precip,
+            IFNULL(precip_raw, 0.0) as precip_raw,
+            temp,
+            hum
+          FROM raw_base
+        ),
+        base AS (
+          SELECT
+            id_estacion,
+            fecha,
+            precip,
+            GREATEST(
+              precip_raw,
+              SUM(precip) OVER (PARTITION BY id_estacion ORDER BY ts_unix RANGE BETWEEN 3599 PRECEDING AND CURRENT ROW)
+            ) as precip_1h,
+            temp,
+            hum
+          FROM limpia
         )
         SELECT 
             id_estacion,
@@ -3722,7 +3830,7 @@ def consultar_estadisticas_multitemporales_bigquery():
             EXTRACT(MONTH FROM fecha) as mes,
             EXTRACT(ISOWEEK FROM fecha) as semana,
             ROUND(SUM(IFNULL(precip, 0.0)), 2) as lluvia_diaria,
-            ROUND(MAX(IFNULL(precip, 0.0)), 2) as lluvia_pico_horario,
+            ROUND(MAX(IFNULL(precip_1h, 0.0)), 2) as lluvia_pico_horario,
             ROUND(MIN(temp), 2) as temp_min,
             ROUND(MAX(temp), 2) as temp_max,
             ROUND(AVG(temp), 2) as temp_prom,
@@ -3815,7 +3923,8 @@ def render_eventos_significativos_estadisticas():
         # ========================================================
         if mostrar_lluvias:
             st.markdown("### \U0001F327\uFE0F 1. Picos de Precipitaci\u00F3n Extrema en Cuencas")
-            filas_lluvia_extrema = []
+            filas_lluvia_candidatas = []
+            ahora_col_ev = datetime.now(colombia_tz)
             if not df_ev_filtro.empty:
                 for idx, row in df_ev_filtro.iterrows():
                     est = str(row.get('id_estacion', ''))
@@ -3838,21 +3947,57 @@ def render_eventos_significativos_estadisticas():
                                 badge_color = "#FFBB00"
                                 desc_impacto = "Aviso preventivo por ascenso de precipitaci\u00F3n"
                             ts_col = row['ts']
+                            es_reciente = False
+                            ts_dt_col = None
                             if hasattr(ts_col, 'astimezone'):
-                                ts_str = ts_col.astimezone(colombia_tz).strftime('%Y-%m-%d %H:%M')
+                                ts_dt_col = ts_col.astimezone(colombia_tz)
+                                ts_str = ts_dt_col.strftime('%Y-%m-%d %H:%M')
+                                horas_antiguedad = (ahora_col_ev - ts_dt_col).total_seconds() / 3600.0
+                                es_reciente = (horas_antiguedad <= 36.0)
                             else:
                                 ts_str = str(ts_col)[:16]
+                                try:
+                                    ts_dt_col = colombia_tz.localize(datetime.strptime(ts_str, '%Y-%m-%d %H:%M'))
+                                    horas_antiguedad = (ahora_col_ev - ts_dt_col).total_seconds() / 3600.0
+                                    es_reciente = (horas_antiguedad <= 36.0)
+                                except Exception:
+                                    pass
                             info_est = METADATA_ESTACIONES_AMB.get(est, {}) if "METADATA_ESTACIONES_AMB" in globals() else {}
                             cuenca_nombre = info_est.get("cuenca_principal") or info_est.get("cuenca", est.replace("_", " "))
-                            filas_lluvia_extrema.append({
-                                "Fecha / Hora": ts_str,
+                            filas_lluvia_candidatas.append({
+                                "ts_dt": ts_dt_col,
+                                "ts_raw_str": ts_str,
+                                "est_key": est,
+                                "Fecha / Hora": f"🔥 {ts_str} (RECIENTE)" if es_reciente else ts_str,
                                 "Estaci\u00F3n": est.replace('_', ' '),
                                 "Microcuenca": cuenca_nombre,
                                 "Lluvia (mm/h)": round(p_val, 2),
-                                "Nivel de Alerta": nivel_alerta,
-                                "Impacto Operativo": desc_impacto,
+                                "Nivel de Alerta": f"{nivel_alerta} • 🔥 HOY/AYER" if es_reciente else nivel_alerta,
+                                "Impacto Operativo": f"⚡ EVENTO RECIENTE ACTIVO — {desc_impacto}" if es_reciente else desc_impacto,
+                                "es_reciente": es_reciente,
                                 "badge_color": badge_color
                             })
+            # Deduplicar tramas consecutivas de un mismo aguacero (ventana de 45 min por estación), conservando el pico máximo de cada episodio
+            filas_lluvia_extrema = []
+            if filas_lluvia_candidatas:
+                candidatas_por_pico = sorted(
+                    filas_lluvia_candidatas,
+                    key=lambda x: (x["Lluvia (mm/h)"], x["ts_raw_str"]),
+                    reverse=True
+                )
+                seleccionadas_ts = []
+                for cand in candidatas_por_pico:
+                    duplicado_cercano = False
+                    if cand["ts_dt"] is not None:
+                        for ya in seleccionadas_ts:
+                            if ya["est_key"] == cand["est_key"] and ya["ts_dt"] is not None:
+                                diff_min = abs((cand["ts_dt"] - ya["ts_dt"]).total_seconds()) / 60.0
+                                if diff_min <= 45.0:
+                                    duplicado_cercano = True
+                                    break
+                    if not duplicado_cercano:
+                        seleccionadas_ts.append(cand)
+                filas_lluvia_extrema = sorted(seleccionadas_ts, key=lambda x: x["ts_raw_str"], reverse=True)
             if len(filas_lluvia_extrema) == 0:
                 st.markdown(f"""
                 <div style="background-color: #0d2818; border: 1px solid #00E676; border-left: 6px solid #00E676; padding: 14px 18px; border-radius: 8px; margin: 10px 0 20px 0;">
@@ -3870,15 +4015,44 @@ def render_eventos_significativos_estadisticas():
                 """, unsafe_allow_html=True)
             else:
                 df_lluvia_show = pd.DataFrame(filas_lluvia_extrema)
+                eventos_recientes_list = [f for f in filas_lluvia_extrema if f.get("es_reciente")]
+                if eventos_recientes_list:
+                    items_rec_html = " • ".join([
+                        f"<strong>{ev['Estación']}</strong>: <code>{ev['Lluvia (mm/h)']:.1f} mm/h</code> ({ev['ts_raw_str']} COT — {ev['Nivel de Alerta'].split(' • ')[0]})"
+                        for ev in eventos_recientes_list[:4]
+                    ])
+                    st.markdown(f"""
+                    <div style="background: linear-gradient(90deg, rgba(255, 153, 0, 0.22), rgba(255, 75, 75, 0.16)); border: 2px solid #FFB300; border-left: 7px solid #FF6D00; padding: 12px 16px; border-radius: 10px; margin: 6px 0 14px 0; box-shadow: 0 3px 10px rgba(255, 153, 0, 0.18);">
+                        <div style="font-weight: 800; color: #FFF8E1; font-size: 1.0rem;">
+                            🔥 PICO DE ALERTA RECIENTE DETECTADO (ÚLTIMAS 24–36 HORAS):
+                        </div>
+                        <div style="color: #FFE082; font-size: 0.93rem; margin-top: 4px;">
+                            {items_rec_html}
+                        </div>
+                    </div>
+                    """, unsafe_allow_html=True)
                 c_k1, c_k2, c_k3 = st.columns(3)
                 c_k1.metric("Total Eventos de Lluvia Extrema", len(df_lluvia_show))
                 c_k2.metric("Pico M\u00E1ximo Registrado", f"{df_lluvia_show['Lluvia (mm/h)'].max():.1f} mm/h")
                 c_k3.metric("Estaci\u00F3n con M\u00E1s Eventos", df_lluvia_show['Estaci\u00F3n'].mode()[0])
-                st.dataframe(
-                    df_lluvia_show[["Fecha / Hora", "Estaci\u00F3n", "Microcuenca", "Lluvia (mm/h)", "Nivel de Alerta", "Impacto Operativo"]],
-                    use_container_width=True,
-                    hide_index=True
-                )
+                cols_visibles_lluvia = ["Fecha / Hora", "Estaci\u00F3n", "Microcuenca", "Lluvia (mm/h)", "Nivel de Alerta", "Impacto Operativo"]
+                df_tabla_lluvia = df_lluvia_show[cols_visibles_lluvia].copy()
+                def _resaltar_fila_reciente(row):
+                    if "🔥" in str(row.get("Fecha / Hora", "")):
+                        return ["background-color: rgba(255, 179, 0, 0.24); color: #FFF8E1; font-weight: 700;"] * len(row)
+                    return [""] * len(row)
+                try:
+                    st.dataframe(
+                        df_tabla_lluvia.style.apply(_resaltar_fila_reciente, axis=1).format({"Lluvia (mm/h)": "{:.1f}"}),
+                        use_container_width=True,
+                        hide_index=True
+                    )
+                except Exception:
+                    st.dataframe(
+                        df_tabla_lluvia,
+                        use_container_width=True,
+                        hide_index=True
+                    )
             st.markdown("---")
 
         # Mensajes hidrologicos pedagogicos segun la cuenca seleccionada
@@ -5122,30 +5296,76 @@ with tab_situacion:
             lluvia_tona_max_1h = 0.0
             lluvia_surata_max_1h = 0.0
             delta_emb_cm_1h = 0.0
+            detalle_lluvias_parte_alta_str = "Yerbabuena, Vegas del Quemado, El Pajal, La Mariana"
+            lluvia_acum_parte_alta_max = 0.0
             try:
                 q_up = """
-                WITH ult AS (
+                WITH base_up AS (
                     SELECT id_estacion,
                            SAFE_CAST(precipitacion AS FLOAT64) AS p,
                            SAFE_CAST(temperatura AS FLOAT64) AS t,
+                           SAFE_CAST(humedad AS FLOAT64) AS h,
                            SAFE_CAST(timestamp AS TIMESTAMP) AS ts,
+                           LAG(SAFE_CAST(precipitacion AS FLOAT64)) OVER(PARTITION BY id_estacion ORDER BY SAFE_CAST(timestamp AS TIMESTAMP)) AS prev_p,
+                           LAG(SAFE_CAST(temperatura AS FLOAT64)) OVER(PARTITION BY id_estacion ORDER BY SAFE_CAST(timestamp AS TIMESTAMP)) AS prev_t,
+                           LAG(SAFE_CAST(humedad AS FLOAT64)) OVER(PARTITION BY id_estacion ORDER BY SAFE_CAST(timestamp AS TIMESTAMP)) AS prev_h,
                            ROW_NUMBER() OVER(PARTITION BY id_estacion ORDER BY SAFE_CAST(timestamp AS TIMESTAMP) DESC) AS rn
                     FROM `gen-lang-client-0342049346.amb_hidrologia.telemetria_estaciones`
-                    WHERE SAFE_CAST(timestamp AS TIMESTAMP) >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 3 HOUR)
-                      AND id_estacion IN ('La Mariana', 'El Pajal', 'Vegas del Quemado', 'Monsalve', 'Yerbabuena', 'Embalse')
+                    WHERE SAFE_CAST(timestamp AS TIMESTAMP) >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 18 HOUR)
+                      AND id_estacion IN ('La_Mariana', 'El_Pajal', 'Vegas_del_Quemado', 'Monsalve', 'Yerbabuena', 'Embalse')
+                ),
+                limpia_up AS (
+                    SELECT id_estacion,
+                           CASE
+                               WHEN id_estacion != 'Embalse' AND p > 0 AND p < 10.0 AND p = prev_p AND t = prev_t AND h = prev_h THEN 0.0
+                               ELSE IFNULL(p, 0.0)
+                           END AS p_limpia,
+                           t,
+                           ts,
+                           rn
+                    FROM base_up
                 )
-                SELECT id_estacion, p, t, rn FROM ult WHERE rn <= 6
+                SELECT id_estacion,
+                       ROUND(SUM(CASE WHEN ts >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 1 HOUR) THEN p_limpia ELSE 0.0 END), 2) AS p_1h,
+                       ROUND(SUM(p_limpia), 2) AS p_18h,
+                       ARRAY_AGG(t IGNORE NULLS ORDER BY ts DESC LIMIT 6) AS cotas_recientes
+                FROM limpia_up
+                GROUP BY id_estacion
                 """
                 rows_up = list(client.query(q_up).result())
-                p_tona = [float(r['p'] or 0.0) for r in rows_up if r['id_estacion'] in ('La Mariana', 'El Pajal', 'Vegas del Quemado', 'Yerbabuena') and r['rn'] == 1]
-                p_sur = [float(r['p'] or 0.0) for r in rows_up if r['id_estacion'] in ('Monsalve',) and r['rn'] == 1]
-                cotas_e = [float(r['t']) for r in rows_up if r['id_estacion'] == 'Embalse' and r['t'] is not None and 818.0 <= float(r['t']) <= 886.5]
-                if p_tona:
-                    lluvia_tona_max_1h = max(p_tona)
-                if p_sur:
-                    lluvia_surata_max_1h = max(p_sur)
-                if len(cotas_e) >= 2:
-                    delta_emb_cm_1h = round((cotas_e[0] - cotas_e[-1]) * 100.0, 1)
+                mapa_nombres_up = {
+                    "Yerbabuena": "Yerbabuena",
+                    "Vegas_del_Quemado": "Vegas del Quemado",
+                    "El_Pajal": "El Pajal",
+                    "La_Mariana": "La Mariana",
+                    "Monsalve": "Monsalve"
+                }
+                p_tona_1h_list = []
+                p_sur_1h_list = []
+                partes_activas = []
+                for r in rows_up:
+                    est_id = str(r['id_estacion'])
+                    p1h = float(r['p_1h'] or 0.0)
+                    p18h = float(r['p_18h'] or 0.0)
+                    if est_id in ('La_Mariana', 'El_Pajal', 'Vegas_del_Quemado', 'Yerbabuena'):
+                        p_tona_1h_list.append(p1h)
+                        lluvia_acum_parte_alta_max = max(lluvia_acum_parte_alta_max, p18h)
+                        if p18h >= 1.0 or p1h >= 0.2:
+                            partes_activas.append(f"{mapa_nombres_up.get(est_id, est_id)}: {p18h:.1f} mm")
+                    elif est_id == 'Monsalve':
+                        p_sur_1h_list.append(p1h)
+                        if p18h >= 1.0 or p1h >= 0.2:
+                            partes_activas.append(f"Monsalve: {p18h:.1f} mm")
+                    elif est_id == 'Embalse':
+                        cotas_raw = [float(x) for x in (r['cotas_recientes'] or []) if x is not None and 818.0 <= float(x) <= 888.8]
+                        if len(cotas_raw) >= 2:
+                            delta_emb_cm_1h = round((cotas_raw[0] - cotas_raw[-1]) * 100.0, 1)
+                if p_tona_1h_list:
+                    lluvia_tona_max_1h = max(p_tona_1h_list)
+                if p_sur_1h_list:
+                    lluvia_surata_max_1h = max(p_sur_1h_list)
+                if partes_activas:
+                    detalle_lluvias_parte_alta_str = ", ".join(partes_activas)
             except Exception:
                 pass
             sensor_cod_act = str(info_sync_maj.get('sensor_cod', '0230'))
@@ -5163,7 +5383,9 @@ with tab_situacion:
                 delta_cota_embalse_cm_1h=delta_emb_cm_1h,
                 q_rebose_mg_ls=q_mg_ls_aprox,
                 sensor_activo_ideam=sensor_cod_act,
-                cota_embalse_msnm=cota_emb_s
+                cota_embalse_msnm=cota_emb_s,
+                detalle_lluvias_parte_alta=detalle_lluvias_parte_alta_str,
+                lluvia_acum_parte_alta_mm=lluvia_acum_parte_alta_max
             )
             # 1. Semáforo Hidrológico Operativo Multi-Capa (Crecientes y Estiaje rumbo a Toma Bosconia)
             st.markdown(f"""
@@ -6010,30 +6232,33 @@ with tab_series:
                 st.plotly_chart(fig_m3, use_container_width=True)
             with col_emb2:
                 fig_q = go.Figure()
-                fig_q.add_trace(go.Scatter(x=df_enr_hist['timestamp'], y=df_enr_hist['caudal_medio_bosconia_ls'], mode='lines', name='Caudal CRC Bosconia (L/s)', line=dict(color='#005073', width=2.5)))
+                if 'caudal_afluentes_ls' in df_enr_hist.columns and df_enr_hist['caudal_afluentes_ls'].max() > 0:
+                    fig_q.add_trace(go.Scatter(x=df_enr_hist['timestamp'], y=df_enr_hist['caudal_afluentes_ls'], mode='lines', name='📥 Llegada / Carga Cuenca (Afluentes L/s)', line=dict(color='#00CC96', width=2.5)))
+                fig_q.add_trace(go.Scatter(x=df_enr_hist['timestamp'], y=df_enr_hist['caudal_medio_bosconia_ls'], mode='lines', name='🚰 Salida CRC Bosconia (L/s)', line=dict(color='#005073', width=2)))
                 if df_enr_hist['caudal_rebose_ls'].max() > 0:
-                    fig_q.add_trace(go.Scatter(x=df_enr_hist['timestamp'], y=df_enr_hist['caudal_rebose_ls'], mode='lines', name='Rebose Aprox. Morning Glory [En Calibración] (L/s)', line=dict(color='#FF4B4B', width=2, dash='dot')))
-                fig_q.update_layout(title='⚡ Caudal CRC Bosconia & Rebose Aprox. MG (L/s)', xaxis_title='Fecha/Hora', yaxis_title='Caudal (L/s)', height=280, template='plotly_white', legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1))
+                    fig_q.add_trace(go.Scatter(x=df_enr_hist['timestamp'], y=df_enr_hist['caudal_rebose_ls'], mode='lines', name='🌀 Rebose MG (L/s)', line=dict(color='#FF4B4B', width=2, dash='dot')))
+                fig_q.update_layout(title='⚡ Balance de Caudales del Embalse: Entradas vs. Salidas (L/s)', xaxis_title='Fecha/Hora', yaxis_title='Caudal (L/s)', height=280, template='plotly_white', legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1))
                 st.plotly_chart(fig_q, use_container_width=True)
             # Bloque de Balance Volumétrico Bosconia en Vivo
             if not df_enr_hist.empty:
-                st.markdown("### 💧 Balance Volumétrico & Extracción CRC Bosconia (Sensor `ET_FIT401`)")
+                st.markdown("### 💧 Balance Hidrodinámico del Embalse (Entradas de Cuenca vs. Salidas)")
                 m3_totales_periodo = float(df_enr_hist['m3_consumidos_bosconia'].iloc[-1]) if 'm3_consumidos_bosconia' in df_enr_hist.columns else 0.0
                 c_ini_p = float(df_enr_hist['cota_embalse_msnm'].iloc[0])
                 c_fin_p = float(df_enr_hist['cota_embalse_msnm'].iloc[-1])
                 var_lamina_cm = (c_fin_p - c_ini_p) * 100.0
                 q_crc_medio_ls = float(df_enr_hist['caudal_medio_bosconia_ls'].mean()) if 'caudal_medio_bosconia_ls' in df_enr_hist.columns else 25.0
                 q_reb_medio_ls = float(df_enr_hist['caudal_rebose_ls'].mean()) if 'caudal_rebose_ls' in df_enr_hist.columns else 0.0
+                q_afl_medio_ls = float(df_enr_hist['caudal_afluentes_ls'].mean()) if 'caudal_afluentes_ls' in df_enr_hist.columns else 0.0
                 cb1, cb2, cb3, cb4 = st.columns(4)
-                cb1.metric("📦 Volumen Integrado CRC", f"{m3_totales_periodo:,.1f} m³", help="Integral temporal exacta ∫ Q_CRC(t) dt medida por el caudalímetro ET_FIT401 en el período")
-                cb2.metric("⚡ Caudal Medio CRC", f"{q_crc_medio_ls:,.1f} L/s", help="Promedio de telemetría en vivo de CRC_Bosconia_Caudal (ET_FIT401)")
-                cb3.metric("📈 Variación Neta Lámina", f"{var_lamina_cm:+.2f} cm")
-                cb4.metric("🌊 Cota Calibrada Actual", f"{c_fin_p:.3f} msnm")
+                cb1.metric("📥 Aporte Medio Cuenca", f"~{q_afl_medio_ls:,.0f} L/s", help="Caudal medio de llegada desde la cola del embalse y microcuencas tributarias (Ranas, Gualilo, Reforma, Monos)")
+                cb2.metric("🌀 Rebose Medio Morning Glory", f"~{q_reb_medio_ls:,.0f} L/s", help="Vertimiento medio evacuado por el cáliz hacia Puente Tona")
+                cb3.metric("🚰 Caudal Medio CRC Bosconia", f"{q_crc_medio_ls:,.1f} L/s", help="Promedio de extracción o salida pasiva medido por el caudalímetro ET_FIT401")
+                cb4.metric("🌊 Cota Calibrada Actual", f"{c_fin_p:.3f} msnm", delta=f"{var_lamina_cm:+.2f} cm en el período")
                 st.markdown(f"""
                 <div style="background: rgba(0,80,115,0.05); padding: 10px 14px; border-radius: 6px; border-left: 3px solid #005073; margin: 8px 0; font-size: 12.5px;">
-                    ⚖️ <strong>Integración Volumétrica en Tiempo Real (<code>ET_FIT401 / CRC_Bosconia_Caudal</code>):</strong><br>
-                    <code>V_CRC = ∫ Q_CRC(t) dt = {m3_totales_periodo:,.1f} m³</code> | <strong>Caudal Medio CRC:</strong> <code>{q_crc_medio_ls:,.1f} L/s</code> | <strong>Rebose Medio Morning Glory:</strong> <code>~{q_reb_medio_ls:,.0f} L/s</code><br>
-                    <em>El caudal afluente corresponde a la recarga continua de cuenca: <strong>Río Tona principal</strong> + microcuencas tributarias <strong>Quebrada Las Ranas, Quebrada Gualilo, Quebrada La Reforma y Quebrada Los Monos</strong>.</em>
+                    ⚖️ <strong>Ecuación de Continuidad e Hidrodinámica del Vaso:</strong><br>
+                    <code>Entrada Cuenca (~{q_afl_medio_ls:,.0f} L/s) = dV/dt ({var_lamina_cm:+.2f} cm) + Rebose Morning Glory (~{q_reb_medio_ls:,.0f} L/s) + Salida CRC ({q_crc_medio_ls:,.1f} L/s) + Filtraciones (~51 L/s)</code><br>
+                    <em>Volumen total integrado entregado a Bosconia en el período: <strong>{m3_totales_periodo:,.1f} m³</strong>.</em>
                 </div>
                 """, unsafe_allow_html=True)
                 df_bal_24h_vista = consolidar_balance_diario_embalse(df_enr_hist)
