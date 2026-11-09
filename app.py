@@ -2853,6 +2853,84 @@ def consolidar_balance_diario_embalse(df_emb_enr):
         }
         resumen_dias.append(fila_prom)
     return pd.DataFrame(resumen_dias)
+def consolidar_balance_multitemporal_embalse(df_emb_enr, escala="Semanal"):
+    """
+    Consolida los datos de Entradas, Salidas y Balance de Caudales del Embalse
+    en escalas Semanal, Mensual o Anual a partir del consolidado diario (con fila final de Promedio/Total).
+    """
+    df_diario = consolidar_balance_diario_embalse(df_emb_enr)
+    if df_diario.empty:
+        return pd.DataFrame()
+    df_d = df_diario[~df_diario["Fecha"].astype(str).str.contains("PROMEDIO", na=False)].copy()
+    if df_d.empty:
+        return pd.DataFrame()
+    df_d["dt"] = pd.to_datetime(df_d["Fecha"], errors="coerce")
+    df_d = df_d.dropna(subset=["dt"]).sort_values("dt")
+    if df_d.empty:
+        return pd.DataFrame()
+    meses_nom = {1: "Enero", 2: "Febrero", 3: "Marzo", 4: "Abril", 5: "Mayo", 6: "Junio", 7: "Julio", 8: "Agosto", 9: "Septiembre", 10: "Octubre", 11: "Noviembre", 12: "Diciembre"}
+    if escala == "Semanal":
+        df_d["grupo_key"] = df_d["dt"].apply(lambda d: f"{d.isocalendar()[0]}-W{int(d.isocalendar()[1]):02d}")
+        df_d["etiqueta"] = df_d["dt"].apply(lambda d: f"Semana {int(d.isocalendar()[1])} ({d.isocalendar()[0]})")
+        col_periodo = "Semana ISO"
+    elif escala == "Mensual":
+        df_d["grupo_key"] = df_d["dt"].apply(lambda d: f"{d.year}-{d.month:02d}")
+        df_d["etiqueta"] = df_d["dt"].apply(lambda d: f"{meses_nom.get(d.month, d.month)} {d.year}")
+        col_periodo = "Mes / Año"
+    else:
+        df_d["grupo_key"] = df_d["dt"].apply(lambda d: f"{d.year}")
+        df_d["etiqueta"] = df_d["dt"].apply(lambda d: f"Año {d.year}")
+        col_periodo = "Año"
+    filas_agrup = []
+    for g_key, grp in df_d.groupby("grupo_key", sort=True):
+        grp_s = grp.sort_values("dt")
+        c_ini = float(grp_s["Cota Inicial (msnm)"].iloc[0])
+        c_fin = float(grp_s["Cota Final (msnm)"].iloc[-1])
+        filas_agrup.append({
+            col_periodo: grp_s["etiqueta"].iloc[0],
+            "Desde": grp_s["Fecha"].iloc[0],
+            "Hasta": grp_s["Fecha"].iloc[-1],
+            "Días": len(grp_s),
+            "Horas Monitoreadas": round(float(grp_s["Horas Monitoreadas"].sum()), 1),
+            "Cota Inicial (msnm)": round(c_ini, 3),
+            "Cota Final (msnm)": round(c_fin, 3),
+            "Descenso (cm)": round((c_ini - c_fin) * 100.0, 2),
+            "📥 Caudal Medio Entrada Cuenca (L/s)": round(float(grp_s["📥 Caudal Medio Entrada Cuenca (L/s)"].mean()), 1),
+            "📥 Volumen Entrada Cuenca (m³)": round(float(grp_s["📥 Volumen Entrada Cuenca (m³)"].sum()), 1),
+            "🚰 Caudal Medio CRC Bosconia (L/s)": round(float(grp_s["🚰 Caudal Medio CRC Bosconia (L/s)"].mean()), 1),
+            "🚰 Metros Cúbicos Entregados Bosconia (m³)": round(float(grp_s["🚰 Metros Cúbicos Entregados Bosconia (m³)"].sum()), 1),
+            "🌀 Caudal Medio Rebose MG (L/s)": round(float(grp_s["🌀 Caudal Medio Rebose MG (L/s)"].mean()), 1),
+            "🌀 Volumen Rebose MG (m³)": round(float(grp_s["🌀 Volumen Rebose MG (m³)"].sum()), 1),
+            "📤 Caudal Medio Salida Total (L/s)": round(float(grp_s["📤 Caudal Medio Salida Total (L/s)"].mean()), 1),
+            "📤 Volumen Salida Total (m³)": round(float(grp_s["📤 Volumen Salida Total (m³)"].sum()), 1),
+            "⚖️ Balance Neto Caudales (L/s)": round(float(grp_s["⚖️ Balance Neto Caudales (L/s)"].mean()), 1),
+            "Vol. Útil Remanente (hm³)": round(float(grp_s["Vol. Útil Remanente (hm³)"].iloc[-1]), 3)
+        })
+    if len(filas_agrup) >= 1:
+        df_t = pd.DataFrame(filas_agrup)
+        c_i_tot = float(df_t["Cota Inicial (msnm)"].iloc[0])
+        c_f_tot = float(df_t["Cota Final (msnm)"].iloc[-1])
+        filas_agrup.append({
+            col_periodo: "📊 PROMEDIO / TOTAL PERÍODO",
+            "Desde": df_t["Desde"].iloc[0],
+            "Hasta": df_t["Hasta"].iloc[-1],
+            "Días": int(df_t["Días"].sum()),
+            "Horas Monitoreadas": round(float(df_t["Horas Monitoreadas"].sum()), 1),
+            "Cota Inicial (msnm)": round(c_i_tot, 3),
+            "Cota Final (msnm)": round(c_f_tot, 3),
+            "Descenso (cm)": round((c_i_tot - c_f_tot) * 100.0, 2),
+            "📥 Caudal Medio Entrada Cuenca (L/s)": round(float(df_t["📥 Caudal Medio Entrada Cuenca (L/s)"].mean()), 1),
+            "📥 Volumen Entrada Cuenca (m³)": round(float(df_t["📥 Volumen Entrada Cuenca (m³)"].sum()), 1),
+            "🚰 Caudal Medio CRC Bosconia (L/s)": round(float(df_t["🚰 Caudal Medio CRC Bosconia (L/s)"].mean()), 1),
+            "🚰 Metros Cúbicos Entregados Bosconia (m³)": round(float(df_t["🚰 Metros Cúbicos Entregados Bosconia (m³)"].sum()), 1),
+            "🌀 Caudal Medio Rebose MG (L/s)": round(float(df_t["🌀 Caudal Medio Rebose MG (L/s)"].mean()), 1),
+            "🌀 Volumen Rebose MG (m³)": round(float(df_t["🌀 Volumen Rebose MG (m³)"].sum()), 1),
+            "📤 Caudal Medio Salida Total (L/s)": round(float(df_t["📤 Caudal Medio Salida Total (L/s)"].mean()), 1),
+            "📤 Volumen Salida Total (m³)": round(float(df_t["📤 Volumen Salida Total (m³)"].sum()), 1),
+            "⚖️ Balance Neto Caudales (L/s)": round(float(df_t["⚖️ Balance Neto Caudales (L/s)"].mean()), 1),
+            "Vol. Útil Remanente (hm³)": round(float(df_t["Vol. Útil Remanente (hm³)"].iloc[-1]), 3)
+        })
+    return pd.DataFrame(filas_agrup)
 def preparar_df_para_exportar(df, nombre_estacion=None):
     if df.empty:
         return df
@@ -2958,23 +3036,32 @@ def generar_excel_con_formato(df, nombre_estacion, periodo_descripcion):
         if es_embalse and 'temperatura' in df.columns:
             df_enr = enriquecer_datos_embalse(df)
             df_balance_24h = consolidar_balance_diario_embalse(df_enr)
-            # Hoja 1: Balance Consolidado 24h
-            if not df_balance_24h.empty:
-                df_balance_24h.to_excel(writer, sheet_name='Balance_Bosconia_24h', index=False)
-                ws_bal = writer.sheets['Balance_Bosconia_24h']
-                header_font = Font(bold=True, color="FFFFFF")
-                header_fill = PatternFill(start_color="005073", end_color="005073", fill_type="solid")
-                header_alignment = Alignment(horizontal="center", vertical="center")
-                for col in range(1, len(df_balance_24h.columns) + 1):
-                    cell = ws_bal.cell(row=1, column=col)
-                    cell.font = header_font
-                    cell.fill = header_fill
-                    cell.alignment = header_alignment
-                for col in ws_bal.columns:
-                    max_len = max(len(str(cell.value or '')) for cell in col)
-                    col_letter = col[0].column_letter
-                    ws_bal.column_dimensions[col_letter].width = min(max_len + 4, 40)
-            # Hoja 2: Telemetría Detallada (Con Encabezados Profesionales)
+            df_balance_sem = consolidar_balance_multitemporal_embalse(df_enr, "Semanal")
+            df_balance_mes = consolidar_balance_multitemporal_embalse(df_enr, "Mensual")
+            df_balance_anu = consolidar_balance_multitemporal_embalse(df_enr, "Anual")
+            hojas_balance = [
+                ('Balance_Bosconia_24h', df_balance_24h),
+                ('Balance_Semanal', df_balance_sem),
+                ('Balance_Mensual', df_balance_mes),
+                ('Balance_Anual', df_balance_anu)
+            ]
+            for nombre_hoja, df_h in hojas_balance:
+                if not df_h.empty:
+                    df_h.to_excel(writer, sheet_name=nombre_hoja, index=False)
+                    ws_b = writer.sheets[nombre_hoja]
+                    header_font = Font(bold=True, color="FFFFFF")
+                    header_fill = PatternFill(start_color="005073", end_color="005073", fill_type="solid")
+                    header_alignment = Alignment(horizontal="center", vertical="center")
+                    for col in range(1, len(df_h.columns) + 1):
+                        cell = ws_b.cell(row=1, column=col)
+                        cell.font = header_font
+                        cell.fill = header_fill
+                        cell.alignment = header_alignment
+                    for col in ws_b.columns:
+                        max_len = max(len(str(cell.value or '')) for cell in col)
+                        col_letter = col[0].column_letter
+                        ws_b.column_dimensions[col_letter].width = min(max_len + 4, 42)
+            # Hoja Detallada: Telemetría Detallada (Con Encabezados Profesionales)
             df_export.to_excel(writer, sheet_name='Telemetria_Embalse', index=False)
             worksheet = writer.sheets['Telemetria_Embalse']
             header_font = Font(bold=True, color="FFFFFF")
@@ -3866,6 +3953,14 @@ def consultar_estadisticas_multitemporales_bigquery():
           WHERE timestamp IS NOT NULL
             AND SAFE_CAST(timestamp AS TIMESTAMP) >= TIMESTAMP('2026-01-01 00:00:00 UTC')
         ),
+        crc_diario AS (
+          SELECT
+            fecha,
+            ROUND(AVG(CASE WHEN precip_raw >= 0 AND precip_raw <= 3000 THEN precip_raw WHEN temp >= 0 AND temp <= 3000 THEN temp ELSE NULL END), 2) as q_crc_dia_ls
+          FROM raw_base
+          WHERE id_estacion IN ('CRC_Bosconia_Caudal', 'ET_FIT401')
+          GROUP BY fecha
+        ),
         limpia AS (
           SELECT
             id_estacion,
@@ -3879,13 +3974,20 @@ def consultar_estadisticas_multitemporales_bigquery():
               ELSE IFNULL(precip_raw, 0.0)
             END as precip,
             IFNULL(precip_raw, 0.0) as precip_raw,
-            temp,
+            CASE
+              WHEN id_estacion = 'Embalse' THEN (
+                CASE WHEN temp >= 817.98 AND temp <= 888.85 THEN temp - 0.04 ELSE NULL END
+              )
+              ELSE temp
+            END as temp,
             hum
           FROM raw_base
+          WHERE id_estacion NOT IN ('CRC_Bosconia_Caudal', 'ET_FIT401')
         ),
         base AS (
           SELECT
             id_estacion,
+            ts_unix,
             fecha,
             precip,
             GREATEST(
@@ -3895,26 +3997,37 @@ def consultar_estadisticas_multitemporales_bigquery():
             temp,
             hum
           FROM limpia
+        ),
+        agrupado AS (
+          SELECT 
+              b.id_estacion,
+              b.fecha,
+              EXTRACT(YEAR FROM b.fecha) as anio,
+              EXTRACT(MONTH FROM b.fecha) as mes,
+              EXTRACT(ISOWEEK FROM b.fecha) as semana,
+              ROUND(SUM(IFNULL(b.precip, 0.0)), 2) as lluvia_diaria,
+              ROUND(MAX(IFNULL(b.precip_1h, 0.0)), 2) as lluvia_pico_horario,
+              ROUND(MIN(b.temp), 3) as temp_min,
+              ROUND(MAX(b.temp), 3) as temp_max,
+              ROUND(AVG(b.temp), 3) as temp_prom,
+              ARRAY_AGG(b.temp IGNORE NULLS ORDER BY b.ts_unix ASC LIMIT 1)[SAFE_OFFSET(0)] as temp_ini,
+              ARRAY_AGG(b.temp IGNORE NULLS ORDER BY b.ts_unix DESC LIMIT 1)[SAFE_OFFSET(0)] as temp_fin,
+              ROUND(GREATEST(1.0, (MAX(b.ts_unix) - MIN(b.ts_unix)) / 3600.0), 2) as horas_monitoreadas,
+              ROUND(MIN(b.hum), 1) as hum_min,
+              ROUND(MAX(b.hum), 1) as hum_max,
+              ROUND(AVG(b.hum), 1) as hum_prom,
+              COUNT(*) as total_lecturas
+          FROM base b
+          WHERE b.fecha IS NOT NULL
+            AND (b.id_estacion != 'Embalse' OR b.temp IS NOT NULL)
+          GROUP BY b.id_estacion, b.fecha, anio, mes, semana
         )
-        SELECT 
-            id_estacion,
-            fecha,
-            EXTRACT(YEAR FROM fecha) as anio,
-            EXTRACT(MONTH FROM fecha) as mes,
-            EXTRACT(ISOWEEK FROM fecha) as semana,
-            ROUND(SUM(IFNULL(precip, 0.0)), 2) as lluvia_diaria,
-            ROUND(MAX(IFNULL(precip_1h, 0.0)), 2) as lluvia_pico_horario,
-            ROUND(MIN(temp), 2) as temp_min,
-            ROUND(MAX(temp), 2) as temp_max,
-            ROUND(AVG(temp), 2) as temp_prom,
-            ROUND(MIN(hum), 1) as hum_min,
-            ROUND(MAX(hum), 1) as hum_max,
-            ROUND(AVG(hum), 1) as hum_prom,
-            COUNT(*) as total_lecturas
-        FROM base
-        WHERE fecha IS NOT NULL
-        GROUP BY id_estacion, fecha, anio, mes, semana
-        ORDER BY fecha DESC
+        SELECT
+            a.*,
+            IFNULL(c.q_crc_dia_ls, 25.3) as q_crc_dia_ls
+        FROM agrupado a
+        LEFT JOIN crc_diario c ON a.fecha = c.fecha
+        ORDER BY a.fecha DESC
         """
         q_job = client.query(query)
         rows = [dict(row) for row in q_job.result()]
@@ -4418,7 +4531,12 @@ def render_eventos_significativos_estadisticas():
         if es_surata:
             opciones_variables = ["\U0001F30A Caudal Fluvial (L/s)", "\U0001F4CF Nivel Limnim\u00E9trico en Mira (m)"]
         elif es_embalse:
-            opciones_variables = ["\U0001F30A Cota del Embalse (msnm)", "\U0001F300 Descarga Morning Glory (L/s)", "\U0001F4E6 Volumen Almacenado (hm\u00B3)"]
+            opciones_variables = [
+                "\u2696\uFE0F Entradas, Salidas y Balance de Caudales (L/s y m\u00B3)",
+                "\U0001F30A Cota del Embalse (msnm)",
+                "\U0001F300 Descarga Morning Glory (L/s)",
+                "\U0001F4E6 Volumen Almacenado (hm\u00B3)"
+            ]
         else:
             opciones_variables = ["\U0001F327\uFE0F Precipitaci\u00F3n / Lluvia (mm)", "\U0001F321\uFE0F Temperatura (\u00B0C)", "\U0001F4A7 Humedad Relativa (%)"]
 
@@ -4446,16 +4564,90 @@ def render_eventos_significativos_estadisticas():
             df_est['nivel_max_m'] = df_est['temp_max']
             df_est['nivel_min_m'] = df_est['temp_min']
         elif es_embalse:
-            # En Embalse: temp es Cota Radar en msnm
-            df_est['cota_prom_msnm'] = df_est['temp_prom']
-            df_est['cota_max_msnm'] = df_est['temp_max']
-            df_est['cota_min_msnm'] = df_est['temp_min']
+            # En Embalse: temp es Cota Calibrada en msnm + Hidrodinámica de Entradas, Salidas y Balance
+            df_est['cota_prom_msnm'] = pd.to_numeric(df_est['temp_prom'], errors='coerce').round(3)
+            df_est['cota_max_msnm'] = pd.to_numeric(df_est['temp_max'], errors='coerce').round(3)
+            df_est['cota_min_msnm'] = pd.to_numeric(df_est['temp_min'], errors='coerce').round(3)
+            df_est['cota_ini_msnm'] = pd.to_numeric(df_est.get('temp_ini', df_est['temp_prom']), errors='coerce').fillna(df_est['cota_prom_msnm']).round(3)
+            df_est['cota_fin_msnm'] = pd.to_numeric(df_est.get('temp_fin', df_est['temp_prom']), errors='coerce').fillna(df_est['cota_prom_msnm']).round(3)
+            df_est['horas_dia'] = pd.to_numeric(df_est.get('horas_monitoreadas', 24.0), errors='coerce').fillna(24.0).clip(lower=1.0, upper=24.0)
+            df_est['descarga_mg_prom_ls'] = df_est['cota_prom_msnm'].apply(
+                lambda c: round(calcular_caudal_morning_glory(float(c))[1], 1) if pd.notna(c) else 0.0
+            )
             df_est['descarga_mg_max_ls'] = df_est['cota_max_msnm'].apply(
-                lambda c: round(110.0 * (max(0.0, c - 885.75) ** 1.5) * 1000.0, 1)
+                lambda c: round(calcular_caudal_morning_glory(float(c))[1], 1) if pd.notna(c) else 0.0
             )
+            df_est['q_crc_prom_ls'] = pd.to_numeric(df_est.get('q_crc_dia_ls', 25.3), errors='coerce').fillna(25.3).round(1)
+            df_est['vol_crc_m3'] = (df_est['q_crc_prom_ls'] * df_est['horas_dia'] * 3.6).round(1)
+            df_est['vol_mg_m3'] = (df_est['descarga_mg_prom_ls'] * df_est['horas_dia'] * 3.6).round(1)
+            df_est['q_salida_total_ls'] = (df_est['q_crc_prom_ls'] + df_est['descarga_mg_prom_ls'] + 51.0).round(1)
+            df_est['vol_salida_total_m3'] = (df_est['q_salida_total_ls'] * df_est['horas_dia'] * 3.6).round(1)
+            # Variación de volumen del vaso en el día (m³) y despeje de Entrada de Cuenca (L/s y m³)
+            v_ini_m3 = df_est['cota_ini_msnm'].apply(lambda c: interpolar_volumen(float(c)) * 1_000_000.0 if pd.notna(c) else 0.0)
+            v_fin_m3 = df_est['cota_fin_msnm'].apply(lambda c: interpolar_volumen(float(c)) * 1_000_000.0 if pd.notna(c) else 0.0)
+            dv_dt_ls_dia = ((v_fin_m3 - v_ini_m3) / (df_est['horas_dia'] * 3600.0)) * 1000.0
+            df_est['q_entrada_cuenca_ls'] = (dv_dt_ls_dia + df_est['q_salida_total_ls']).clip(lower=0.0, upper=9500.0).round(1)
+            df_est['vol_entrada_cuenca_m3'] = (df_est['q_entrada_cuenca_ls'] * df_est['horas_dia'] * 3.6).round(1)
+            df_est['balance_neto_ls'] = (df_est['q_entrada_cuenca_ls'] - df_est['q_salida_total_ls']).round(1)
             df_est['volumen_max_hm3'] = df_est['cota_max_msnm'].apply(
-                lambda c: round(interpolar_volumen(c), 2)
+                lambda c: round(interpolar_volumen(float(c)), 3) if pd.notna(c) else 0.0
             )
+
+        def _render_3_graficas_embalse_multitemporal(df_g, col_x, sufijo_escala):
+            df_plot_g = df_g.iloc[::-1].copy() if len(df_g) > 1 else df_g.copy()
+            cg1, cg2 = st.columns(2)
+            with cg1:
+                f_in = go.Figure()
+                f_in.add_trace(go.Bar(x=df_plot_g[col_x], y=df_plot_g['q_in_ls'], name='📥 Caudal Medio Entrada (L/s)', marker_color='#00CC96'))
+                f_in.add_trace(go.Scatter(x=df_plot_g[col_x], y=df_plot_g['vol_in_m3'], name='📦 Vol. Entrada Cuenca (m³)', mode='lines+markers', line=dict(color='#00E676', width=2, dash='dot'), yaxis='y2'))
+                f_in.update_layout(
+                    title=f'📥 1. Entradas al Embalse ({sufijo_escala}): Cola y Subsidiarias',
+                    yaxis=dict(title='Caudal Entrada (L/s)'),
+                    yaxis2=dict(title='Volumen Entrada (m³)', overlaying='y', side='right', showgrid=False),
+                    template='plotly_dark', height=310, legend=dict(orientation="h", y=1.12)
+                )
+                st.plotly_chart(f_in, use_container_width=True)
+            with cg2:
+                f_out = go.Figure()
+                f_out.add_trace(go.Bar(x=df_plot_g[col_x], y=df_plot_g['vol_crc_m3'], name='📦 Vol. Entregado CRC Bosconia (m³)', marker_color='#0288D1', yaxis='y2', opacity=0.55))
+                f_out.add_trace(go.Scatter(x=df_plot_g[col_x], y=df_plot_g['q_crc_ls'], name='🚰 Caudal Medio CRC Bosconia (L/s)', mode='lines+markers', line=dict(color='#38BDF8', width=2.4)))
+                f_out.add_trace(go.Scatter(x=df_plot_g[col_x], y=df_plot_g['q_mg_ls'], name='🌀 Caudal Medio Rebose MG (L/s)', mode='lines+markers', line=dict(color='#FF4B4B', width=2, dash='dot')))
+                f_out.update_layout(
+                    title=f'📤 2. Salidas del Embalse ({sufijo_escala}): CRC Bosconia y Rebose MG',
+                    yaxis=dict(title='Caudal Salida (L/s)'),
+                    yaxis2=dict(title='Vol. Entregado CRC (m³)', overlaying='y', side='right', showgrid=False),
+                    template='plotly_dark', height=310, legend=dict(orientation="h", y=1.12)
+                )
+                st.plotly_chart(f_out, use_container_width=True)
+            f_bal = go.Figure()
+            f_bal.add_trace(go.Scatter(x=df_plot_g[col_x], y=df_plot_g['q_in_ls'], name='📥 Entrada Cuenca (L/s)', mode='lines+markers', line=dict(color='#00CC96', width=2.6)))
+            f_bal.add_trace(go.Scatter(x=df_plot_g[col_x], y=df_plot_g['q_out_tot_ls'], name='📤 Salida Total (CRC + MG + Filtraciones) (L/s)', mode='lines+markers', line=dict(color='#FF9800', width=2.4)))
+            f_bal.add_trace(go.Scatter(x=df_plot_g[col_x], y=df_plot_g['q_crc_ls'], name='🚰 Salida CRC Bosconia (L/s)', mode='lines', line=dict(color='#38BDF8', width=1.8)))
+            f_bal.add_trace(go.Bar(x=df_plot_g[col_x], y=df_plot_g['q_bal_ls'], name='⚖️ Balance Neto dV/dt (Entrada - Salida) (L/s)', marker_color='#AB47BC', opacity=0.6))
+            f_bal.add_hline(y=0.0, line_dash="dot", line_color="#ECEFF1")
+            f_bal.update_layout(
+                title=f'⚖️ 3. Balance de Caudales del Embalse ({sufijo_escala}): Entradas vs. Salidas y Balance Neto (L/s)',
+                yaxis_title='Caudal (L/s)', template='plotly_dark', height=330, legend=dict(orientation="h", y=1.12)
+            )
+            st.plotly_chart(f_bal, use_container_width=True)
+
+        def _agregar_fila_promedio_tabla_embalse(df_t, col_etiqueta):
+            if df_t.empty:
+                return df_t
+            fila_p = {col_etiqueta: "📊 PROMEDIO / TOTAL PERÍODO"}
+            for c in df_t.columns:
+                if c == col_etiqueta:
+                    continue
+                serie_num = pd.to_numeric(df_t[c], errors='coerce').dropna()
+                if serie_num.empty:
+                    fila_p[c] = "-"
+                elif any(k in c for k in ["Volumen Entrada", "Entregados Bosconia", "Volumen Rebose", "Volumen Salida", "Lecturas", "Días"]):
+                    fila_p[c] = round(float(serie_num.sum()), 1) if "Volumen" in c or "Bosconia" in c else int(serie_num.sum())
+                elif "Cota" in c or "Vol. Almacenado" in c or "Volumen (hm³)" in c:
+                    fila_p[c] = round(float(serie_num.mean()), 3)
+                else:
+                    fila_p[c] = round(float(serie_num.mean()), 1)
+            return pd.concat([df_t, pd.DataFrame([fila_p])], ignore_index=True)
 
         # --------------------------------------------------------
         # 1. GRANULARIDAD: DIARIO
@@ -4517,14 +4709,25 @@ def render_eventos_significativos_estadisticas():
 
             elif es_embalse:
                 c_max_abs = df_view['cota_max_msnm'].max()
-                c_prom_abs = df_view['cota_prom_msnm'].mean()
-                q_mg_abs = df_view['descarga_mg_max_ls'].max()
+                q_in_med = df_view['q_entrada_cuenca_ls'].mean()
+                q_out_med = df_view['q_salida_total_ls'].mean()
                 v_max_abs = df_view['volumen_max_hm3'].max()
-                col_k2.metric("Cota M\u00E1xima Radar", f"{c_max_abs:.2f} msnm")
-                col_k3.metric("Descarga M\u00E1x Morning Glory", f"{q_mg_abs:,.0f} L/s ({q_mg_abs/1000.0:.2f} m\u00B3/s)")
+                col_k2.metric("Cota M\u00E1xima Radar", f"{c_max_abs:.3f} msnm")
+                col_k3.metric("📥 Entrada Media / 📤 Salida Media", f"{q_in_med:,.1f} / {q_out_med:,.1f} L/s")
                 col_k4.metric("Volumen Almacenado M\u00E1x", f"{v_max_abs:.2f} hm\u00B3")
 
-                if "Cota" in variable_grafica:
+                df_view['Fecha_Str'] = df_view['fecha'].dt.strftime('%Y-%m-%d')
+                df_g_dia = df_view.rename(columns={
+                    'q_entrada_cuenca_ls': 'q_in_ls',
+                    'vol_entrada_cuenca_m3': 'vol_in_m3',
+                    'q_crc_prom_ls': 'q_crc_ls',
+                    'descarga_mg_prom_ls': 'q_mg_ls',
+                    'q_salida_total_ls': 'q_out_tot_ls',
+                    'balance_neto_ls': 'q_bal_ls'
+                })
+                _render_3_graficas_embalse_multitemporal(df_g_dia, 'Fecha_Str', 'Diario')
+
+                if "Cota" in variable_grafica or "Balance" in variable_grafica:
                     fig_d.add_trace(go.Scatter(
                         x=df_view['fecha'], y=df_view['cota_max_msnm'],
                         name="Cota M\u00E1xima (msnm)", mode='lines', line=dict(color="#FF4B4B", width=1.5)
@@ -4554,15 +4757,30 @@ def render_eventos_significativos_estadisticas():
                     fig_d.update_layout(title="Volumen Almacenado Diario \u2014 Embalse de Tona", yaxis_title="Volumen (hm\u00B3)")
 
                 rename_cols = {
-                    'fecha': 'Fecha',
+                    'Fecha_Str': 'Fecha',
                     'cota_prom_msnm': 'Cota Prom (msnm)',
                     'cota_max_msnm': 'Cota M\u00E1x (msnm)',
                     'cota_min_msnm': 'Cota M\u00EDn (msnm)',
-                    'descarga_mg_max_ls': 'Descarga MG (L/s)',
+                    'q_entrada_cuenca_ls': '📥 Caudal Medio Entrada Cuenca (L/s)',
+                    'vol_entrada_cuenca_m3': '📥 Volumen Entrada Cuenca (m³)',
+                    'q_crc_prom_ls': '🚰 Caudal Medio CRC Bosconia (L/s)',
+                    'vol_crc_m3': '🚰 Metros Cúbicos Entregados Bosconia (m³)',
+                    'descarga_mg_prom_ls': '🌀 Caudal Medio Rebose MG (L/s)',
+                    'vol_mg_m3': '🌀 Volumen Rebose MG (m³)',
+                    'q_salida_total_ls': '📤 Caudal Medio Salida Total (L/s)',
+                    'vol_salida_total_m3': '📤 Volumen Salida Total (m³)',
+                    'balance_neto_ls': '⚖️ Balance Neto Caudales (L/s)',
                     'volumen_max_hm3': 'Volumen (hm\u00B3)',
                     'total_lecturas': 'Lecturas'
                 }
-                cols_tabla = ['fecha', 'cota_prom_msnm', 'cota_max_msnm', 'cota_min_msnm', 'descarga_mg_max_ls', 'volumen_max_hm3', 'total_lecturas']
+                cols_tabla = [
+                    'Fecha_Str', 'cota_prom_msnm', 'cota_max_msnm', 'cota_min_msnm',
+                    'q_entrada_cuenca_ls', 'vol_entrada_cuenca_m3',
+                    'q_crc_prom_ls', 'vol_crc_m3',
+                    'descarga_mg_prom_ls', 'vol_mg_m3',
+                    'q_salida_total_ls', 'vol_salida_total_m3',
+                    'balance_neto_ls', 'volumen_max_hm3', 'total_lecturas'
+                ]
 
             else:
                 col_k2.metric("Lluvia Diaria M\u00E1xima", f"{df_view['lluvia_diaria'].max():.1f} mm")
@@ -4617,8 +4835,10 @@ def render_eventos_significativos_estadisticas():
             st.plotly_chart(fig_d, use_container_width=True)
 
             df_table_d = df_view[cols_tabla].rename(columns=rename_cols)
+            if es_embalse:
+                df_table_d = _agregar_fila_promedio_tabla_embalse(df_table_d, 'Fecha')
             st.dataframe(df_table_d, use_container_width=True, hide_index=True)
-            csv_d = df_table_d.to_csv(index=False).encode('utf-8')
+            csv_d = df_table_d.to_csv(index=False).encode('utf-8-sig')
             st.download_button(
                 label=f"\U0001F4E5 Descargar Estad\u00EDsticas Diarias ({est_stat}) en CSV",
                 data=csv_d,
@@ -4689,20 +4909,35 @@ def render_eventos_significativos_estadisticas():
                     cota_prom_sem=('cota_prom_msnm', 'mean'),
                     cota_max_sem=('cota_max_msnm', 'max'),
                     cota_min_sem=('cota_min_msnm', 'min'),
+                    q_in_ls=('q_entrada_cuenca_ls', 'mean'),
+                    vol_in_m3=('vol_entrada_cuenca_m3', 'sum'),
+                    q_crc_ls=('q_crc_prom_ls', 'mean'),
+                    vol_crc_m3=('vol_crc_m3', 'sum'),
+                    q_mg_ls=('descarga_mg_prom_ls', 'mean'),
+                    vol_mg_m3=('vol_mg_m3', 'sum'),
                     descarga_mg_max_sem=('descarga_mg_max_ls', 'max'),
+                    q_out_tot_ls=('q_salida_total_ls', 'mean'),
+                    vol_out_tot_m3=('vol_salida_total_m3', 'sum'),
+                    q_bal_ls=('balance_neto_ls', 'mean'),
                     volumen_max_sem=('volumen_max_hm3', 'max'),
                     dias_evaluados=('fecha', 'count')
                 ).reset_index().sort_values(['anio', 'semana'], ascending=False)
                 df_sem['Semana'] = df_sem.apply(lambda r: f"Semana {int(r['semana'])} ({int(r['anio'])})", axis=1)
+                for c_r3 in ['cota_prom_sem', 'cota_max_sem', 'cota_min_sem', 'volumen_max_sem']:
+                    df_sem[c_r3] = df_sem[c_r3].round(3)
+                for c_r1 in ['q_in_ls', 'vol_in_m3', 'q_crc_ls', 'vol_crc_m3', 'q_mg_ls', 'vol_mg_m3', 'descarga_mg_max_sem', 'q_out_tot_ls', 'vol_out_tot_m3', 'q_bal_ls']:
+                    df_sem[c_r1] = df_sem[c_r1].round(1)
 
                 col_sk1, col_sk2, col_sk3, col_sk4 = st.columns(4)
                 col_sk1.metric("Semanas Evaluadas", len(df_sem))
-                col_sk2.metric("Cota Semanal M\u00E1x", f"{df_sem['cota_max_sem'].max():.2f} msnm")
-                col_sk3.metric("Descarga M\u00E1x Morning Glory", f"{df_sem['descarga_mg_max_sem'].max():,.0f} L/s")
+                col_sk2.metric("Cota Semanal M\u00E1x", f"{df_sem['cota_max_sem'].max():.3f} msnm")
+                col_sk3.metric("📥 Entrada Media / 📤 Salida Media", f"{df_sem['q_in_ls'].mean():,.1f} / {df_sem['q_out_tot_ls'].mean():,.1f} L/s")
                 col_sk4.metric("Volumen Almacenado M\u00E1x", f"{df_sem['volumen_max_sem'].max():.2f} hm\u00B3")
 
+                _render_3_graficas_embalse_multitemporal(df_sem, 'Semana', 'Semanal')
+
                 fig_s = go.Figure()
-                if "Cota" in variable_grafica:
+                if "Cota" in variable_grafica or "Balance" in variable_grafica:
                     fig_s.add_trace(go.Scatter(
                         x=df_sem['Semana'], y=df_sem['cota_max_sem'],
                         name="Cota M\u00E1xima Semanal (msnm)", mode='lines+markers', line=dict(color="#FF4B4B")
@@ -4737,11 +4972,23 @@ def render_eventos_significativos_estadisticas():
                     'cota_prom_sem': 'Cota Prom (msnm)',
                     'cota_max_sem': 'Cota M\u00E1x (msnm)',
                     'cota_min_sem': 'Cota M\u00EDn (msnm)',
-                    'descarga_mg_max_sem': 'Descarga MG (L/s)',
+                    'q_in_ls': '📥 Caudal Medio Entrada Cuenca (L/s)',
+                    'vol_in_m3': '📥 Volumen Entrada Cuenca (m³)',
+                    'q_crc_ls': '🚰 Caudal Medio CRC Bosconia (L/s)',
+                    'vol_crc_m3': '🚰 Metros Cúbicos Entregados Bosconia (m³)',
+                    'q_mg_ls': '🌀 Caudal Medio Rebose MG (L/s)',
+                    'vol_mg_m3': '🌀 Volumen Rebose MG (m³)',
+                    'q_out_tot_ls': '📤 Caudal Medio Salida Total (L/s)',
+                    'vol_out_tot_m3': '📤 Volumen Salida Total (m³)',
+                    'q_bal_ls': '⚖️ Balance Neto Caudales (L/s)',
                     'volumen_max_sem': 'Volumen (hm\u00B3)',
                     'dias_evaluados': 'D\u00EDas Monitoreados'
                 }
-                cols_sem = ['Semana', 'fecha_inicio', 'fecha_fin', 'cota_prom_sem', 'cota_max_sem', 'cota_min_sem', 'descarga_mg_max_sem', 'volumen_max_sem', 'dias_evaluados']
+                cols_sem = [
+                    'Semana', 'fecha_inicio', 'fecha_fin', 'cota_prom_sem', 'cota_max_sem', 'cota_min_sem',
+                    'q_in_ls', 'vol_in_m3', 'q_crc_ls', 'vol_crc_m3', 'q_mg_ls', 'vol_mg_m3',
+                    'q_out_tot_ls', 'vol_out_tot_m3', 'q_bal_ls', 'volumen_max_sem', 'dias_evaluados'
+                ]
 
             else:
                 df_sem = df_est.groupby(['anio', 'semana']).agg(
@@ -4809,8 +5056,10 @@ def render_eventos_significativos_estadisticas():
             st.plotly_chart(fig_s, use_container_width=True)
 
             df_show_sem = df_sem[cols_sem].rename(columns=rename_sem)
+            if es_embalse:
+                df_show_sem = _agregar_fila_promedio_tabla_embalse(df_show_sem, 'Semana ISO')
             st.dataframe(df_show_sem, use_container_width=True, hide_index=True)
-            csv_s = df_show_sem.to_csv(index=False).encode('utf-8')
+            csv_s = df_show_sem.to_csv(index=False).encode('utf-8-sig')
             st.download_button(
                 label=f"\U0001F4E5 Descargar Estad\u00EDsticas Semanales ({est_stat}) en CSV",
                 data=csv_s,
@@ -4875,20 +5124,35 @@ def render_eventos_significativos_estadisticas():
                     cota_prom_mes=('cota_prom_msnm', 'mean'),
                     cota_max_mes=('cota_max_msnm', 'max'),
                     cota_min_mes=('cota_min_msnm', 'min'),
+                    q_in_ls=('q_entrada_cuenca_ls', 'mean'),
+                    vol_in_m3=('vol_entrada_cuenca_m3', 'sum'),
+                    q_crc_ls=('q_crc_prom_ls', 'mean'),
+                    vol_crc_m3=('vol_crc_m3', 'sum'),
+                    q_mg_ls=('descarga_mg_prom_ls', 'mean'),
+                    vol_mg_m3=('vol_mg_m3', 'sum'),
                     descarga_mg_max_mes=('descarga_mg_max_ls', 'max'),
+                    q_out_tot_ls=('q_salida_total_ls', 'mean'),
+                    vol_out_tot_m3=('vol_salida_total_m3', 'sum'),
+                    q_bal_ls=('balance_neto_ls', 'mean'),
                     volumen_max_mes=('volumen_max_hm3', 'max'),
                     dias_registrados=('fecha', 'count')
                 ).reset_index().sort_values(['anio', 'mes'], ascending=False)
                 df_mes['Mes Nombre'] = df_mes.apply(lambda r: f"{meses_es.get(int(r['mes']), r['mes'])} {int(r['anio'])}", axis=1)
+                for c_r3 in ['cota_prom_mes', 'cota_max_mes', 'cota_min_mes', 'volumen_max_mes']:
+                    df_mes[c_r3] = df_mes[c_r3].round(3)
+                for c_r1 in ['q_in_ls', 'vol_in_m3', 'q_crc_ls', 'vol_crc_m3', 'q_mg_ls', 'vol_mg_m3', 'descarga_mg_max_mes', 'q_out_tot_ls', 'vol_out_tot_m3', 'q_bal_ls']:
+                    df_mes[c_r1] = df_mes[c_r1].round(1)
 
                 col_m1, col_m2, col_m3, col_m4 = st.columns(4)
                 col_m1.metric("Meses con Datos", len(df_mes))
-                col_m2.metric("Cota M\u00E1x Mensual", f"{df_mes['cota_max_mes'].max():.2f} msnm")
-                col_m3.metric("Descarga M\u00E1x Morning Glory", f"{df_mes['descarga_mg_max_mes'].max():,.0f} L/s")
+                col_m2.metric("Cota M\u00E1x Mensual", f"{df_mes['cota_max_mes'].max():.3f} msnm")
+                col_m3.metric("📥 Entrada Media / 📤 Salida Media", f"{df_mes['q_in_ls'].mean():,.1f} / {df_mes['q_out_tot_ls'].mean():,.1f} L/s")
                 col_m4.metric("Volumen M\u00E1x Almacenado", f"{df_mes['volumen_max_mes'].max():.2f} hm\u00B3")
 
+                _render_3_graficas_embalse_multitemporal(df_mes, 'Mes Nombre', 'Mensual')
+
                 fig_m = go.Figure()
-                if "Cota" in variable_grafica:
+                if "Cota" in variable_grafica or "Balance" in variable_grafica:
                     fig_m.add_trace(go.Scatter(
                         x=df_mes['Mes Nombre'], y=df_mes['cota_max_mes'],
                         name="Cota M\u00E1xima Mensual (msnm)", mode='lines+markers', line=dict(color="#FF4B4B")
@@ -4917,11 +5181,23 @@ def render_eventos_significativos_estadisticas():
                     'cota_prom_mes': 'Cota Prom (msnm)',
                     'cota_max_mes': 'Cota M\u00E1x (msnm)',
                     'cota_min_mes': 'Cota M\u00EDn (msnm)',
-                    'descarga_mg_max_mes': 'Descarga MG (L/s)',
+                    'q_in_ls': '📥 Caudal Medio Entrada Cuenca (L/s)',
+                    'vol_in_m3': '📥 Volumen Entrada Cuenca (m³)',
+                    'q_crc_ls': '🚰 Caudal Medio CRC Bosconia (L/s)',
+                    'vol_crc_m3': '🚰 Metros Cúbicos Entregados Bosconia (m³)',
+                    'q_mg_ls': '🌀 Caudal Medio Rebose MG (L/s)',
+                    'vol_mg_m3': '🌀 Volumen Rebose MG (m³)',
+                    'q_out_tot_ls': '📤 Caudal Medio Salida Total (L/s)',
+                    'vol_out_tot_m3': '📤 Volumen Salida Total (m³)',
+                    'q_bal_ls': '⚖️ Balance Neto Caudales (L/s)',
                     'volumen_max_mes': 'Volumen (hm\u00B3)',
                     'dias_registrados': 'D\u00EDas Monitoreados'
                 }
-                cols_mes = ['Mes Nombre', 'cota_prom_mes', 'cota_max_mes', 'cota_min_mes', 'descarga_mg_max_mes', 'volumen_max_mes', 'dias_registrados']
+                cols_mes = [
+                    'Mes Nombre', 'cota_prom_mes', 'cota_max_mes', 'cota_min_mes',
+                    'q_in_ls', 'vol_in_m3', 'q_crc_ls', 'vol_crc_m3', 'q_mg_ls', 'vol_mg_m3',
+                    'q_out_tot_ls', 'vol_out_tot_m3', 'q_bal_ls', 'volumen_max_mes', 'dias_registrados'
+                ]
 
             else:
                 df_mes = df_est.groupby(['anio', 'mes']).agg(
@@ -4984,8 +5260,10 @@ def render_eventos_significativos_estadisticas():
             st.plotly_chart(fig_m, use_container_width=True)
 
             df_show_mes = df_mes[cols_mes].rename(columns=rename_mes)
+            if es_embalse:
+                df_show_mes = _agregar_fila_promedio_tabla_embalse(df_show_mes, 'Mes / A\u00F1o')
             st.dataframe(df_show_mes, use_container_width=True, hide_index=True)
-            csv_m = df_show_mes.to_csv(index=False).encode('utf-8')
+            csv_m = df_show_mes.to_csv(index=False).encode('utf-8-sig')
             st.download_button(
                 label=f"\U0001F4E5 Descargar Estad\u00EDsticas Mensuales ({est_stat}) en CSV",
                 data=csv_m,
@@ -5039,30 +5317,58 @@ def render_eventos_significativos_estadisticas():
                     cota_prom_anual=('cota_prom_msnm', 'mean'),
                     cota_max_anual=('cota_max_msnm', 'max'),
                     cota_min_anual=('cota_min_msnm', 'min'),
+                    q_in_ls=('q_entrada_cuenca_ls', 'mean'),
+                    vol_in_m3=('vol_entrada_cuenca_m3', 'sum'),
+                    q_crc_ls=('q_crc_prom_ls', 'mean'),
+                    vol_crc_m3=('vol_crc_m3', 'sum'),
+                    q_mg_ls=('descarga_mg_prom_ls', 'mean'),
+                    vol_mg_m3=('vol_mg_m3', 'sum'),
                     descarga_mg_max_anual=('descarga_mg_max_ls', 'max'),
+                    q_out_tot_ls=('q_salida_total_ls', 'mean'),
+                    vol_out_tot_m3=('vol_salida_total_m3', 'sum'),
+                    q_bal_ls=('balance_neto_ls', 'mean'),
                     volumen_max_anual=('volumen_max_hm3', 'max'),
                     dias_monitoreados=('fecha', 'count')
                 ).reset_index().sort_values('anio', ascending=False)
+                df_anual['Anio_Str'] = df_anual['anio'].apply(lambda a: f"A\u00F1o {int(a)}")
+                for c_r3 in ['cota_prom_anual', 'cota_max_anual', 'cota_min_anual', 'volumen_max_anual']:
+                    df_anual[c_r3] = df_anual[c_r3].round(3)
+                for c_r1 in ['q_in_ls', 'vol_in_m3', 'q_crc_ls', 'vol_crc_m3', 'q_mg_ls', 'vol_mg_m3', 'descarga_mg_max_anual', 'q_out_tot_ls', 'vol_out_tot_m3', 'q_bal_ls']:
+                    df_anual[c_r1] = df_anual[c_r1].round(1)
 
                 for idx, r_an in df_anual.iterrows():
                     anio_val = int(r_an['anio'])
                     st.markdown(f"#### \U0001F4C5 Resumen Hidrol\u00F3gico A\u00F1o {anio_val} \u2014 Embalse de Tona")
                     k1, k2, k3, k4 = st.columns(4)
-                    k1.metric("Cota M\u00E1xima Anual", f"{r_an['cota_max_anual']:.2f} msnm")
-                    k2.metric("Cota Media Anual", f"{r_an['cota_prom_anual']:.2f} msnm")
-                    k3.metric("Descarga M\u00E1x Morning Glory", f"{r_an['descarga_mg_max_anual']:,.0f} L/s")
-                    k4.metric("Volumen M\u00E1ximo Almacenado", f"{r_an['volumen_max_anual']:.2f} hm\u00B3")
+                    k1.metric("Cota M\u00E1xima / Media Anual", f"{r_an['cota_max_anual']:.3f} / {r_an['cota_prom_anual']:.3f} msnm")
+                    k2.metric("📥 Caudal Medio Entrada Cuenca", f"{r_an['q_in_ls']:,.1f} L/s ({r_an['vol_in_m3']:,.0f} m³)")
+                    k3.metric("📤 Caudal Medio Salida Total", f"{r_an['q_out_tot_ls']:,.1f} L/s (CRC: {r_an['q_crc_ls']:,.1f} L/s)")
+                    k4.metric("⚖️ Balance Neto / Vol. Almacenado", f"{r_an['q_bal_ls']:+.1f} L/s ({r_an['volumen_max_anual']:.2f} hm\u00B3)")
+
+                _render_3_graficas_embalse_multitemporal(df_anual, 'Anio_Str', 'Anual')
 
                 rename_an = {
-                    'anio': 'A\u00F1o',
+                    'Anio_Str': 'A\u00F1o',
                     'cota_max_anual': 'Cota M\u00E1x (msnm)',
                     'cota_prom_anual': 'Cota Prom (msnm)',
                     'cota_min_anual': 'Cota M\u00EDn (msnm)',
-                    'descarga_mg_max_anual': 'Descarga MG (L/s)',
+                    'q_in_ls': '📥 Caudal Medio Entrada Cuenca (L/s)',
+                    'vol_in_m3': '📥 Volumen Entrada Cuenca (m³)',
+                    'q_crc_ls': '🚰 Caudal Medio CRC Bosconia (L/s)',
+                    'vol_crc_m3': '🚰 Metros Cúbicos Entregados Bosconia (m³)',
+                    'q_mg_ls': '🌀 Caudal Medio Rebose MG (L/s)',
+                    'vol_mg_m3': '🌀 Volumen Rebose MG (m³)',
+                    'q_out_tot_ls': '📤 Caudal Medio Salida Total (L/s)',
+                    'vol_out_tot_m3': '📤 Volumen Salida Total (m³)',
+                    'q_bal_ls': '⚖️ Balance Neto Caudales (L/s)',
                     'volumen_max_anual': 'Volumen (hm\u00B3)',
                     'dias_monitoreados': 'D\u00EDas Registrados'
                 }
-                cols_an = ['anio', 'cota_max_anual', 'cota_prom_anual', 'cota_min_anual', 'descarga_mg_max_anual', 'volumen_max_anual', 'dias_monitoreados']
+                cols_an = [
+                    'Anio_Str', 'cota_max_anual', 'cota_prom_anual', 'cota_min_anual',
+                    'q_in_ls', 'vol_in_m3', 'q_crc_ls', 'vol_crc_m3', 'q_mg_ls', 'vol_mg_m3',
+                    'q_out_tot_ls', 'vol_out_tot_m3', 'q_bal_ls', 'volumen_max_anual', 'dias_monitoreados'
+                ]
 
             else:
                 df_anual = df_est.groupby('anio').agg(
@@ -5099,8 +5405,10 @@ def render_eventos_significativos_estadisticas():
                 cols_an = ['anio', 'lluvia_anual', 'pico_diario_max', 'pico_anual_horario', 'dias_con_lluvia', 'temp_min_anual', 'temp_max_anual', 'temp_prom_anual', 'dias_monitoreados']
 
             df_show_an = df_anual[cols_an].rename(columns=rename_an)
+            if es_embalse:
+                df_show_an = _agregar_fila_promedio_tabla_embalse(df_show_an, 'A\u00F1o')
             st.dataframe(df_show_an, use_container_width=True, hide_index=True)
-            csv_a = df_show_an.to_csv(index=False).encode('utf-8')
+            csv_a = df_show_an.to_csv(index=False).encode('utf-8-sig')
             st.download_button(
                 label=f"\U0001F4E5 Descargar Consolidado Anual ({est_stat}) en CSV",
                 data=csv_a,
@@ -6242,14 +6550,29 @@ with tab_radar_72h:
                 pass
             c_sms1, c_sms2 = st.columns(2)
             info_maj_sms = sincronizar_fews_ideam_surata_bigquery()
+            q_maj_prev_ls = float(info_maj_sms.get('caudal_ls', 3260.0))
+            h_maj_prev_m = float(info_maj_sms.get('nivel_m', 1.12))
+            cota_emb_prev = get_cota_embalse_actual_segura()
+            if q_maj_prev_ls >= 14000.0 or h_maj_prev_m >= 1.66:
+                estado_sms_prev = "ALERTA ROJA - Creciente Critica Surata"
+            elif q_maj_prev_ls >= 7500.0 or h_maj_prev_m >= 1.45:
+                estado_sms_prev = "ALERTA NARANJA - Creciente Surata"
+            elif q_maj_prev_ls >= 5000.0 or h_maj_prev_m >= 1.28:
+                estado_sms_prev = "ALERTA AMARILLA - Caudal Alto Surata"
+            elif q_maj_prev_ls >= 3800.0 or h_maj_prev_m >= 1.18:
+                estado_sms_prev = "ALTO FLUJO Surata (Significativo)"
+            elif cota_emb_prev > 885.75:
+                estado_sms_prev = "Normal (Embalse en Rebose)"
+            else:
+                estado_sms_prev = "Normal"
             with c_sms1:
-                st.markdown("##### 🚀 1. Formato Boletín Matutino / Semanal (Con Caudal Majadas)")
+                st.markdown("##### 🚀 1. Formato Boletín Matutino / Semanal (Con Caudal y Estado Real Majadas)")
                 sms_act_preview = (
-                    f"MIMAT-C26 ({datetime.now(colombia_tz).strftime('%d-%b').lower()} 7am)\n"
-                    f"Embalse: {get_cota_embalse_actual_segura():.2f}m Estable\n"
-                    f"Surata(Majadas): {info_maj_sms['caudal_ls']:,.0f}L/s ({info_maj_sms['nivel_m']:.2f}m)\n"
-                    f"Cuencas: Tiempo seco (0mm)\n"
-                    f"Reporte matutino amb"
+                    f"REPORTE MATUTINO MIMAT-C26\n"
+                    f"{datetime.now(colombia_tz).strftime('%d-%b 07:00 COT')}\n"
+                    f"Embalse Tona: Cota {cota_emb_prev:.2f} msnm\n"
+                    f"Rio Surata: {q_maj_prev_ls:,.0f} L/s ({q_maj_prev_ls/1000.0:.2f} m3/s | Mira {h_maj_prev_m:.2f}m)\n"
+                    f"Estado: {estado_sms_prev}"
                 )
                 st.text_area("Texto SMS Matutino:", sms_act_preview, height=160)
             with c_sms2:
@@ -6258,9 +6581,9 @@ with tab_radar_72h:
                     sms_alerta_preview = (
                         f"ALERTA CRECIENTE MIMAT-C26 (amb)\n"
                         f"Estacion: SURATA - LAS MAJADAS\n"
-                        f"Caudal: 4,850 L/s (Mira: 1.25 m)\n"
-                        f"Llegada Toma Bosconia: 15-25 min\n"
-                        f"Hora: {datetime.now(colombia_tz).strftime('%H:%M COT')}"
+                        f"Caudal: {q_maj_prev_ls:,.0f} L/s ({q_maj_prev_ls/1000.0:.2f} m3/s | Mira: {h_maj_prev_m:.2f} m)\n"
+                        f"Estado: {estado_sms_prev}\n"
+                        f"Llegada Toma Bosconia: 15-25 min | Hora: {datetime.now(colombia_tz).strftime('%H:%M COT')}"
                     )
                 else:
                     p_sim = max(p_max_fc, 18.5)
@@ -6667,11 +6990,31 @@ with tab_series:
         if seleccion == "Embalse" and 'temperatura' in df_exp.columns:
             df_enr_exp = enriquecer_datos_embalse(df_exp)
             if not df_enr_exp.empty:
-                df_bal_exp = consolidar_balance_diario_embalse(df_enr_exp)
-                if not df_bal_exp.empty:
-                    st.markdown("### 📊 Balance Diario Consolidado y Promedios (Entradas, Salidas y Balance de Caudales — 24h):")
-                    st.dataframe(df_bal_exp, use_container_width=True, hide_index=True)
-                with st.expander("📋 Ver Matriz Detallada Enriquecida (Entradas, Salidas y Balance)"):
+                st.markdown("### 📊 Consolidado Multitemporal y Promedios (Entradas, Salidas y Balance de Caudales):")
+                tab_b_dia, tab_b_sem, tab_b_mes, tab_b_anu, tab_b_det = st.tabs([
+                    "📅 Diario (24h)",
+                    "📆 Semanal",
+                    "🗓️ Mensual",
+                    "🏆 Anual",
+                    "📋 Detalle Registro a Registro"
+                ])
+                with tab_b_dia:
+                    df_bal_exp = consolidar_balance_diario_embalse(df_enr_exp)
+                    if not df_bal_exp.empty:
+                        st.dataframe(df_bal_exp, use_container_width=True, hide_index=True)
+                with tab_b_sem:
+                    df_bal_sem = consolidar_balance_multitemporal_embalse(df_enr_exp, "Semanal")
+                    if not df_bal_sem.empty:
+                        st.dataframe(df_bal_sem, use_container_width=True, hide_index=True)
+                with tab_b_mes:
+                    df_bal_mes = consolidar_balance_multitemporal_embalse(df_enr_exp, "Mensual")
+                    if not df_bal_mes.empty:
+                        st.dataframe(df_bal_mes, use_container_width=True, hide_index=True)
+                with tab_b_anu:
+                    df_bal_anu = consolidar_balance_multitemporal_embalse(df_enr_exp, "Anual")
+                    if not df_bal_anu.empty:
+                        st.dataframe(df_bal_anu, use_container_width=True, hide_index=True)
+                with tab_b_det:
                     df_vista_exp = preparar_df_para_exportar(df_exp, "Embalse")
                     st.dataframe(df_vista_exp, use_container_width=True, hide_index=True)
             else:
