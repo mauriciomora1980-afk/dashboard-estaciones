@@ -5649,7 +5649,7 @@ def render_eventos_significativos_estadisticas():
 tab_situacion, tab_embalse_2026, tab_radar_72h, tab_series, tab_ia, tab_resumen_alertas, tab_eventos, tab_matematica = st.tabs([
     "📊 Situación Actual",
     "🌊 Gestión Embalse & Sequía 2026",
-    "🛰️ Radar Satelital & Pronóstico 72h",
+    "🛰️ Radar Satelital & Pronósticos",
     "📈 Series de Tiempo & Descargas",
     "🤖 Asistente IA MIMAT-C",
     "🌐 Panel de Alerta Temprana y Vigilancia de Cuencas",
@@ -6241,11 +6241,11 @@ with tab_embalse_2026:
         fig_curva.update_layout(title="Curva Cota vs. Volumen 2026", xaxis_title="Volumen (hm³)", yaxis_title="Cota (msnm)", height=400, template='plotly_white')
         st.plotly_chart(fig_curva, use_container_width=True)
 # ------------------------------------------------------------
-# TAB 3: RADAR SATELITAL & PRONÓSTICO 72H
+# TAB 3: RADAR SATELITAL & PRONÓSTICOS (72H • 7D • 15D • 30D)
 # ------------------------------------------------------------
 with tab_radar_72h:
-    st.subheader(f"🛰️ Radar Satelital & Pronóstico Meteorológico a 72h — {seleccion.replace('_', ' ')}")
-    st.caption("Predicción numérica de alta resolución (ECMWF/GFS) y reflectividad Doppler en vivo para cada estación de la red amb.")
+    st.subheader(f"🛰️ Radar Satelital & Pronósticos Meteorológicos (72h • 7d • 15d • 30d) — {seleccion.replace('_', ' ')}")
+    st.caption("Predicción numérica multitemporal (72 horas, Semanal 7d, Quincenal 15d y Mensual 30d vía Open-Meteo ECMWF/GFS) y reflectividad Doppler en vivo para toda la red amb.")
     meta_sel = METADATA_ESTACIONES_AMB.get(seleccion, METADATA_ESTACIONES_AMB["Embalse"])
     lat_sel = meta_sel["lat"]
     lon_sel = meta_sel["lon"]
@@ -6733,35 +6733,9 @@ with tab_radar_72h:
                 <strong>📱 Política Activa de Mensajería SMS (Modo Optimización de Saldo Twilio — 1 Segmento GSM-7 ≤ 155 chars):</strong><br>
                 • <strong>1. Único Reporte Diario Programado (07:00 AM COT):</strong> Estado de cota del Embalse Tona, <strong>caudal real del Río Suratá en Majadas</strong>, lluvias 24h y clasificación dinámica de <code>Estado:</code> (<code>ALTO FLUJO Surata</code>, <code>ALERTA AMARILLA/NARANJA/ROJA</code> o <code>Normal</code>).<br>
                 • <strong>2. Exclusivamente Alertas Tempranas Hidrometeorológicas en Vivo:</strong> Solo se despachan SMS adicionales cuando ocurre una <strong>creciente/alto flujo en el Río Suratá (Majadas → Toma Bosconia)</strong> o cuando una <strong>lluvia intensa supera los umbrales de alerta en las cuencas altas</strong>.<br>
-                • <strong>🛡️ Protección Financiera Prepaid (Cero Cobros Sorpresa):</strong> Avisos secundarios desactivados por SMS y mensajes compactados a 1 segmento puro GSM-7 (~500 segmentos disponibles con $4.00 USD). Al llegar el saldo prepago a $0.00 USD, Twilio detiene envíos sin realizar cargos automáticos (mientras <em>Auto-Recharge</em> esté en <em>Off</em>).
+                • <strong>🔒 Disparo 100% Automatizado por Cloud Scheduler (Sin Botones Manuales en UI):</strong> Los envíos están bloqueados desde la interfaz pública para evitar disparos accidentales por terceros y proteger el saldo prepago de Twilio.
             </div>
             """, unsafe_allow_html=True)
-            CENTINELA_SMS_URL = "https://centinela-mimat-alertas-661926446380.us-central1.run.app"
-            cb_sms1, cb_sms2, cb_sms3 = st.columns(3)
-            with cb_sms1:
-                if st.button("📲 Enviar SMS Prueba (Mauricio)", use_container_width=True):
-                    with st.spinner("Contactando centinela-mimat-alertas y pasarela Twilio..."):
-                        try:
-                            r_t = requests.get(f"{CENTINELA_SMS_URL}?modo=test_mauricio", timeout=20)
-                            st.code(r_t.text, language="json")
-                        except Exception as ex_t:
-                            st.error(f"❌ Error conectando con {CENTINELA_SMS_URL}: {ex_t}")
-            with cb_sms2:
-                if st.button("🌅 Enviar Boletín 07:00 AM Ahora", use_container_width=True):
-                    with st.spinner("Ejecutando despacho de boletín matutino..."):
-                        try:
-                            r_b = requests.get(f"{CENTINELA_SMS_URL}?modo=07am", timeout=25)
-                            st.code(r_b.text, language="json")
-                        except Exception as ex_b:
-                            st.error(f"❌ Error conectando con {CENTINELA_SMS_URL}: {ex_b}")
-            with cb_sms3:
-                if st.button("🔍 Ejecutar Vigilancia Ahora", use_container_width=True):
-                    with st.spinner("Evaluando umbrales y salud de estaciones..."):
-                        try:
-                            r_v = requests.get(f"{CENTINELA_SMS_URL}?modo=vigilancia", timeout=25)
-                            st.code(r_v.text, language="json")
-                        except Exception as ex_v:
-                            st.error(f"❌ Error conectando con {CENTINELA_SMS_URL}: {ex_v}")
             try:
                 q_ult_sms = """
                 SELECT SAFE_CAST(timestamp AS TIMESTAMP) as fecha_utc, id_estacion, nivel_alerta, lluvia_mm
