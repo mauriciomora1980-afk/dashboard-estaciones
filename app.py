@@ -2574,30 +2574,31 @@ def mostrar_ficha_geografica_estacion(nombre_estacion):
     with col_info:
         bloque_distancias_extra = ""
         if nombre_estacion in ["Surata", "Embalse"]:
-            bloque_distancias_extra = """
-            <div style="margin-top: 8px; padding: 8px 10px; background: rgba(0, 180, 216, 0.08); border-radius: 6px; border-left: 3px solid #00B4D8; font-size: 12.2px;">
-                <strong>📐 Matriz Geodésica Oficial (Presa Embalse ➔ Las Majadas ➔ Captación Bosconia):</strong><br>
-                • <strong>Presa Embalse Tona:</strong> <code>7°09'25.00"N 73°05'15.00"W</code> (<strong>885.75 msnm</strong>)<br>
-                • <strong>Estación Las Majadas (<code>Surata</code>):</strong> <code>7°09'30.58"N 73°05'54.45"W</code> (<strong>756.53 msnm</strong>)<br>
-                • <strong>Captación Bosconia (Bocatoma):</strong> <code>7°09'20.26"N 73°06'41.51"W</code> (<strong>698.72 msnm</strong>)<br>
-                • <strong>Tramo Presa ➔ Descarga de Fondos ➔ Puente Tona ➔ Majadas:</strong> <code>~400 m</code> + <code>~500 m</code> + <code>~350 m</code> = <strong>1.18 km rectos (1.35 km por cauce)</strong><br>
-                • <strong>Tramo Majadas ➔ Captación Bosconia:</strong> <strong>1.48 km rectos (1.82 km por cauce)</strong> | Caída <strong>ΔZ = 57.81 m</strong> (Pendiente <strong>3.17%</strong>) | Tránsito: <strong>11–14 min</strong> (creciente) / <strong>19–23 min</strong> (flujo base)
-            </div>
-            """
-        st.markdown(f"""
-        <div style="background: rgba(0,80,115,0.05); padding: 14px 18px; border-radius: 10px; border-left: 5px solid {meta['color']}; font-size: 13px; line-height: 1.6;">
-            <strong>🏞️ Cuenca Hidrológica:</strong> {meta['cuenca_principal']}<br>
-            <strong>🏢 Subsistema / PTAP Abastecida:</strong> <span style="color: #005073; font-weight: 700;">{meta['subsistema_abastecimiento']}</span><br>
-            <strong>🏔️ Altitud Oficial:</strong> <strong>{meta['altitud_msnm']:,.2f} msnm</strong><br>
-            <strong>📍 Coordenadas Sexagesimales (DMS):</strong> <code>{meta['dms']}</code><br>
-            <strong>🌐 Coordenadas Decimales:</strong> <code>{meta['lat']:.6f}°N, {meta['lon']:.6f}°W</code><br>
-            <strong>📡 Instrumentación Operativa:</strong> {meta['tipo_sensor']}<br>
-            <div style="margin-top: 8px; padding-top: 6px; border-top: 1px dashed rgba(0,80,115,0.2); font-style: italic; color: #444;">
-                {meta['descripcion']}
-            </div>
-            {bloque_distancias_extra}
-        </div>
-        """, unsafe_allow_html=True)
+            bloque_distancias_extra = (
+                '<div style="margin-top: 8px; padding: 8px 10px; background: rgba(0, 180, 216, 0.08); border-radius: 6px; border-left: 3px solid #00B4D8; font-size: 12.2px;">'
+                '<strong>📐 Matriz Geodésica Oficial (Presa Embalse ➔ Las Majadas ➔ Captación Bosconia):</strong><br>'
+                '• <strong>Presa Embalse Tona:</strong> <code>7°09\'25.00"N 73°05\'15.00"W</code> (<strong>885.75 msnm</strong>)<br>'
+                '• <strong>Estación Las Majadas (<code>Surata</code>):</strong> <code>7°09\'30.58"N 73°05\'54.45"W</code> (<strong>756.53 msnm</strong>)<br>'
+                '• <strong>Captación Bosconia (Bocatoma):</strong> <code>7°09\'20.26"N 73°06\'41.51"W</code> (<strong>698.72 msnm</strong>)<br>'
+                '• <strong>Tramo Presa ➔ Descarga de Fondos ➔ Puente Tona ➔ Majadas:</strong> <code>~400 m</code> + <code>~500 m</code> + <code>~350 m</code> = <strong>1.18 km rectos (1.35 km por cauce)</strong><br>'
+                '• <strong>Tramo Majadas ➔ Captación Bosconia:</strong> <strong>1.48 km rectos (1.82 km por cauce)</strong> | Caída <strong>ΔZ = 57.81 m</strong> (Pendiente <strong>3.17%</strong>) | Tránsito: <strong>11–14 min</strong> (creciente) / <strong>19–23 min</strong> (flujo base)'
+                '</div>'
+            )
+        st.markdown(
+            f'<div style="background: rgba(0,80,115,0.05); padding: 14px 18px; border-radius: 10px; border-left: 5px solid {meta["color"]}; font-size: 13px; line-height: 1.6;">'
+            f'<strong>🏞️ Cuenca Hidrológica:</strong> {meta["cuenca_principal"]}<br>'
+            f'<strong>🏢 Subsistema / PTAP Abastecida:</strong> <span style="color: #005073; font-weight: 700;">{meta["subsistema_abastecimiento"]}</span><br>'
+            f'<strong>🏔️ Altitud Oficial:</strong> <strong>{meta["altitud_msnm"]:,.2f} msnm</strong><br>'
+            f'<strong>📍 Coordenadas Sexagesimales (DMS):</strong> <code>{meta["dms"]}</code><br>'
+            f'<strong>🌐 Coordenadas Decimales:</strong> <code>{meta["lat"]:.6f}°N, {meta["lon"]:.6f}°W</code><br>'
+            f'<strong>📡 Instrumentación Operativa:</strong> {meta["tipo_sensor"]}<br>'
+            f'<div style="margin-top: 8px; padding-top: 6px; border-top: 1px dashed rgba(0,80,115,0.2); font-style: italic; color: #444;">'
+            f'{meta["descripcion"]}'
+            f'</div>'
+            f'{bloque_distancias_extra}'
+            f'</div>',
+            unsafe_allow_html=True
+        )
     with col_map:
         puntos_mapa = [{
             'lat': meta['lat'],
@@ -5891,6 +5892,7 @@ with tab_situacion:
             st.info(f"📅 Última lectura: {row['timestamp'].strftime('%Y-%m-%d %H:%M:%S')}")
             mostrar_seccion_edv()
             renderizar_modulo_pronostico_horario_estacion("Embalse", row)
+            mostrar_ficha_geografica_estacion("Embalse")
         elif seleccion == "Surata":
             # ============================================================
             # PRIMERA ESTACIÓN HIDROLÓGICA FLUVIAL MIMAT-C26: RÍO SURATÁ — SECTOR LAS MAJADAS
@@ -6295,16 +6297,53 @@ with tab_embalse_2026:
             dias_autonomia_ia = vol_util_eval_m3 / vaciado_neto_m3_dia if vaciado_neto_m3_dia > 0 else None
             cm_dia_sim = - (vaciado_neto_m3_dia / max(1.0, datos_eval['m3_por_cm']))
             autonomia_ia_texto = f"{dias_autonomia_ia:,.0f} Días (Vaciado neto: {q_vaciado_neto_sim_ls:,.0f} L/s | {cm_dia_sim:.1f} cm/día)"
+            titulo_kpi_dias_ia = f"⏳ {dias_autonomia_ia:,.0f} DÍAS RESTANTES"
+            sub_kpi_dias_ia = f"Con Recarga IA (~{q_entrada_efectiva_ls:,.0f} L/s) • Vaciado neto: {q_vaciado_neto_sim_ls:,.0f} L/s ({cm_dia_sim:.1f} cm/día)"
+            bg_kpi_ia = "linear-gradient(135deg, #FFF3CD 0%, #FFE69C 100%)" if dias_autonomia_ia < 180 else "linear-gradient(135deg, #E0F2FE 0%, #BAE6FD 100%)"
+            borde_kpi_ia = "#D97706" if dias_autonomia_ia < 180 else "#0284C7"
+            color_txt_kpi_ia = "#92400E" if dias_autonomia_ia < 180 else "#0369A1"
         else:
             excedente_recarga_ls = abs(q_vaciado_neto_sim_ls)
             recarga_m3_dia = (excedente_recarga_ls / 1000.0) * 86400.0
             cm_dia_pos = recarga_m3_dia / max(1.0, datos_eval['m3_por_cm'])
+            umbral_agotamiento_ls = max(0.0, q_entrada_ia_ls - q_filtraciones_presa_ls)
             if cota_eval >= NIVEL_REBOSE_EMBALSE:
                 autonomia_ia_texto = f"♾️ Indefinida / En Rebose (+{excedente_recarga_ls:,.0f} L/s excedente hacia Puente Tona)"
+                titulo_kpi_dias_ia = "♾️ DÍAS ILIMITADOS (EN REBOSE)"
+                sub_kpi_dias_ia = f"Entradas IA (~{q_entrada_ia_ls:,.0f} L/s) superan extracción en +{excedente_recarga_ls:,.0f} L/s (Cede reserva si extrae > {umbral_agotamiento_ls:,.0f} L/s)"
             else:
                 autonomia_ia_texto = f"♾️ Indefinida / En Recarga (+{excedente_recarga_ls:,.0f} L/s netos | +{cm_dia_pos:.1f} cm/día)"
+                titulo_kpi_dias_ia = "♾️ DÍAS ILIMITADOS (EN RECARGA)"
+                sub_kpi_dias_ia = f"Entradas IA (~{q_entrada_ia_ls:,.0f} L/s) recuperan +{cm_dia_pos:.1f} cm/día (Cede reserva si extrae > {umbral_agotamiento_ls:,.0f} L/s)"
+            bg_kpi_ia = "linear-gradient(135deg, #D1FAE5 0%, #A7F3D0 100%)"
+            borde_kpi_ia = "#059669"
+            color_txt_kpi_ia = "#065F46"
 
-        st.markdown("---")
+        if datos_eval['dias_autonomia'] is not None:
+            titulo_kpi_seco = f"☀️ {datos_eval['dias_autonomia']:,.0f} DÍAS RESTANTES"
+            cm_dia_seco = - ((q_sim / 1000.0) * 86400.0) / max(1.0, datos_eval['m3_por_cm'])
+            sub_kpi_seco = f"A {q_sim:,.0f} L/s puros ({q_sim*86.4:,.0f} m³/día | {cm_dia_seco:.1f} cm/día sin lluvias ni entradas)"
+        else:
+            titulo_kpi_seco = "♾️ SIN EXTRACCIÓN (0 L/s)"
+            sub_kpi_seco = "Mueva el deslizador (> 0 L/s) para ver días de reserva pura"
+
+        # TARJETA DESTACADA DE DÍAS RESTANTES (LO QUE VEN AL SIMULAR CAUDALES)
+        st.markdown(
+            f'<div style="margin: 10px 0 12px 0; display: flex; flex-direction: column; gap: 8px;">'
+            f'<div style="background: {bg_kpi_ia}; border: 2px solid {borde_kpi_ia}; border-left: 7px solid {borde_kpi_ia}; border-radius: 10px; padding: 12px 15px; box-shadow: 0 3px 10px rgba(0,0,0,0.08);">'
+            f'<div style="font-size: 11.5px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.4px; color: {color_txt_kpi_ia};">🧠 Autonomía Real Proyectada (Con Entradas IA al Embalse):</div>'
+            f'<div style="font-size: 25px; font-weight: 900; color: #111; margin: 3px 0; line-height: 1.15;">{titulo_kpi_dias_ia}</div>'
+            f'<div style="font-size: 12px; font-weight: 600; color: #333;">{sub_kpi_dias_ia}</div>'
+            f'</div>'
+            f'<div style="background: linear-gradient(135deg, #FFF7ED 0%, #FFEDD5 100%); border: 2px solid #EA580C; border-left: 7px solid #EA580C; border-radius: 10px; padding: 11px 15px; box-shadow: 0 2px 8px rgba(0,0,0,0.06);">'
+            f'<div style="font-size: 11.5px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.4px; color: #9A3412;">🛡️ Días Restantes en Sequía Extrema (Reserva Pura del Vaso — 0 L/s Entrada):</div>'
+            f'<div style="font-size: 24px; font-weight: 900; color: #7C2D12; margin: 3px 0; line-height: 1.15;">{titulo_kpi_seco}</div>'
+            f'<div style="font-size: 12px; font-weight: 600; color: #431407;">{sub_kpi_seco}</div>'
+            f'</div>'
+            f'</div>',
+            unsafe_allow_html=True
+        )
+
         st.markdown(f"""
         **📋 Parámetros Hidráulicos & Balance IA Simulado:**
         * **📥 Caudal Entrada Actual al Embalse (IA Derivada + Cuenca):** `~{q_entrada_ia_ls:,.0f} L/s ({q_entrada_ia_ls/1000.0:.2f} m³/s)`
@@ -6312,8 +6351,6 @@ with tab_embalse_2026:
         * **⚖️ Balance Neto Simulado en el Vaso:** `{-q_vaciado_neto_sim_ls:+,.0f} L/s` *({'Recarga / Excedente neto' if q_vaciado_neto_sim_ls <= 0 else 'Desalmacenamiento neto del vaso'})*
         * **💧 Volumen Útil Disponible (en `{cota_eval:.2f} msnm`):** `{datos_eval['volumen_util_hm3']:.3f} hm³` *(Total: `{datos_eval['volumen_total_hm3']:.3f} hm³` | Muerto: `1.400 hm³`)*
         * **📏 Volumen por cada Centímetro:** `{datos_eval['m3_por_cm']:,.1f} m³/cm`
-        * **⏳ Autonomía Real (Con Entradas IA del Embalse):** **`{autonomia_ia_texto}`**
-        * **🛡️ Autonomía Teórica Seca (Supuesto 0 L/s entradas):** `{datos_eval['autonomia_texto']}`
         * **🌀 Caudal Rebose Morning Glory (Aprox. en calibración):** `~{datos_eval['q_rebose_m3_s']:.2f} m³/s (~{datos_eval['q_rebose_ls']:,.0f} L/s)`
         """)
         if q_vaciado_neto_sim_ls <= 0 and incluir_recarga_ia:
