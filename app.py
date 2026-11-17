@@ -1734,6 +1734,390 @@ def obtener_predicciones_multitemporales_open_meteo():
         "origen": "OPEN_METEO_VIVO",
         "actualizado_cot": datetime.now(colombia_tz).strftime('%Y-%m-%d %H:%M:%S COT')
     }
+
+
+def clasificar_ventana_mantenimiento_planta(mm_dia: float, umbral_optimo_mm: float = 1.5) -> str:
+    """Clasifica cada día proyectado según aptitud operativa para parada de planta / mantenimiento en seco."""
+    if mm_dia <= 0.2:
+        return "🟢 ÓPTIMO SECO (0.0 mm — Ideal Parada de Planta)"
+    elif mm_dia <= umbral_optimo_mm:
+        return f"🟢 APTO MANTENIMIENTO (≤ {umbral_optimo_mm:.1f} mm/día)"
+    elif mm_dia <= 4.0:
+        return "🟡 LLOVIZNA LEVE (Mantenimiento menor con precaución)"
+    elif mm_dia <= 10.0:
+        return "🟠 LLUVIA MODERADA (No programar parada de planta)"
+    else:
+        return "🔴 LLUVIA FUERTE / ESCORRENTÍA (Operación continua)"
+
+
+def construir_tablas_prediccion_personalizadas(
+    est_id: str,
+    series_multi_map: dict,
+    df_multi_res: pd.DataFrame,
+    umbral_seco_mm: float = 2.0,
+    fecha_ini_custom=None,
+    fecha_fin_custom=None,
+    solo_dias_secos_custom: bool = False,
+    ordenar_por_menos_lluvioso: bool = False
+) -> dict:
+    """
+    Construye las tablas organizadas (Diaria 30d, Ventanas Secas / Menos Lluviosas, Semanal, Quincenal/Mensual,
+    Rango Personalizado y Matriz Cruzada 7 Estaciones) con fila institucional '📊 PROMEDIO / TOTAL PERÍODO',
+    listas para visualización interactiva y descarga en Excel (.xlsx) multi-hoja.
+    """
+    dias_sem_es = {
+        0: "Lunes", 1: "Martes", 2: "Miércoles", 3: "Jueves",
+        4: "Viernes", 5: "Sábado", 6: "Domingo"
+    }
+    meta_e = METADATA_ESTACIONES_AMB.get(est_id, METADATA_ESTACIONES_AMB.get("La_Mariana", {}))
+    nombre_est = meta_e.get("nombre_completo", est_id.replace("_", " "))
+    subsistema_est = meta_e.get("subsistema_abastecimiento", "")
+    df_s = series_multi_map.get(est_id, pd.DataFrame()).copy()
+    if df_s.empty:
+        return {}
+
+    df_s["fecha_dt"] = pd.to_datetime(df_s["fecha"]).dt.date
+    df_s["dia_num"] = range(1, len(df_s) + 1)
+    df_s["dia_semana"] = [dias_sem_es.get(pd.Timestamp(f).weekday(), "") for f in df_s["fecha_dt"]]
+    df_s["semana_mes"] = [
+        "Semana 1 (Días 1–7)" if i < 7 else (
+            "Semana 2 (Días 8–14)" if i < 14 else (
+                "Semana 3 (Días 15–21)" if i < 21 else "Semana 4 (Días 22–30)"
+            )
+        )
+        for i in range(len(df_s))
+    ]
+    df_s["quincena"] = ["1ª Quincena (Días 1–15)" if i < 15 else "2ª Quincena (Días 16–30)" for i in range(len(df_s))]
+    df_s["horas_lluvia_est"] = [
+        0.0 if v <= 0.1 else round(min(18.0, max(0.5, v * 0.65)), 1)
+        for v in df_s["precip_mm"]
+    ]
+    df_s["aptitud_mantenimiento"] = [
+        clasificar_ventana_mantenimiento_planta(float(v), umbral_seco_mm)
+        for v in df_s["precip_mm"]
+    ]
+
+    # 1. TABLA DIARIA COMPLETA (30 DÍAS) + FILA PROMEDIO / TOTAL
+    df_diaria = pd.DataFrame({
+        "Día #": [f"Día {d}" for d in df_s["dia_num"]],
+        "Fecha": [f.strftime("%Y-%m-%d") for f in df_s["fecha_dt"]],
+        "Día Semana": df_s["dia_semana"],
+        "Estación": [nombre_est] * len(df_s),
+        "Semana Operativa": df_s["semana_mes"],
+        "Precipitación Prevista (mm/día)": df_s["precip_mm"].round(1),
+        "Probabilidad Lluvia (%)": df_s["prob_max_pct"].astype(int),
+        "Horas Lluvia Est. (h)": df_s["horas_lluvia_est"],
+        "Condición Parada de Planta / Mantenimiento": df_s["aptitud_mantenimiento"]
+    })
+    dias_secos_30d = int((df_s["precip_mm"] <= umbral_seco_mm).sum())
+    fila_tot_diaria = pd.DataFrame([{
+        "Día #": "📊 PROMEDIO / TOTAL PERÍODO",
+        "Fecha": f"{df_s['fecha_dt'].iloc[0]} a {df_s['fecha_dt'].iloc[-1]}",
+        "Día Semana": "30 Días",
+        "Estación": nombre_est,
+        "Semana Operativa": f"{dias_secos_30d} días ≤ {umbral_seco_mm:.1f} mm",
+        "Precipitación Prevista (mm/día)": round(float(df_s["precip_mm"].sum()), 1),
+        "Probabilidad Lluvia (%)": int(round(float(df_s["prob_max_pct"].mean()))),
+        "Horas Lluvia Est. (h)": round(float(df_s["horas_lluvia_est"].sum()), 1),
+        "Condición Parada de Planta / Mantenimiento": f"Prom: {df_s['precip_mm'].mean():.1f} mm/día | Total: {df_s['precip_mm'].sum():.1f} mm"
+    }])
+    df_diaria_con_tot = pd.concat([df_diaria, fila_tot_diaria], ignore_index=True)
+
+    # 2. TABLA DE DÍAS MENOS LLUVIOSOS / VENTANAS SECAS PARA PARADA DE PLANTA (ORDENADA DE MENOR A MAYOR LLUVIA)
+    df_ord_seco = df_s.sort_values(by=["precip_mm", "prob_max_pct", "fecha_dt"], ascending=[True, True, True]).reset_index(drop=True)
+    df_filtro_secos = df_ord_seco[df_ord_seco["precip_mm"] <= umbral_seco_mm].copy()
+    if df_filtro_secos.empty:
+        # Si el umbral elegido es muy estricto y no hay días <= umbral, mostrar los 10 días menos lluviosos del mes
+        df_filtro_secos = df_ord_seco.head(10).copy()
+    df_ventanas_secas = pd.DataFrame({
+        "Ranking Seco": [f"#{i+1} Más Seco" for i in range(len(df_filtro_secos))],
+        "Fecha": [f.strftime("%Y-%m-%d") for f in df_filtro_secos["fecha_dt"]],
+        "Día Semana": df_filtro_secos["dia_semana"].values,
+        "Semana del Mes": df_filtro_secos["semana_mes"].values,
+        "Precipitación Prevista (mm/día)": df_filtro_secos["precip_mm"].round(1).values,
+        "Probabilidad Lluvia (%)": df_filtro_secos["prob_max_pct"].astype(int).values,
+        "Horas Lluvia Est. (h)": df_filtro_secos["horas_lluvia_est"].values,
+        "Aptitud Parada de Planta / Mantenimiento": df_filtro_secos["aptitud_mantenimiento"].values
+    })
+    fila_tot_secos = pd.DataFrame([{
+        "Ranking Seco": "📊 PROMEDIO / TOTAL VENTANAS SECAS",
+        "Fecha": f"{len(df_filtro_secos)} Días Seleccionados",
+        "Día Semana": f"Umbral ≤ {umbral_seco_mm:.1f} mm",
+        "Semana del Mes": nombre_est,
+        "Precipitación Prevista (mm/día)": round(float(df_filtro_secos["precip_mm"].sum()), 1),
+        "Probabilidad Lluvia (%)": int(round(float(df_filtro_secos["prob_max_pct"].mean()))) if not df_filtro_secos.empty else 0,
+        "Horas Lluvia Est. (h)": round(float(df_filtro_secos["horas_lluvia_est"].sum()), 1),
+        "Aptitud Parada de Planta / Mantenimiento": f"Promedio en días secos: {df_filtro_secos['precip_mm'].mean():.2f} mm/día"
+    }])
+    df_ventanas_secas_con_tot = pd.concat([df_ventanas_secas, fila_tot_secos], ignore_index=True)
+
+    # 3. TABLA SEMANAL (SEMANAS 1 A 4 DEL MES) + FILA PROMEDIO / TOTAL
+    filas_sem = []
+    for nom_sem in ["Semana 1 (Días 1–7)", "Semana 2 (Días 8–14)", "Semana 3 (Días 15–21)", "Semana 4 (Días 22–30)"]:
+        sub_w = df_s[df_s["semana_mes"] == nom_sem]
+        if sub_w.empty:
+            continue
+        idx_min_w = sub_w["precip_mm"].idxmin()
+        idx_max_w = sub_w["precip_mm"].idxmax()
+        r_min_w = sub_w.loc[idx_min_w]
+        r_max_w = sub_w.loc[idx_max_w]
+        n_secos_w = int((sub_w["precip_mm"] <= umbral_seco_mm).sum())
+        tot_w = round(float(sub_w["precip_mm"].sum()), 1)
+        prom_w = round(float(sub_w["precip_mm"].mean()), 1)
+        filas_sem.append({
+            "Semana Proyectada": nom_sem,
+            "Rango de Fechas": f"{sub_w['fecha_dt'].iloc[0].strftime('%d-%b')} al {sub_w['fecha_dt'].iloc[-1].strftime('%d-%b')}",
+            "Lluvia Total Semana (mm)": tot_w,
+            "Promedio Diario (mm/día)": prom_w,
+            f"Días Secos (≤ {umbral_seco_mm:.1f} mm)": n_secos_w,
+            "Día Menos Lluvioso (Ideal Mant.)": f"{r_min_w['dia_semana']} {r_min_w['fecha_dt'].strftime('%d-%b')} ({r_min_w['precip_mm']:.1f} mm)",
+            "Día Más Lluvioso (Pico)": f"{r_max_w['dia_semana']} {r_max_w['fecha_dt'].strftime('%d-%b')} ({r_max_w['precip_mm']:.1f} mm)",
+            "Prob. Media (%)": int(round(float(sub_w["prob_max_pct"].mean()))),
+            "Recomendación Operativa Semanal": (
+                "🟢 Semana favorable para mantenimientos programados"
+                if n_secos_w >= 4 else (
+                    "🟡 Programar parada únicamente en los días secos indicados"
+                    if n_secos_w >= 2 else "🟠 Semana húmeda: priorizar mantenimientos cortos"
+                )
+            )
+        })
+    df_semanal = pd.DataFrame(filas_sem)
+    if not df_semanal.empty:
+        fila_tot_sem = pd.DataFrame([{
+            "Semana Proyectada": "📊 PROMEDIO / TOTAL PERÍODO (4 Semanas)",
+            "Rango de Fechas": f"{df_s['fecha_dt'].iloc[0].strftime('%d-%b')} al {df_s['fecha_dt'].iloc[-1].strftime('%d-%b')}",
+            "Lluvia Total Semana (mm)": round(float(df_s["precip_mm"].sum()), 1),
+            "Promedio Diario (mm/día)": round(float(df_s["precip_mm"].mean()), 1),
+            f"Días Secos (≤ {umbral_seco_mm:.1f} mm)": dias_secos_30d,
+            "Día Menos Lluvioso (Ideal Mant.)": f"{df_ord_seco.iloc[0]['dia_semana']} {df_ord_seco.iloc[0]['fecha_dt'].strftime('%d-%b')} ({df_ord_seco.iloc[0]['precip_mm']:.1f} mm)",
+            "Día Más Lluvioso (Pico)": f"{df_ord_seco.iloc[-1]['dia_semana']} {df_ord_seco.iloc[-1]['fecha_dt'].strftime('%d-%b')} ({df_ord_seco.iloc[-1]['precip_mm']:.1f} mm)",
+            "Prob. Media (%)": int(round(float(df_s["prob_max_pct"].mean()))),
+            "Recomendación Operativa Semanal": f"Total mes: {df_s['precip_mm'].sum():.1f} mm | {dias_secos_30d} días óptimos de parada"
+        }])
+        df_semanal_con_tot = pd.concat([df_semanal, fila_tot_sem], ignore_index=True)
+    else:
+        df_semanal_con_tot = df_semanal
+
+    # 4. TABLA QUINCENAL Y MENSUAL (1ª QUINCENA, 2ª QUINCENA Y TOTAL 30 DÍAS)
+    filas_qm = []
+    for nom_q, sub_q in [
+        ("1ª Quincena (Días 1–15)", df_s.iloc[:15]),
+        ("2ª Quincena (Días 16–30)", df_s.iloc[15:30]),
+        ("📊 CONSOLIDADO MENSUAL (30 Días)", df_s)
+    ]:
+        if sub_q.empty:
+            continue
+        r_min_q = sub_q.loc[sub_q["precip_mm"].idxmin()]
+        r_max_q = sub_q.loc[sub_q["precip_mm"].idxmax()]
+        n_sec_q = int((sub_q["precip_mm"] <= umbral_seco_mm).sum())
+        tot_q = round(float(sub_q["precip_mm"].sum()), 1)
+        filas_qm.append({
+            "Horizonte Consolidado": nom_q,
+            "Rango de Fechas": f"{sub_q['fecha_dt'].iloc[0].strftime('%Y-%m-%d')} a {sub_q['fecha_dt'].iloc[-1].strftime('%Y-%m-%d')}",
+            "Lluvia Acumulada (mm)": tot_q,
+            "Promedio Diario (mm/día)": round(float(sub_q["precip_mm"].mean()), 1),
+            f"Total Días Secos (≤ {umbral_seco_mm:.1f} mm)": n_sec_q,
+            "Días Lluviosos (> 2.0 mm)": int((sub_q["precip_mm"] > 2.0).sum()),
+            "Mejor Día Seco para Parada": f"{r_min_q['dia_semana']} {r_min_q['fecha_dt'].strftime('%d-%b')} ({r_min_q['precip_mm']:.1f} mm)",
+            "Día Pico de Lluvia": f"{r_max_q['dia_semana']} {r_max_q['fecha_dt'].strftime('%d-%b')} ({r_max_q['precip_mm']:.1f} mm)",
+            "Aporte Espejo Embalse Tona (m³)": round(tot_q * 462.0, 0)
+        })
+    df_quincenal_mensual = pd.DataFrame(filas_qm)
+
+    # 5. TABLA PERSONALIZADA (POR RANGO DE FECHAS Y UMBRAL DE LLUVIA ELEGIDO POR EL USUARIO)
+    f_ini = fecha_ini_custom if fecha_ini_custom else df_s["fecha_dt"].iloc[0]
+    f_fin = fecha_fin_custom if fecha_fin_custom else df_s["fecha_dt"].iloc[-1]
+    df_c = df_s[(df_s["fecha_dt"] >= f_ini) & (df_s["fecha_dt"] <= f_fin)].copy()
+    if solo_dias_secos_custom:
+        df_c = df_c[df_c["precip_mm"] <= umbral_seco_mm].copy()
+    if ordenar_por_menos_lluvioso:
+        df_c = df_c.sort_values(by=["precip_mm", "prob_max_pct", "fecha_dt"], ascending=[True, True, True])
+    else:
+        df_c = df_c.sort_values(by="fecha_dt", ascending=True)
+
+    if not df_c.empty:
+        df_custom = pd.DataFrame({
+            "Fecha": [f.strftime("%Y-%m-%d") for f in df_c["fecha_dt"]],
+            "Día Semana": df_c["dia_semana"].values,
+            "Estación": [nombre_est] * len(df_c),
+            "Subsistema / PTAP": [subsistema_est] * len(df_c),
+            "Semana": df_c["semana_mes"].values,
+            "Precipitación Prevista (mm/día)": df_c["precip_mm"].round(1).values,
+            "Probabilidad Lluvia (%)": df_c["prob_max_pct"].astype(int).values,
+            "Horas Lluvia Est. (h)": df_c["horas_lluvia_est"].values,
+            "Condición Parada de Planta / Mantenimiento": df_c["aptitud_mantenimiento"].values
+        })
+        fila_tot_custom = pd.DataFrame([{
+            "Fecha": "📊 PROMEDIO / TOTAL PERÍODO",
+            "Día Semana": f"{len(df_c)} Días",
+            "Estación": nombre_est,
+            "Subsistema / PTAP": subsistema_est,
+            "Semana": f"{f_ini} a {f_fin}",
+            "Precipitación Prevista (mm/día)": round(float(df_c["precip_mm"].sum()), 1),
+            "Probabilidad Lluvia (%)": int(round(float(df_c["prob_max_pct"].mean()))),
+            "Horas Lluvia Est. (h)": round(float(df_c["horas_lluvia_est"].sum()), 1),
+            "Condición Parada de Planta / Mantenimiento": f"Prom: {df_c['precip_mm'].mean():.2f} mm/día | Total: {df_c['precip_mm'].sum():.1f} mm"
+        }])
+        df_custom_con_tot = pd.concat([df_custom, fila_tot_custom], ignore_index=True)
+    else:
+        df_custom_con_tot = pd.DataFrame()
+
+    # 6. MATRIZ CRUZADA DE LAS 7 ESTACIONES (30 DÍAS x 7 ESTACIONES) + FILA PROMEDIO Y FILA TOTAL
+    orden_7 = ["La_Mariana", "Embalse", "Surata", "El_Pajal", "Vegas_del_Quemado", "Yerbabuena", "Monsalve"]
+    df_matriz_7 = pd.DataFrame({
+        "Fecha": [f.strftime("%Y-%m-%d") for f in df_s["fecha_dt"]],
+        "Día Semana": df_s["dia_semana"].values,
+        "Horizonte": df_s["quincena"].values
+    })
+    for e_k in orden_7:
+        s_k = series_multi_map.get(e_k, pd.DataFrame())
+        col_nom = f"{e_k.replace('_', ' ')} (mm)"
+        if not s_k.empty and len(s_k) == len(df_s):
+            df_matriz_7[col_nom] = s_k["precip_mm"].round(1).values
+        else:
+            df_matriz_7[col_nom] = 0.0
+    cols_num_7 = [f"{e_k.replace('_', ' ')} (mm)" for e_k in orden_7]
+    df_matriz_7["Promedio Red (mm/día)"] = df_matriz_7[cols_num_7].mean(axis=1).round(1)
+
+    fila_prom_7 = {"Fecha": "📊 PROMEDIO DIARIO (30d)", "Día Semana": "Media", "Horizonte": "30 Días"}
+    fila_tot_7 = {"Fecha": "📊 TOTAL ACUMULADO MES (30d)", "Día Semana": "Suma", "Horizonte": "30 Días"}
+    for c_n in cols_num_7 + ["Promedio Red (mm/día)"]:
+        fila_prom_7[c_n] = round(float(df_matriz_7[c_n].mean()), 1)
+        fila_tot_7[c_n] = round(float(df_matriz_7[c_n].sum()), 1)
+    df_matriz_7_con_tot = pd.concat([df_matriz_7, pd.DataFrame([fila_prom_7, fila_tot_7])], ignore_index=True)
+
+    # Cálculo de la Mejor Ventana Continua de 2 y 3 días consecutivos secos para Parada de Planta
+    mejor_ventana_2d_txt = "N/A"
+    mejor_ventana_3d_txt = "N/A"
+    if len(df_s) >= 3:
+        sumas_2d = [float(df_s["precip_mm"].iloc[i:i+2].sum()) for i in range(len(df_s) - 1)]
+        idx_2d = int(np.argmin(sumas_2d))
+        f2_ini = df_s["fecha_dt"].iloc[idx_2d].strftime("%d-%b")
+        f2_fin = df_s["fecha_dt"].iloc[idx_2d + 1].strftime("%d-%b")
+        mejor_ventana_2d_txt = f"{f2_ini} al {f2_fin} ({sumas_2d[idx_2d]:.1f} mm en 48h)"
+
+        sumas_3d = [float(df_s["precip_mm"].iloc[i:i+3].sum()) for i in range(len(df_s) - 2)]
+        idx_3d = int(np.argmin(sumas_3d))
+        f3_ini = df_s["fecha_dt"].iloc[idx_3d].strftime("%d-%b")
+        f3_fin = df_s["fecha_dt"].iloc[idx_3d + 2].strftime("%d-%b")
+        mejor_ventana_3d_txt = f"{f3_ini} al {f3_fin} ({sumas_3d[idx_3d]:.1f} mm en 72h)"
+
+    return {
+        "df_raw": df_s,
+        "df_diaria": df_diaria_con_tot,
+        "df_ventanas_secas": df_ventanas_secas_con_tot,
+        "df_semanal": df_semanal_con_tot,
+        "df_quincenal_mensual": df_quincenal_mensual,
+        "df_personalizada": df_custom_con_tot,
+        "df_matriz_7": df_matriz_7_con_tot,
+        "dias_secos_30d": dias_secos_30d,
+        "dia_mas_seco": df_ord_seco.iloc[0],
+        "dia_mas_lluvioso": df_ord_seco.iloc[-1],
+        "mejor_ventana_2d": mejor_ventana_2d_txt,
+        "mejor_ventana_3d": mejor_ventana_3d_txt
+    }
+
+
+def generar_excel_predicciones_mantenimiento_open_meteo(
+    est_id: str,
+    tablas_dict: dict,
+    df_tabla_exec: pd.DataFrame,
+    umbral_seco_mm: float = 2.0,
+    periodo_desc: str = "Proyección 30 Días (Diario, Semanal, Quincenal y Ventanas Secas)"
+) -> bytes:
+    """
+    Genera el archivo Excel institucional (.xlsx) multi-hoja con formato profesional openpyxl
+    (igual que el módulo de históricos), incluyendo:
+    1. Ventanas_Secas_Mant (Ranking días menos lluviosos para paradas de planta)
+    2. Prediccion_Diaria_30d (Serie día a día con semáforo de mantenimiento)
+    3. Resumen_Semanal (Semanas 1 a 4)
+    4. Quincenal_y_Mensual (1ª Quincena, 2ª Quincena y Total 30d)
+    5. Personalizado_Filtro (Tabla filtrada según fechas y umbral del usuario)
+    6. Matriz_7_Estaciones (Comparativa diaria de las 7 estaciones amb)
+    7. Resumen_Ejecutivo_Red (Consolidado 7d, 15d, 30d por estación)
+    8. Metadatos (Ficha técnica institucional amb)
+    """
+    output = BytesIO()
+    meta_e = METADATA_ESTACIONES_AMB.get(est_id, METADATA_ESTACIONES_AMB.get("La_Mariana", {}))
+    nombre_est = meta_e.get("nombre_completo", est_id.replace("_", " "))
+
+    hojas_a_exportar = [
+        ("1_Ventanas_Secas_Mant", tablas_dict.get("df_ventanas_secas", pd.DataFrame())),
+        ("2_Prediccion_Diaria_30d", tablas_dict.get("df_diaria", pd.DataFrame())),
+        ("3_Resumen_Semanal", tablas_dict.get("df_semanal", pd.DataFrame())),
+        ("4_Quincenal_y_Mensual", tablas_dict.get("df_quincenal_mensual", pd.DataFrame())),
+        ("5_Rango_Personalizado", tablas_dict.get("df_personalizada", pd.DataFrame())),
+        ("6_Matriz_7_Estaciones", tablas_dict.get("df_matriz_7", pd.DataFrame())),
+        ("7_Resumen_Ejecutivo_Red", df_tabla_exec)
+    ]
+
+    with pd.ExcelWriter(output, engine="openpyxl") as writer:
+        header_font = Font(bold=True, color="FFFFFF")
+        header_fill = PatternFill(start_color="005073", end_color="005073", fill_type="solid")
+        tot_font = Font(bold=True, color="003B5C")
+        tot_fill = PatternFill(start_color="D9E1F2", end_color="D9E1F2", fill_type="solid")
+        seco_fill = PatternFill(start_color="E8F8F5", end_color="E8F8F5", fill_type="solid")
+        center_align = Alignment(horizontal="center", vertical="center")
+
+        for sheet_name, df_h in hojas_a_exportar:
+            if df_h is None or df_h.empty:
+                continue
+            df_h.to_excel(writer, sheet_name=sheet_name, index=False)
+            ws = writer.sheets[sheet_name]
+            # Formatear encabezado
+            for col_idx in range(1, len(df_h.columns) + 1):
+                c_hdr = ws.cell(row=1, column=col_idx)
+                c_hdr.font = header_font
+                c_hdr.fill = header_fill
+                c_hdr.alignment = center_align
+            # Formatear filas de datos y resaltar ventanas secas y fila total
+            for row_idx in range(2, len(df_h) + 2):
+                val_primera = str(ws.cell(row=row_idx, column=1).value or "")
+                linea_texto = " ".join(str(ws.cell(row=row_idx, column=c).value or "") for c in range(1, len(df_h.columns) + 1))
+                if "PROMEDIO" in val_primera.upper() or "TOTAL" in val_primera.upper() or "CONSOLIDADO" in val_primera.upper():
+                    for col_idx in range(1, len(df_h.columns) + 1):
+                        cell = ws.cell(row=row_idx, column=col_idx)
+                        cell.font = tot_font
+                        cell.fill = tot_fill
+                elif "ÓPTIMO SECO" in linea_texto or "APTO MANTENIMIENTO" in linea_texto:
+                    for col_idx in range(1, len(df_h.columns) + 1):
+                        cell = ws.cell(row=row_idx, column=col_idx)
+                        cell.fill = seco_fill
+            # Ajustar ancho de columnas automáticamente
+            for col in ws.columns:
+                max_len = max(len(str(cell.value or "")) for cell in col)
+                col_letter = col[0].column_letter
+                ws.column_dimensions[col_letter].width = min(max_len + 4, 48)
+
+        # Hoja 8: Metadatos Institucionales
+        meta_rows = [
+            ["Sistema de Información", SISTEMA],
+            ["Proyecto Institucional", "MIMAT-C26 • Acueducto Metropolitano de Bucaramanga S.A. E.S.P. (amb)"],
+            ["Módulo de Exportación", "Planificador de Ventanas Secas (Paradas de Planta / Mantenimiento) & Predicciones Open-Meteo"],
+            ["Estación Foco Seleccionada", f"{nombre_est} ({est_id})"],
+            ["Cuenca Hidrológica", meta_e.get("cuenca_principal", "")],
+            ["Subsistema / PTAP Abastecida", meta_e.get("subsistema_abastecimiento", "")],
+            ["Coordenadas Oficiales", f"{meta_e.get('dms', '')} ({meta_e.get('lat', 0):.6f}, {meta_e.get('lon', 0):.6f}) • {meta_e.get('altitud_msnm', 0):,.2f} msnm"],
+            ["Umbral de Día Seco / Mantenimiento", f"≤ {umbral_seco_mm:.1f} mm/día"],
+            ["Mejor Ventana Continua 48h (2 Días Secos)", tablas_dict.get("mejor_ventana_2d", "N/A")],
+            ["Mejor Ventana Continua 72h (3 Días Secos)", tablas_dict.get("mejor_ventana_3d", "N/A")],
+            ["Período / Configuración Exportada", periodo_desc],
+            ["Fecha y Hora de Generación (COT)", datetime.now(colombia_tz).strftime("%Y-%m-%d %H:%M:%S")],
+            ["Arquitecto Cloud & Autor", AUTOR]
+        ]
+        df_meta = pd.DataFrame(meta_rows, columns=["Parámetro Técnico / Operativo", "Descripción Oficial"])
+        df_meta.to_excel(writer, sheet_name="8_Metadatos", index=False)
+        ws_m = writer.sheets["8_Metadatos"]
+        for col_idx in range(1, 3):
+            c_m = ws_m.cell(row=1, column=col_idx)
+            c_m.font = header_font
+            c_m.fill = header_fill
+        for col in ws_m.columns:
+            max_len = max(len(str(cell.value or "")) for cell in col)
+            col_letter = col[0].column_letter
+            ws_m.column_dimensions[col_letter].width = min(max_len + 4, 65)
+
+    return output.getvalue()
 def calcular_interventoria_satelital_vs_terreno(df_hist, lat, lon, horas_eval=72, umbral_mm=0.1):
     """
     Módulo de Interventoría & Validación Ex-Post (Skill Scores WMO / NOAA)
@@ -7103,6 +7487,219 @@ with tab_radar_72h:
                     margin=dict(t=45, b=20, l=15, r=15)
                 )
                 st.plotly_chart(fig_d30, use_container_width=True)
+
+        # ------------------------------------------------------------
+        # SUBSECCIÓN INTERACTIVA: PLANIFICADOR DE VENTANAS SECAS (PARADAS DE PLANTA / MANTENIMIENTO)
+        # Y EXPLORADOR PERSONALIZADO DE PREDICCIONES (DIARIO • SEMANAL • QUINCENAL • MENSUAL • PERSONALIZADO)
+        # ------------------------------------------------------------
+        st.markdown("---")
+        st.markdown("### 🛠️ Planificador de Ventanas Secas (Paradas de Planta / Mantenimiento) & Tablas Personalizadas de Predicción")
+        st.caption(
+            "Módulo diseñado para **Producción y Operación de Plantas (`PTAP Florida`, `PTAP La Flora`, `PTAP Morrorico`, `PTAP Bosconia`)**: "
+            "identifique automáticamente los **días menos lluviosos del mes** para programar paradas de planta o mantenimientos preventivos, "
+            "personalice la escala (**Ventanas Secas, Diario, Semanal, Quincenal/Mensual, Rango Personalizado o Matriz 7 Estaciones**) y "
+            "descargue las tablas organizadas en **Excel Institucional Multi-Hoja (`.xlsx`)** igual que en los históricos."
+        )
+
+        lista_est_plan = ["La_Mariana", "Embalse", "Surata", "El_Pajal", "Vegas_del_Quemado", "Yerbabuena", "Monsalve"]
+        idx_est_def = lista_est_plan.index(seleccion) if seleccion in lista_est_plan else 0
+
+        cp1, cp2, cp3 = st.columns([1.2, 1.5, 1.1])
+        with cp1:
+            est_plan_sel = st.selectbox(
+                "📍 Estación para Planificación / Descarga:",
+                lista_est_plan,
+                index=idx_est_def,
+                format_func=lambda x: f"{x.replace('_', ' ')} — ({METADATA_ESTACIONES_AMB.get(x, {}).get('subsistema_abastecimiento', '')[:38]}...)",
+                key="sel_est_planificador_om"
+            )
+        with cp2:
+            modo_vista_pred = st.selectbox(
+                "📊 Escala y Tipo de Tabla a Visualizar:",
+                [
+                    "☀️ 1. Días Menos Lluviosos / Ventanas Secas (Paradas de Planta)",
+                    "📅 2. Diario Completo (Día a Día — 30 Días)",
+                    "📆 3. Semanal (Semanas 1 a 4 del Mes)",
+                    "🌓 4. Quincenal y Mensual (15d y 30d)",
+                    "🎯 5. Rango de Fechas Personalizado",
+                    "🌐 6. Matriz Comparativa 7 Estaciones (30 Días)"
+                ],
+                index=0,
+                key="sel_modo_vista_pred_om"
+            )
+        with cp3:
+            umbral_seco_sel = st.slider(
+                "☀️ Umbral Máx. Día Seco / Mant. (mm/día):",
+                min_value=0.0,
+                max_value=15.0,
+                value=2.0,
+                step=0.5,
+                help="Define hasta cuántos mm/día se considera un día seco u óptimo para programar trabajos de mantenimiento o parada de planta.",
+                key="slider_umbral_seco_om"
+            )
+
+        df_base_plan = series_multi_map.get(est_plan_sel, pd.DataFrame())
+        f_min_disp = pd.to_datetime(df_base_plan["fecha"]).dt.date.min() if not df_base_plan.empty else datetime.now(colombia_tz).date()
+        f_max_disp = pd.to_datetime(df_base_plan["fecha"]).dt.date.max() if not df_base_plan.empty else (datetime.now(colombia_tz).date() + timedelta(days=29))
+
+        f_ini_usr = f_min_disp
+        f_fin_usr = f_max_disp
+        solo_secos_usr = False
+        orden_seco_usr = False
+
+        if modo_vista_pred.startswith("🎯 5."):
+            cc1, cc2, cc3, cc4 = st.columns([1.0, 1.0, 1.1, 1.2])
+            with cc1:
+                f_ini_usr = st.date_input("📅 Fecha Inicial:", value=f_min_disp, min_value=f_min_disp, max_value=f_max_disp, key="f_ini_pred_custom")
+            with cc2:
+                f_fin_usr = st.date_input("📅 Fecha Final:", value=f_max_disp, min_value=f_min_disp, max_value=f_max_disp, key="f_fin_pred_custom")
+                if f_fin_usr < f_ini_usr:
+                    f_fin_usr = f_ini_usr
+            with cc3:
+                solo_secos_usr = st.checkbox(f"☀️ Filtrar solo días ≤ {umbral_seco_sel:.1f} mm", value=False, key="chk_solo_secos_custom")
+            with cc4:
+                orden_seco_usr = st.checkbox("🔽 Ordenar de menos lluvioso a más lluvioso", value=True, key="chk_orden_seco_custom")
+
+        paquete_tablas_pred = construir_tablas_prediccion_personalizadas(
+            est_id=est_plan_sel,
+            series_multi_map=series_multi_map,
+            df_multi_res=df_multi_res,
+            umbral_seco_mm=umbral_seco_sel,
+            fecha_ini_custom=f_ini_usr,
+            fecha_fin_custom=f_fin_usr,
+            solo_dias_secos_custom=solo_secos_usr,
+            ordenar_por_menos_lluvioso=orden_seco_usr
+        )
+
+        if paquete_tablas_pred:
+            r_seco = paquete_tablas_pred["dia_mas_seco"]
+            r_lluv = paquete_tablas_pred["dia_mas_lluvioso"]
+            n_secos_mes = paquete_tablas_pred["dias_secos_30d"]
+            vent_2d = paquete_tablas_pred["mejor_ventana_2d"]
+            vent_3d = paquete_tablas_pred["mejor_ventana_3d"]
+            meta_plan = METADATA_ESTACIONES_AMB.get(est_plan_sel, {})
+
+            # 4 Tarjetas KPI de Decisión para Parada de Planta / Mantenimiento
+            kp1, kp2, kp3, kp4 = st.columns(4)
+            kp1.metric(
+                "🏆 Día Más Seco del Mes",
+                f"{r_seco['precip_mm']:.1f} mm",
+                delta=f"{r_seco['dia_semana']} {r_seco['fecha_dt'].strftime('%d-%b')} (Prob: {int(r_seco['prob_max_pct'])}%)",
+                help=f"Día con menor precipitación proyectada en {meta_plan.get('nombre_completo', est_plan_sel)} durante los próximos 30 días."
+            )
+            kp2.metric(
+                f"☀️ Días Secos en el Mes (≤ {umbral_seco_sel:.1f} mm)",
+                f"{n_secos_mes} de 30 días",
+                delta=f"{(n_secos_mes / 30.0) * 100.0:.0f}% del mes apto",
+                help="Cantidad total de días dentro del horizonte de 30 días que cumplen el umbral de baja precipitación para mantenimientos."
+            )
+            kp3.metric(
+                "🛠️ Mejor Ventana Continua (48h / 72h)",
+                vent_2d.split("(")[0].strip(),
+                delta=f"72h: {vent_3d}",
+                help="Bloque de 2 y 3 días consecutivos con la menor lluvia acumulada en todo el mes, ideal para paradas programadas de planta."
+            )
+            kp4.metric(
+                "🌧️ Día Pico a Evitar (Mayor Lluvia)",
+                f"{r_lluv['precip_mm']:.1f} mm",
+                delta=f"{r_lluv['dia_semana']} {r_lluv['fecha_dt'].strftime('%d-%b')}",
+                delta_color="inverse",
+                help="Día donde se proyecta la mayor precipitación del mes; se recomienda evitar paradas de planta o trabajos descubiertos."
+            )
+
+            # Seleccionar el DataFrame activo según la vista elegida
+            if modo_vista_pred.startswith("☀️ 1."):
+                df_vista_activa = paquete_tablas_pred["df_ventanas_secas"]
+                titulo_tabla_activa = f"☀️ Ranking de Días Menos Lluviosos del Mes en {meta_plan.get('nombre_completo', est_plan_sel)} (Umbral ≤ {umbral_seco_sel:.1f} mm/día)"
+                sub_archivo = f"ventanas_secas_{est_plan_sel}"
+            elif modo_vista_pred.startswith("📅 2."):
+                df_vista_activa = paquete_tablas_pred["df_diaria"]
+                titulo_tabla_activa = f"📅 Serie Diaria Completa de Predicción a 30 Días — {meta_plan.get('nombre_completo', est_plan_sel)}"
+                sub_archivo = f"prediccion_diaria_30d_{est_plan_sel}"
+            elif modo_vista_pred.startswith("📆 3."):
+                df_vista_activa = paquete_tablas_pred["df_semanal"]
+                titulo_tabla_activa = f"📆 Consolidado Semanal de Predicciones (Semanas 1 a 4) — {meta_plan.get('nombre_completo', est_plan_sel)}"
+                sub_archivo = f"prediccion_semanal_{est_plan_sel}"
+            elif modo_vista_pred.startswith("🌓 4."):
+                df_vista_activa = paquete_tablas_pred["df_quincenal_mensual"]
+                titulo_tabla_activa = f"🌓 Consolidado Quincenal (15d) y Mensual (30d) — {meta_plan.get('nombre_completo', est_plan_sel)}"
+                sub_archivo = f"prediccion_quincenal_mensual_{est_plan_sel}"
+            elif modo_vista_pred.startswith("🎯 5."):
+                df_vista_activa = paquete_tablas_pred["df_personalizada"]
+                titulo_tabla_activa = f"🎯 Consulta Personalizada ({f_ini_usr} al {f_fin_usr}) — {meta_plan.get('nombre_completo', est_plan_sel)}"
+                sub_archivo = f"prediccion_personalizada_{est_plan_sel}_{f_ini_usr}_{f_fin_usr}"
+            else:
+                df_vista_activa = paquete_tablas_pred["df_matriz_7"]
+                titulo_tabla_activa = "🌐 Matriz Comparativa Diaria de Precipitación en las 7 Estaciones amb (30 Días)"
+                sub_archivo = "matriz_prediccion_7_estaciones_30d"
+
+            st.markdown(f"#### {titulo_tabla_activa}")
+            if not df_vista_activa.empty:
+                st.dataframe(df_vista_activa, use_container_width=True, hide_index=True)
+            else:
+                st.info("ℹ️ No hay días en el rango personalizado que cumplan ese umbral tan estricto. Aumente ligeramente el umbral en el deslizador o desactive el filtro de solo días secos.")
+
+            # Gráfica interactiva de los días proyectados resaltando en VERDE los días óptimos de parada de planta
+            df_plot_mant = paquete_tablas_pred["df_raw"].copy()
+            colores_bar_mant = [
+                "#10B981" if float(v) <= umbral_seco_sel else ("#F59E0B" if float(v) <= 5.0 else "#EF4444")
+                for v in df_plot_mant["precip_mm"]
+            ]
+            fig_mant = go.Figure()
+            fig_mant.add_trace(go.Bar(
+                x=[f"{r['dia_semana'][:3]} {r['fecha_str']}" for _, r in df_plot_mant.iterrows()],
+                y=df_plot_mant["precip_mm"],
+                marker_color=colores_bar_mant,
+                text=[f"{v:.1f}" for v in df_plot_mant["precip_mm"]],
+                textposition="outside",
+                name="Precipitación Prevista (mm/día)"
+            ))
+            fig_mant.add_hline(
+                y=umbral_seco_sel,
+                line_dash="dash",
+                line_color="#059669",
+                annotation_text=f"Umbral Día Seco / Mantenimiento (≤ {umbral_seco_sel:.1f} mm/día)"
+            )
+            fig_mant.update_layout(
+                title=f"🟢 Mapa Visual de Ventanas Secas para Parada de Planta en {meta_plan.get('nombre_completo', est_plan_sel)} (Verde = Óptimo ≤ {umbral_seco_sel:.1f} mm)",
+                xaxis_title="Día y Fecha Proyectada (30 Días)",
+                yaxis_title="Precipitación (mm/día)",
+                template="plotly_white",
+                height=330,
+                margin=dict(t=45, b=30, l=15, r=15)
+            )
+            st.plotly_chart(fig_mant, use_container_width=True)
+
+            # Botones de Descarga Institucional en Excel (.xlsx Multi-Hoja con openpyxl) y CSV (igual que en Históricos)
+            excel_pred_bytes = generar_excel_predicciones_mantenimiento_open_meteo(
+                est_id=est_plan_sel,
+                tablas_dict=paquete_tablas_pred,
+                df_tabla_exec=df_tabla_mostrar,
+                umbral_seco_mm=umbral_seco_sel,
+                periodo_desc=f"{modo_vista_pred} | Estación: {est_plan_sel} | Umbral Seco ≤ {umbral_seco_sel:.1f} mm/día"
+            )
+            csv_vista_bytes = df_vista_activa.to_csv(index=False).encode("utf-8-sig") if not df_vista_activa.empty else b""
+
+            b_dl1, b_dl2 = st.columns(2)
+            with b_dl1:
+                st.download_button(
+                    label=f"📗 Descargar Libro Excel Completo (.xlsx Multi-Hoja: Ventanas Secas + Diario + Semanal + Mensual + 7 Estaciones)",
+                    data=excel_pred_bytes,
+                    file_name=f"Planeacion_Predicciones_MIMAT_C26_{est_plan_sel}_{datetime.now(colombia_tz).strftime('%Y%m%d')}.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    use_container_width=True,
+                    key="btn_dl_excel_pred_completo"
+                )
+            with b_dl2:
+                if not df_vista_activa.empty:
+                    st.download_button(
+                        label=f"📥 Descargar Tabla Activa en Pantalla (.csv — {modo_vista_pred.split('.')[1].strip()[:32]})",
+                        data=csv_vista_bytes,
+                        file_name=f"{sub_archivo}_{datetime.now(colombia_tz).strftime('%Y%m%d')}.csv",
+                        mime="text/csv",
+                        use_container_width=True,
+                        key="btn_dl_csv_pred_activa"
+                    )
 # ------------------------------------------------------------
 # TAB 4: SERIES DE TIEMPO, ROSA DE VIENTOS Y DESCARGAS
 # ------------------------------------------------------------
