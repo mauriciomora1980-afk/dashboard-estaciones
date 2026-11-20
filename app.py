@@ -1552,11 +1552,11 @@ METADATA_PLANTAS_PTAP_AMB = {
         "color": "#0EA5E9"
     },
     "PTAP_Morrorico": {
-        "nombre_completo": "PTAP Morrorico — Parque del Agua (Sistema Tona)",
+        "nombre_completo": "PTAP Morrorico & Parque del Agua (Sede Principal amb — Sistema Tona)",
         "tipo_sensor": "Pronóstico Satelital Dedicado Open-Meteo + Acoplamiento Cuenca Tona (Futuros Sensores RQ-30)",
         "cuenca_principal": "Sistema Río Tona (Aducción Carrizal / Arnania / Golondrinas RQ-30 y derivación desde La Flora)",
-        "subsistema_abastecimiento": "Abastecimiento Centro-Norte y Meseta de Bucaramanga (Parque del Agua)",
-        "zona": "Sector Morrorico / Parque del Agua — Bucaramanga",
+        "subsistema_abastecimiento": "Abastecimiento Centro-Norte y Meseta de Bucaramanga • Sede Principal & Parque del Agua amb",
+        "zona": "Sector Morrorico / Parque del Agua (Oficinas Principales amb) — Bucaramanga",
         "dms": "7°07'48.02\"N 73°06'33.11\"W",
         "lat": 7.130006,
         "lon": -73.109197,
@@ -1567,7 +1567,7 @@ METADATA_PLANTAS_PTAP_AMB = {
         "estaciones_centinela": ["El_Pajal", "Vegas_del_Quemado", "Yerbabuena"],
         "captaciones_asociadas": "Captación Golondrinas (RQ-30) • Captación Arnania (RQ-30) • Captación Carrizal (RQ-30)",
         "distancias_geodesicas": "A solo 0.80 km (802 m) en línea recta de PTAP La Flora con caída por gravedad de ΔZ = 124.38 m (1,179.11 ➔ 1,054.73 msnm). A 12.12 km de El Pajal (ΔZ = 1,108.27 m).",
-        "descripcion": "Planta histórica e insignia del Parque del Agua del amb, ubicada a 1,054.73 msnm (7°07'48.02\"N 73°06'33.11\"W). Opera en tándem hidráulico con PTAP La Flora alimentada por las captaciones del Sistema Tona.",
+        "descripcion": "Planta histórica e insignia del Parque del Agua y Sede de las Oficinas Principales del amb, ubicada a 1,054.73 msnm (7°07'48.02\"N 73°06'33.11\"W). Opera en tándem hidráulico con PTAP La Flora alimentada por las captaciones del Sistema Tona y brinda pronóstico meteorológico dedicado para las instalaciones operativas, administrativas y ecológicas del Parque del Agua.",
         "color": "#0284C7"
     },
     "PTAP_Bosconia": {
@@ -3754,11 +3754,11 @@ ETIQUETAS_CORTAS_NODOS = {
     "Carrizal": "🚰 Carrizal — RQ30 (1,361.9 m)",
     "Florida_Rio_Frio": "🚰 Florida Río Frío — RQ30 (1,083.2 m)",
     "Captacion_Bosconia": "🚰 Captación Bosconia (698.7 m)",
-    "PTAP_La_Flora": "🏭 Planta La Flora (1,179.1 m)",
-    "PTAP_Morrorico": "🏭 Planta Morrorico (1,054.7 m)",
-    "PTAP_Bosconia": "🏭 Planta Bosconia (691.0 m)",
+    "PTAP_La_Flora": "🏭 PTAP La Flora (1,179.1 m)",
+    "PTAP_Morrorico": "🏭 PTAP Morrorico & Parque del Agua (1,054.7 m)",
+    "PTAP_Bosconia": "🏭 PTAP Bosconia (691.0 m)",
     "PTAP_RAD_Angelinos": "🏭 PTAP RAD Angelinos (841.6 m)",
-    "PTAP_Floridablanca": "🏭 Planta Floridablanca (1,042.9 m)"
+    "PTAP_Floridablanca": "🏭 PTAP Floridablanca (1,042.9 m)"
 }
 estaciones = [n for lista_g in GRUPOS_NODOS_MIMAT.values() for n in lista_g]
 
