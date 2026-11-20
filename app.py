@@ -1436,6 +1436,16 @@ def generar_pronostico_respaldo_altimetrico_local(lat: float, lon: float, past_d
         alt_est = 885.75   # Embalse Tona
     elif abs(lat - 7.1585) < 0.008 and abs(lon - (-73.0985)) < 0.008:
         alt_est = 756.53   # Río Suratá — Sector Las Majadas
+    elif abs(lat - 7.1351) < 0.004 and abs(lon - (-73.1040)) < 0.004:
+        alt_est = 1179.11  # PTAP La Flora
+    elif abs(lat - 7.1300) < 0.004 and abs(lon - (-73.1092)) < 0.004:
+        alt_est = 1054.73  # PTAP Morrorico (Parque del Agua)
+    elif abs(lat - 7.1536) < 0.004 and abs(lon - (-73.1155)) < 0.004:
+        alt_est = 691.00   # PTAP Bosconia
+    elif abs(lat - 7.1582) < 0.004 and abs(lon - (-73.1181)) < 0.004:
+        alt_est = 841.63   # PTAP RAD Los Angelinos
+    elif abs(lat - 7.0703) < 0.006 and abs(lon - (-73.0774)) < 0.006:
+        alt_est = 1042.87  # PTAP Floridablanca
     elif abs(lat - 7.1227) < 0.01:
         alt_est = 2436.0   # La Mariana
     elif abs(lat - 7.1636) < 0.01:
@@ -1507,15 +1517,173 @@ def obtener_pronostico_open_meteo(lat: float, lon: float, past_days: int = 7, fo
     # Si Open-Meteo está caído o limita peticiones (HTTP 429/502/Timeout), activar Respaldo Altimétrico Local
     return generar_pronostico_respaldo_altimetrico_local(lat, lon, past_days=past_days, forecast_days=forecast_days)
 
+# ============================================================
+# METADATOS GEODÉSICOS OFICIALES DE LAS 5 PLANTAS DE TRATAMIENTO (PTAP)
+# Y ARQUITECTURA PREPARADA PARA CAPTACIONES & SENSORES RADAR SOMMER RQ-30
+# ============================================================
+METADATA_PLANTAS_PTAP_AMB = {
+    "PTAP_La_Flora": {
+        "nombre_completo": "PTAP La Flora (Sistema Tona)",
+        "tipo_sensor": "Pronóstico Satelital Dedicado Open-Meteo + Acoplamiento Cuenca Tona (Futuros Sensores RQ-30)",
+        "cuenca_principal": "Sistema Río Tona (Captaciones Golondrinas RQ-30, Arnania RQ-30 y Carrizal RQ-30)",
+        "subsistema_abastecimiento": "Abastecimiento Gravedad Zona Oriental/Central Bucaramanga + Interconexión a PTAP Morrorico",
+        "zona": "Sector La Flora — Oriente de Bucaramanga",
+        "dms": "7°08'06.20\"N 73°06'14.44\"W",
+        "lat": 7.135056,
+        "lon": -73.104011,
+        "altitud_msnm": 1179.11,
+        "estaciones_centinela": ["El_Pajal", "Vegas_del_Quemado", "Yerbabuena"],
+        "captaciones_asociadas": "Captación Golondrinas (RQ-30) • Captación Arnania (RQ-30) • Captación Carrizal (RQ-30)",
+        "distancias_geodesicas": "A 11.53 km rectos de El Pajal (ΔZ = 983.89 m), 13.43 km de Vegas del Quemado (ΔZ = 580.13 m) y 21.97 km de Yerbabuena (ΔZ = 2,221.14 m). A 0.80 km (802 m) arriba de PTAP Morrorico (ΔZ = 124.38 m).",
+        "descripcion": "Planta de tratamiento principal del Sistema Tona, georreferenciada a 1,179.11 msnm (7°08'06.20\"N 73°06'14.44\"W). Recibe por gravedad las aducciones de alta montaña de Golondrinas, Arnania y Carrizal (preparada para integración de caudales RQ-30 y batimetrías de bocatoma).",
+        "color": "#0EA5E9"
+    },
+    "PTAP_Morrorico": {
+        "nombre_completo": "PTAP Morrorico — Parque del Agua (Sistema Tona)",
+        "tipo_sensor": "Pronóstico Satelital Dedicado Open-Meteo + Acoplamiento Cuenca Tona (Futuros Sensores RQ-30)",
+        "cuenca_principal": "Sistema Río Tona (Aducción Carrizal / Arnania / Golondrinas RQ-30 y derivación desde La Flora)",
+        "subsistema_abastecimiento": "Abastecimiento Centro-Norte y Meseta de Bucaramanga (Parque del Agua)",
+        "zona": "Sector Morrorico / Parque del Agua — Bucaramanga",
+        "dms": "7°07'48.02\"N 73°06'33.11\"W",
+        "lat": 7.130006,
+        "lon": -73.109197,
+        "altitud_msnm": 1054.73,
+        "estaciones_centinela": ["El_Pajal", "Vegas_del_Quemado", "Yerbabuena"],
+        "captaciones_asociadas": "Captación Golondrinas (RQ-30) • Captación Arnania (RQ-30) • Captación Carrizal (RQ-30)",
+        "distancias_geodesicas": "A solo 0.80 km (802 m) en línea recta de PTAP La Flora con caída por gravedad de ΔZ = 124.38 m (1,179.11 ➔ 1,054.73 msnm). A 12.12 km de El Pajal (ΔZ = 1,108.27 m).",
+        "descripcion": "Planta histórica e insignia del Parque del Agua del amb, ubicada a 1,054.73 msnm (7°07'48.02\"N 73°06'33.11\"W). Opera en tándem hidráulico con PTAP La Flora alimentada por las captaciones del Sistema Tona.",
+        "color": "#0284C7"
+    },
+    "PTAP_Bosconia": {
+        "nombre_completo": "PTAP Bosconia (Sistema Río Suratá + Respaldo Embalse CRC)",
+        "tipo_sensor": "Pronóstico Satelital Dedicado Open-Meteo + Acoplamiento Majadas (FEWS IDEAM) & Válvula CRC (ET_FIT401)",
+        "cuenca_principal": "Cuenca Río Suratá (Captación Bosconia 698.72 msnm) + Cuenca Regulada Río Tona (Embalse vía CRC)",
+        "subsistema_abastecimiento": "Trata 900 a 1,200 L/s para Zona Norte, Girón, Ciudadela Real de Minas y bombeo a RAD Angelinos",
+        "zona": "Sector Bosconia / Chitota — Norte de Bucaramanga",
+        "dms": "7°09'12.97\"N 73°06'55.75\"W",
+        "lat": 7.153603,
+        "lon": -73.115486,
+        "altitud_msnm": 691.00,
+        "estaciones_centinela": ["Surata", "Embalse", "Monsalve"],
+        "captaciones_asociadas": "Captación Bosconia (7°09'20.26\"N 73°06'41.51\"W • 698.72 msnm) + Válvula CRC Embalse Tona (ET_FIT401)",
+        "distancias_geodesicas": "A 0.49 km (491 m) de Captación Bosconia (ΔZ = 7.72 m por gravedad), a 1.96 km rectos (~2.40 km por cauce+aducción) de Las Majadas (ΔZ = 65.53 m), y a 3.11 km rectos de Presa Embalse Tona (ΔZ = 194.75 m).",
+        "descripcion": "Planta de mayor capacidad del eje norte, ubicada a 691.00 msnm (7°09'12.97\"N 73°06'55.75\"W). Recibe agua cruda de la Captación Bosconia (a 491 m, cota 698.72 msnm) vigilada por la estación Las Majadas (756.53 msnm) y suplementada en estiaje por el Embalse de Tona vía válvula CRC (ET_FIT401).",
+        "color": "#10B981"
+    },
+    "PTAP_RAD_Angelinos": {
+        "nombre_completo": "PTAP RAD Los Angelinos (Rafael Ardila Duarte)",
+        "tipo_sensor": "Pronóstico Satelital Dedicado Open-Meteo + Acoplamiento Directo Embalse Tona & Bombeo Bosconia",
+        "cuenca_principal": "Cuenca Regulada del Río Tona (Embalse de Bucaramanga 885.75 msnm) & Sistema Suratá-Bosconia",
+        "subsistema_abastecimiento": "Concesión CDMB Res. 0068/2010: hasta 1,200 L/s desde Embalse de Bucaramanga para Norte y Occidente",
+        "zona": "Sector Los Angelinos — Norte de Bucaramanga",
+        "dms": "7°09'29.35\"N 73°07'05.21\"W",
+        "lat": 7.158153,
+        "lon": -73.118114,
+        "altitud_msnm": 841.63,
+        "estaciones_centinela": ["Embalse", "Surata", "Yerbabuena", "Vegas_del_Quemado", "El_Pajal"],
+        "captaciones_asociadas": "Torre de Captación Embalse de Bucaramanga (Cota mín. 841.00 msnm) & Línea Bombeo Bosconia",
+        "distancias_geodesicas": "Ubicada exactamente en la cota 841.63 msnm (coincidente con el Nivel Mínimo de Operación del Embalse: 841.00 msnm). A 3.38 km rectos de Presa Embalse Tona (ΔZ = 44.12 m de carga por gravedad) y a 0.58 km rectos (~1.45 km por vía en zigzag) arriba de PTAP Bosconia (+150.63 m por bombeo).",
+        "descripcion": "Planta Rafael Ardila Duarte (Los Angelinos), georreferenciada a 841.63 msnm (7°09'29.35\"N 73°07'05.21\"W). Su elevación coincide exactamente con el nivel mínimo técnico de operación del Embalse de Bucaramanga (841.00 msnm), permitiendo entrega por gravedad entre las cotas 841.63 y 885.75 msnm.",
+        "color": "#6366F1"
+    },
+    "PTAP_Floridablanca": {
+        "nombre_completo": "PTAP Floridablanca (Sistema Río Frío)",
+        "tipo_sensor": "Pronóstico Satelital Dedicado Open-Meteo + Acoplamiento Estación Centinela La Mariana (2,436 msnm)",
+        "cuenca_principal": "Cuenca del Río Frío (Bocatoma Floridablanca — Tanque Circular y Desarenadores)",
+        "subsistema_abastecimiento": "Abastecimiento por Gravedad del Municipio de Floridablanca y Sur del Área Metropolitana",
+        "zona": "Sector Floridablanca (Sendero Caracolí) — Floridablanca",
+        "dms": "7°04'12.99\"N 73°04'38.51\"W",
+        "lat": 7.070275,
+        "lon": -73.077364,
+        "altitud_msnm": 1042.87,
+        "estaciones_centinela": ["La_Mariana"],
+        "captaciones_asociadas": "Bocatoma Floridablanca — Río Frío (Preparada para integración batimétrica y sensor RQ-30)",
+        "distancias_geodesicas": "A 9.71 km en línea recta (~12.8 km siguiendo el cauce del Río Frío y conducción) de su estación centinela La Mariana (2,436.00 msnm), con una caída topográfica de ΔZ = 1,393.13 m.",
+        "descripcion": "Planta de tratamiento del subsistema sur (Río Frío), ubicada a 1,042.87 msnm (7°04'12.99\"N 73°04'38.51\"W). Vigilada directamente en su cuenca alta por la estación La Mariana (2,436 msnm), cuya predicción a 30 días permite programar paradas de planta y lavados de desarenadores en ventanas secas.",
+        "color": "#8B5CF6"
+    }
+}
+
+METADATA_CAPTACIONES_RQ30_AMB = {
+    "Captacion_Bosconia": {
+        "nombre": "Captación / Bocatoma Bosconia (Río Suratá)",
+        "dms": "7°09'20.26\"N 73°06'41.51\"W",
+        "lat": 7.155628,
+        "lon": -73.111531,
+        "altitud_msnm": 698.72,
+        "ptap_destino": "PTAP_Bosconia (a 0.49 km | ΔZ = 7.72 m)",
+        "estacion_centinela": "Surata — Las Majadas (a 1.48 km rectos / 1.82 km cauce | ΔZ = 57.81 m)",
+        "estado_sensor": "✅ Activo aguas arriba en Majadas (CNE 0023197700) + Válvula CRC (ET_FIT401) | Listo para sensor caudal de entrada en bocatoma"
+    },
+    "Captacion_Golondrinas_RQ30": {
+        "nombre": "Captación Golondrinas (Sistema Tona — Radar RQ-30)",
+        "dms": "Ladera Sur Cuenca Tona (Aguas abajo Estación El Pajal)",
+        "lat": 7.139000,
+        "lon": -73.035000,
+        "altitud_msnm": 1580.0,
+        "ptap_destino": "PTAP_La_Flora (1,179.11 msnm) & PTAP_Morrorico (1,054.73 msnm)",
+        "estacion_centinela": "El_Pajal (2,163.00 msnm)",
+        "estado_sensor": "🔌 Arquitectura lista en BigQuery para curva batimétrica de sección y caudalímetro radar Sommer RQ-30"
+    },
+    "Captacion_Arnania_RQ30": {
+        "nombre": "Captación Arnania (Sistema Tona — Radar RQ-30)",
+        "dms": "Cuenca Media Norte Tona (Aguas abajo Vegas del Quemado)",
+        "lat": 7.185000,
+        "lon": -73.042000,
+        "altitud_msnm": 1520.0,
+        "ptap_destino": "PTAP_La_Flora (1,179.11 msnm) & PTAP_Morrorico (1,054.73 msnm)",
+        "estacion_centinela": "Vegas_del_Quemado (1,759.24 msnm)",
+        "estado_sensor": "🔌 Arquitectura lista en BigQuery para curva batimétrica de sección y caudalímetro radar Sommer RQ-30"
+    },
+    "Captacion_Carrizal_RQ30": {
+        "nombre": "Captación Carrizal / Campamento (Sistema Tona — Radar RQ-30)",
+        "dms": "Cabecera Río Tona (Aguas abajo Páramo Yerbabuena)",
+        "lat": 7.168000,
+        "lon": -72.985000,
+        "altitud_msnm": 1650.0,
+        "ptap_destino": "PTAP_La_Flora (1,179.11 msnm) & PTAP_Morrorico (1,054.73 msnm)",
+        "estacion_centinela": "Yerbabuena (3,400.25 msnm)",
+        "estado_sensor": "🔌 Arquitectura lista en BigQuery para curva batimétrica de sección y caudalímetro radar Sommer RQ-30"
+    },
+    "Captacion_Floridablanca_Rio_Frio": {
+        "nombre": "Bocatoma Floridablanca — Río Frío (Tanque Circular & Desarenadores)",
+        "dms": "Cuenca Media Río Frío (Aguas abajo Estación La Mariana)",
+        "lat": 7.078500,
+        "lon": -73.062000,
+        "altitud_msnm": 1190.0,
+        "ptap_destino": "PTAP_Floridablanca (1,042.87 msnm)",
+        "estacion_centinela": "La_Mariana (2,436.00 msnm — a 9.71 km de la PTAP)",
+        "estado_sensor": "🔌 Arquitectura lista en BigQuery para curva batimétrica de bocatoma y sensor radar de caudal"
+    }
+}
+
+
+def obtener_metadata_punto_mimat(id_punto: str) -> dict:
+    """Devuelve los metadatos oficiales tanto si id_punto es una de las 7 Estaciones como si es una de las 5 PTAPs."""
+    if id_punto in METADATA_PLANTAS_PTAP_AMB:
+        return METADATA_PLANTAS_PTAP_AMB[id_punto]
+    if "METADATA_ESTACIONES_AMB" in globals() and id_punto in METADATA_ESTACIONES_AMB:
+        return METADATA_ESTACIONES_AMB[id_punto]
+    fallback_est = {
+        "Embalse": {"nombre_completo": "Embalse Tona (Radar OTT)", "cuenca_principal": "Cuenca Regulada del Río Tona", "subsistema_abastecimiento": "PTAP Bosconia (vía CRC) & PTAP RAD Angelinos", "dms": "7°09'25.00\"N 73°05'15.00\"W", "lat": 7.156944, "lon": -73.087500, "altitud_msnm": 885.75},
+        "Surata": {"nombre_completo": "Estación Hidrológica Río Suratá — Sector Las Majadas", "cuenca_principal": "Cuenca Media-Baja Río Suratá", "subsistema_abastecimiento": "Captación Bosconia ➔ PTAP Bosconia", "dms": "7°09'30.58\"N 73°05'54.45\"W", "lat": 7.158494, "lon": -73.098458, "altitud_msnm": 756.53},
+        "El_Pajal": {"nombre_completo": "Estación El Pajal", "cuenca_principal": "Parte Alta Quebrada Golondrinas & Ladera Sur Tona", "subsistema_abastecimiento": "Captación Golondrinas (RQ-30) ➔ PTAP La Flora & Morrorico", "dms": "7°08'26.09\"N 72°59'59.10\"W", "lat": 7.140581, "lon": -72.999750, "altitud_msnm": 2163.0},
+        "Vegas_del_Quemado": {"nombre_completo": "Estación Vegas del Quemado", "cuenca_principal": "Parte Alta Quebrada Arnania & Ladera Norte Tona", "subsistema_abastecimiento": "Captación Arnania (RQ-30) ➔ PTAP La Flora & Morrorico", "dms": "7°12'54.10\"N 73°00'46.10\"W", "lat": 7.215028, "lon": -73.012806, "altitud_msnm": 1759.24},
+        "La_Mariana": {"nombre_completo": "Estación La Mariana", "cuenca_principal": "Parte Alta Cuenca Río Frío / Filo Divisorio Alto", "subsistema_abastecimiento": "Alimentación a PTAP Floridablanca + Cabecera Golondrinas", "dms": "7°07'21.86\"N 73°00'25.27\"W", "lat": 7.122739, "lon": -73.007019, "altitud_msnm": 2436.0},
+        "Yerbabuena": {"nombre_completo": "Estación Yerbabuena", "cuenca_principal": "Alta Cuenca / Nacimiento Río Tona (Zona Páramo)", "subsistema_abastecimiento": "Captación Carrizal (RQ-30) ➔ PTAP La Flora & Morrorico", "dms": "7°11'44.99\"N 72°54'52.99\"W", "lat": 7.195831, "lon": -72.914719, "altitud_msnm": 3400.25},
+        "Monsalve": {"nombre_completo": "Estación Monsalve", "cuenca_principal": "Alta Cuenca / Zona Páramo del Río Suratá", "subsistema_abastecimiento": "Cabecera Río Suratá ➔ PTAP Bosconia & RAD Angelinos", "dms": "7°26'30.50\"N 72°55'51.30\"W", "lat": 7.441806, "lon": -72.930917, "altitud_msnm": 3339.79}
+    }
+    return fallback_est.get(id_punto, {})
+
+
 def _generar_respaldo_multitemporal_open_meteo():
     """
     Respaldo determinístico altimétrico y climatológico de la red amb para los horizontes
-    Semanal (7d), Quincenal (15d) y Mensual (30d) cuando la API de Open-Meteo tarda o tiene límite de tasa.
+    Semanal (7d), Quincenal (15d) y Mensual (30d) para las 7 Estaciones y las 5 Plantas (PTAP).
     """
     hoy = datetime.now(colombia_tz).date()
     fechas_30d = [hoy + timedelta(days=i) for i in range(30)]
     mes_act = hoy.month
-    # Factor estacional bimodal andino de Santander (Mar-May y Sep-Nov húmedos; Dic-Feb y Jun-Ago más secos)
     factor_mes = 1.25 if mes_act in [4, 5, 9, 10, 11] else (0.95 if mes_act in [3, 6, 8] else 0.65)
     tasas_base_mm_dia = {
         "Embalse": 3.2,
@@ -1524,18 +1692,41 @@ def _generar_respaldo_multitemporal_open_meteo():
         "Vegas_del_Quemado": 4.8,
         "La_Mariana": 5.2,
         "Yerbabuena": 6.4,
-        "Monsalve": 6.8
+        "Monsalve": 6.8,
+        "PTAP_La_Flora": 3.6,
+        "PTAP_Morrorico": 3.5,
+        "PTAP_Bosconia": 3.0,
+        "PTAP_RAD_Angelinos": 3.1,
+        "PTAP_Floridablanca": 3.8
+    }
+    coords_fallback = {
+        "Embalse": ("Embalse Tona (Radar OTT)", "Cuenca Regulada del Río Tona", 885.75),
+        "Surata": ("Estación Hidrológica Río Suratá — Sector Las Majadas", "Cuenca Media-Baja Río Suratá", 756.53),
+        "El_Pajal": ("Estación El Pajal", "Parte Alta Quebrada Golondrinas & Ladera Sur Tona", 2163.0),
+        "Vegas_del_Quemado": ("Estación Vegas del Quemado", "Parte Alta Quebrada Arnania & Ladera Norte Tona", 1759.24),
+        "La_Mariana": ("Estación La Mariana", "Parte Alta Cuenca Río Frío / Filo Divisorio Alto", 2436.0),
+        "Yerbabuena": ("Estación Yerbabuena", "Alta Cuenca / Nacimiento Río Tona (Zona Páramo)", 3400.25),
+        "Monsalve": ("Estación Monsalve", "Alta Cuenca / Zona Páramo del Río Suratá", 3339.79)
     }
     resumen_rows = []
+    resumen_ptap_rows = []
     series_por_estacion = {}
     orden_est = ["Embalse", "Surata", "El_Pajal", "Vegas_del_Quemado", "La_Mariana", "Yerbabuena", "Monsalve"]
-    for idx_e, est_id in enumerate(orden_est):
-        meta_e = METADATA_ESTACIONES_AMB.get(est_id, {})
-        tasa_d = tasas_base_mm_dia.get(est_id, 4.5) * factor_mes
+    orden_ptap = ["PTAP_La_Flora", "PTAP_Morrorico", "PTAP_Bosconia", "PTAP_RAD_Angelinos", "PTAP_Floridablanca"]
+    todos_puntos = orden_est + orden_ptap
+
+    for idx_e, pid in enumerate(todos_puntos):
+        meta_e = obtener_metadata_punto_mimat(pid)
+        if not meta_e and pid in coords_fallback:
+            nom_p, cue_p, alt_p = coords_fallback[pid]
+        else:
+            nom_p = meta_e.get("nombre_completo", pid.replace("_", " "))
+            cue_p = meta_e.get("cuenca_principal", "")
+            alt_p = meta_e.get("altitud_msnm", 1000.0)
+        tasa_d = tasas_base_mm_dia.get(pid, 4.0) * factor_mes
         vals_30d = []
         probs_30d = []
         for d_i in range(30):
-            # Modulación sinóptica determinística de 5 y 9 días para simular ondas tropicales andinas
             onda = 1.0 + 0.65 * np.sin(2.0 * np.pi * (d_i + idx_e) / 5.0) + 0.35 * np.cos(2.0 * np.pi * d_i / 9.0)
             mm_d = round(max(0.0, tasa_d * max(0.0, onda)), 1)
             vals_30d.append(mm_d)
@@ -1546,18 +1737,18 @@ def _generar_respaldo_multitemporal_open_meteo():
         mensual = round(sum(vals_30d[:30]), 1)
         idx_pico_7d = int(np.argmax(vals_30d[:7]))
         dia_pico_str = f"{fechas_30d[idx_pico_7d].strftime('%d-%b')} ({vals_30d[idx_pico_7d]:.1f} mm)"
-        series_por_estacion[est_id] = pd.DataFrame({
+        series_por_estacion[pid] = pd.DataFrame({
             "fecha": pd.to_datetime(fechas_30d),
             "fecha_str": [f.strftime('%d-%b') for f in fechas_30d],
             "precip_mm": vals_30d,
             "prob_max_pct": probs_30d,
-            "horizonte": ["Semanal (Días 1-7)" if i < 7 else ("Quincenal (Días 8-15)" if i < 15 else "Mensual (Días 16-30)") for i in range(30)]
+            "horizonte": ["1. Semanal (Días 1–7)" if i < 7 else ("2. Semana 2 (Días 8–15)" if i < 15 else "3. Mensual (Días 16–30)") for i in range(30)]
         })
-        resumen_rows.append({
-            "id_estacion": est_id,
-            "Estación": meta_e.get("nombre_completo", est_id.replace("_", " ")),
-            "Cuenca / Subsistema": meta_e.get("cuenca_principal", ""),
-            "Altitud (msnm)": meta_e.get("altitud_msnm", 0.0),
+        fila_item = {
+            "id_estacion": pid,
+            "Estación": nom_p,
+            "Cuenca / Subsistema": cue_p,
+            "Altitud (msnm)": alt_p,
             "Semanal 7d (mm)": sem1,
             "Semana 2 (Días 8-15 mm)": sem2,
             "Quincenal 15d (mm)": quincenal,
@@ -1566,9 +1757,15 @@ def _generar_respaldo_multitemporal_open_meteo():
             "Prob. Máx 7d (%)": int(max(probs_30d[:7])),
             "Días Lluvia (≥1mm / 15d)": int(sum(1 for x in vals_30d[:15] if x >= 1.0)),
             "origen": "RESPALDO_CLIMATOLOGICO_AMB"
-        })
+        }
+        if pid in orden_est:
+            resumen_rows.append(fila_item)
+        else:
+            resumen_ptap_rows.append(fila_item)
+
     return {
         "df_resumen": pd.DataFrame(resumen_rows),
+        "df_resumen_ptap": pd.DataFrame(resumen_ptap_rows),
         "series_diarias": series_por_estacion,
         "origen": "RESPALDO_CLIMATOLOGICO_AMB",
         "actualizado_cot": datetime.now(colombia_tz).strftime('%Y-%m-%d %H:%M:%S COT')
@@ -1584,20 +1781,22 @@ def _ttl_multitemporal_om(res_dict):
 def obtener_predicciones_multitemporales_open_meteo():
     """
     Consulta en bloque (Batch Multi-Point API) las predicciones diarias de precipitación de Open-Meteo
-    para las 7 estaciones de la red MIMAT-C26 (amb):
-    1. Endpoint Forecast 16 Días (`api.open-meteo.com/v1/forecast?forecast_days=16`):
-       Obtiene día por día la lluvia prevista de los próximos 16 días para calcular con exactitud:
-       - Acumulado Semanal (Días 1 a 7)
-       - Acumulado Semana 2 (Días 8 a 15)
-       - Acumulado Quincenal (Días 1 a 15)
-    2. Endpoint Seasonal / Mensual (`seasonal-api.open-meteo.com/v1/seasonal?forecast_days=31` — ECMWF SEAS5)
-       con integración continua para los días 16 a 30 (Horizonte Mensual 30 Días). Si el endpoint estacional
-       presenta latencia, proyecta los días 16 a 30 combinando la tasa diaria del modelo ECMWF de 16 días
-       con la climatología altimétrica oficial de cada microcuenca en Santander.
+    para los 12 nodos estratégicos del sistema MIMAT-C26 (amb):
+    - Las 7 Estaciones Hidrometeorológicas en las cuencas altas y medias
+    - Las 5 Plantas de Tratamiento de Agua Potable (PTAP La Flora, PTAP Morrorico, PTAP Bosconia, PTAP RAD Angelinos y PTAP Floridablanca)
     """
     orden_est = ["Embalse", "Surata", "El_Pajal", "Vegas_del_Quemado", "La_Mariana", "Yerbabuena", "Monsalve"]
-    lats_str = ",".join(str(METADATA_ESTACIONES_AMB[e]["lat"]) for e in orden_est)
-    lons_str = ",".join(str(METADATA_ESTACIONES_AMB[e]["lon"]) for e in orden_est)
+    orden_ptap = ["PTAP_La_Flora", "PTAP_Morrorico", "PTAP_Bosconia", "PTAP_RAD_Angelinos", "PTAP_Floridablanca"]
+    todos_puntos = orden_est + orden_ptap
+
+    lats_list = []
+    lons_list = []
+    for p_id in todos_puntos:
+        m_p = obtener_metadata_punto_mimat(p_id)
+        lats_list.append(str(m_p.get("lat", 7.135056)))
+        lons_list.append(str(m_p.get("lon", -73.104011)))
+    lats_str = ",".join(lats_list)
+    lons_str = ",".join(lons_list)
 
     url_16d = (
         f"https://api.open-meteo.com/v1/forecast?latitude={lats_str}&longitude={lons_str}"
@@ -1612,10 +1811,10 @@ def obtener_predicciones_multitemporales_open_meteo():
     data_16d = None
     for intento in range(2):
         try:
-            r16 = requests.get(url_16d, headers={'User-Agent': 'MIMAT-C26-amb/2.8'}, timeout=6.0)
+            r16 = requests.get(url_16d, headers={'User-Agent': 'MIMAT-C26-amb/2.9'}, timeout=6.0)
             if r16.status_code == 200:
                 js16 = r16.json()
-                if isinstance(js16, list) and len(js16) == len(orden_est):
+                if isinstance(js16, list) and len(js16) == len(todos_puntos):
                     data_16d = js16
                     break
         except Exception:
@@ -1625,13 +1824,12 @@ def obtener_predicciones_multitemporales_open_meteo():
     if not data_16d:
         return _generar_respaldo_multitemporal_open_meteo()
 
-    # Intentar enriquecer los días 16 a 30 con el modelo estacional ECMWF SEAS5 de Open-Meteo
     data_30d = None
     try:
-        r30 = requests.get(url_30d_seas, headers={'User-Agent': 'MIMAT-C26-amb/2.8'}, timeout=4.0)
+        r30 = requests.get(url_30d_seas, headers={'User-Agent': 'MIMAT-C26-amb/2.9'}, timeout=4.0)
         if r30.status_code == 200:
             js30 = r30.json()
-            if isinstance(js30, list) and len(js30) == len(orden_est):
+            if isinstance(js30, list) and len(js30) == len(todos_puntos):
                 data_30d = js30
     except Exception:
         data_30d = None
@@ -1646,14 +1844,20 @@ def obtener_predicciones_multitemporales_open_meteo():
         "Vegas_del_Quemado": 4.8 * factor_mes,
         "La_Mariana": 5.2 * factor_mes,
         "Yerbabuena": 6.4 * factor_mes,
-        "Monsalve": 6.8 * factor_mes
+        "Monsalve": 6.8 * factor_mes,
+        "PTAP_La_Flora": 3.6 * factor_mes,
+        "PTAP_Morrorico": 3.5 * factor_mes,
+        "PTAP_Bosconia": 3.0 * factor_mes,
+        "PTAP_RAD_Angelinos": 3.1 * factor_mes,
+        "PTAP_Floridablanca": 3.8 * factor_mes
     }
 
     resumen_rows = []
+    resumen_ptap_rows = []
     series_por_estacion = {}
 
-    for idx_e, est_id in enumerate(orden_est):
-        meta_e = METADATA_ESTACIONES_AMB.get(est_id, {})
+    for idx_e, pid in enumerate(todos_puntos):
+        meta_e = obtener_metadata_punto_mimat(pid)
         d_block = data_16d[idx_e].get("daily", {}) if idx_e < len(data_16d) else {}
         tiempos_16 = d_block.get("time", [])
         precip_16 = [round(float(x or 0.0), 1) for x in d_block.get("precipitation_sum", [])]
@@ -1667,7 +1871,6 @@ def obtener_predicciones_multitemporales_open_meteo():
         vals_30 = list(precip_16[:15])
         probs_30 = list(prob_16[:15]) if len(prob_16) >= 15 else [50] * 15
 
-        # Extraer días 16 a 30 desde Seasonal API (si respondió) o proyección híbrida ECMWF + Climatología amb
         seas_vals = []
         if data_30d and idx_e < len(data_30d):
             d_s = data_30d[idx_e].get("daily", {})
@@ -1676,7 +1879,7 @@ def obtener_predicciones_multitemporales_open_meteo():
                 seas_vals = [round(float(x or 0.0), 1) for x in raw_seas[15:30]]
 
         tasa_media_15d = sum(vals_30[:15]) / 15.0
-        tasa_clim = tasas_clim_mm_dia.get(est_id, 4.5)
+        tasa_clim = tasas_clim_mm_dia.get(pid, 4.0)
         tasa_hibrida_d16_30 = (0.65 * tasa_media_15d) + (0.35 * tasa_clim)
 
         ult_fecha = fechas_30[-1]
@@ -1686,7 +1889,6 @@ def obtener_predicciones_multitemporales_open_meteo():
             if len(seas_vals) == 15:
                 mm_k = seas_vals[k]
             else:
-                # Modulación sinóptica suave conservando el volumen quincenal proyectado
                 mod_k = 1.0 + 0.45 * np.sin(2.0 * np.pi * (k + idx_e) / 5.0)
                 mm_k = round(max(0.0, tasa_hibrida_d16_30 * mod_k), 1)
             vals_30.append(mm_k)
@@ -1702,7 +1904,7 @@ def obtener_predicciones_multitemporales_open_meteo():
         prob_max_7d = int(max(probs_30[:7])) if probs_30[:7] else 0
         dias_lluvia_15d = int(sum(1 for v in vals_30[:15] if v >= 1.0))
 
-        series_por_estacion[est_id] = pd.DataFrame({
+        series_por_estacion[pid] = pd.DataFrame({
             "fecha": pd.to_datetime(fechas_30),
             "fecha_str": [f.strftime('%d-%b') for f in fechas_30],
             "precip_mm": vals_30,
@@ -1713,9 +1915,9 @@ def obtener_predicciones_multitemporales_open_meteo():
             ]
         })
 
-        resumen_rows.append({
-            "id_estacion": est_id,
-            "Estación": meta_e.get("nombre_completo", est_id.replace("_", " ")),
+        fila_item = {
+            "id_estacion": pid,
+            "Estación": meta_e.get("nombre_completo", pid.replace("_", " ")),
             "Cuenca / Subsistema": meta_e.get("cuenca_principal", ""),
             "Altitud (msnm)": meta_e.get("altitud_msnm", 0.0),
             "Semanal 7d (mm)": sem1_mm,
@@ -1726,10 +1928,15 @@ def obtener_predicciones_multitemporales_open_meteo():
             "Prob. Máx 7d (%)": prob_max_7d,
             "Días Lluvia (≥1mm / 15d)": dias_lluvia_15d,
             "origen": "OPEN_METEO_VIVO"
-        })
+        }
+        if pid in orden_est:
+            resumen_rows.append(fila_item)
+        else:
+            resumen_ptap_rows.append(fila_item)
 
     return {
         "df_resumen": pd.DataFrame(resumen_rows),
+        "df_resumen_ptap": pd.DataFrame(resumen_ptap_rows),
         "series_diarias": series_por_estacion,
         "origen": "OPEN_METEO_VIVO",
         "actualizado_cot": datetime.now(colombia_tz).strftime('%Y-%m-%d %H:%M:%S COT')
@@ -1770,7 +1977,7 @@ def construir_tablas_prediccion_personalizadas(
         0: "Lunes", 1: "Martes", 2: "Miércoles", 3: "Jueves",
         4: "Viernes", 5: "Sábado", 6: "Domingo"
     }
-    meta_e = METADATA_ESTACIONES_AMB.get(est_id, METADATA_ESTACIONES_AMB.get("La_Mariana", {}))
+    meta_e = obtener_metadata_punto_mimat(est_id) or obtener_metadata_punto_mimat("La_Mariana")
     nombre_est = meta_e.get("nombre_completo", est_id.replace("_", " "))
     subsistema_est = meta_e.get("subsistema_abastecimiento", "")
     df_s = series_multi_map.get(est_id, pd.DataFrame()).copy()
@@ -2021,6 +2228,30 @@ def construir_tablas_prediccion_personalizadas(
         fila_tot_7[c_n] = round(float(df_matriz_7[c_n].sum()), 1)
     df_matriz_7_con_tot = pd.concat([df_matriz_7, pd.DataFrame([fila_prom_7, fila_tot_7])], ignore_index=True)
 
+    # 8. MATRIZ CRUZADA DE LAS 5 PLANTAS DE TRATAMIENTO (30 DÍAS x 5 PTAPs) + FILA PROMEDIO Y FILA TOTAL
+    orden_5_ptap = ["PTAP_La_Flora", "PTAP_Morrorico", "PTAP_Bosconia", "PTAP_RAD_Angelinos", "PTAP_Floridablanca"]
+    df_matriz_5_ptap = pd.DataFrame({
+        "Fecha": [f.strftime("%Y-%m-%d") for f in df_s["fecha_dt"]],
+        "Día Semana": df_s["dia_semana"].values,
+        "Horizonte": df_s["quincena"].values
+    })
+    for p_k in orden_5_ptap:
+        sp_k = series_multi_map.get(p_k, pd.DataFrame())
+        col_nom_p = f"{p_k.replace('_', ' ')} (mm)"
+        if not sp_k.empty and len(sp_k) == len(df_s):
+            df_matriz_5_ptap[col_nom_p] = sp_k["precip_mm"].round(1).values
+        else:
+            df_matriz_5_ptap[col_nom_p] = 0.0
+    cols_num_5p = [f"{p_k.replace('_', ' ')} (mm)" for p_k in orden_5_ptap]
+    df_matriz_5_ptap["Promedio 5 Plantas (mm/día)"] = df_matriz_5_ptap[cols_num_5p].mean(axis=1).round(1)
+
+    fila_prom_5p = {"Fecha": "📊 PROMEDIO DIARIO (30d)", "Día Semana": "Media", "Horizonte": "30 Días"}
+    fila_tot_5p = {"Fecha": "📊 TOTAL ACUMULADO MES (30d)", "Día Semana": "Suma", "Horizonte": "30 Días"}
+    for c_np in cols_num_5p + ["Promedio 5 Plantas (mm/día)"]:
+        fila_prom_5p[c_np] = round(float(df_matriz_5_ptap[c_np].mean()), 1)
+        fila_tot_5p[c_np] = round(float(df_matriz_5_ptap[c_np].sum()), 1)
+    df_matriz_5_ptap_con_tot = pd.concat([df_matriz_5_ptap, pd.DataFrame([fila_prom_5p, fila_tot_5p])], ignore_index=True)
+
     # Cálculo de la Mejor Ventana Continua Seca (48h / 72h) y del Pulso Húmedo de Mayor Recarga (72h)
     mejor_ventana_2d_txt = "N/A"
     mejor_ventana_3d_txt = "N/A"
@@ -2052,6 +2283,7 @@ def construir_tablas_prediccion_personalizadas(
         "df_quincenal_mensual": df_quincenal_mensual,
         "df_personalizada": df_custom_con_tot,
         "df_matriz_7": df_matriz_7_con_tot,
+        "df_matriz_5_ptap": df_matriz_5_ptap_con_tot,
         "dias_secos_30d": dias_secos_30d,
         "dias_lluviosos_30d": dias_lluviosos_30d,
         "dia_mas_seco": df_ord_seco.iloc[0],
@@ -2072,19 +2304,11 @@ def generar_excel_predicciones_mantenimiento_open_meteo(
 ) -> bytes:
     """
     Genera el archivo Excel institucional (.xlsx) multi-hoja con formato profesional openpyxl
-    (igual que el módulo de históricos), incluyendo:
-    1. Dias_Menos_Lluviosos (Ranking de menor a mayor lluvia)
-    2. Dias_Mas_Lluviosos (Ranking de mayor a menor lluvia)
-    3. Prediccion_Diaria_30d (Serie día a día cronológica)
-    4. Resumen_Semanal (Semanas 1 a 4)
-    5. Quincenal_y_Mensual (1ª Quincena, 2ª Quincena y Total 30d)
-    6. Rango_Personalizado (Tabla filtrada según fechas y criterio del usuario)
-    7. Matriz_7_Estaciones (Comparativa diaria de las 7 estaciones amb)
-    8. Resumen_Ejecutivo_Red (Consolidado 7d, 15d, 30d por estación)
-    9. Metadatos (Ficha técnica institucional amb)
+    (igual que el módulo de históricos), incluyendo las hojas de la estación o planta PTAP seleccionada,
+    la Matriz de las 7 Estaciones y la Matriz de las 5 Plantas de Tratamiento (PTAP).
     """
     output = BytesIO()
-    meta_e = METADATA_ESTACIONES_AMB.get(est_id, METADATA_ESTACIONES_AMB.get("La_Mariana", {}))
+    meta_e = obtener_metadata_punto_mimat(est_id) or obtener_metadata_punto_mimat("La_Mariana")
     nombre_est = meta_e.get("nombre_completo", est_id.replace("_", " "))
 
     hojas_a_exportar = [
@@ -2095,7 +2319,8 @@ def generar_excel_predicciones_mantenimiento_open_meteo(
         ("5_Quincenal_y_Mensual", tablas_dict.get("df_quincenal_mensual", pd.DataFrame())),
         ("6_Rango_Personalizado", tablas_dict.get("df_personalizada", pd.DataFrame())),
         ("7_Matriz_7_Estaciones", tablas_dict.get("df_matriz_7", pd.DataFrame())),
-        ("8_Resumen_Ejecutivo_Red", df_tabla_exec)
+        ("8_Matriz_5_Plantas_PTAP", tablas_dict.get("df_matriz_5_ptap", pd.DataFrame())),
+        ("9_Resumen_Ejecutivo_Red", df_tabla_exec)
     ]
 
     with pd.ExcelWriter(output, engine="openpyxl") as writer:
@@ -3010,12 +3235,42 @@ def mostrar_ficha_geografica_estacion(nombre_estacion):
         if nombre_estacion in ["Surata", "Embalse"]:
             bloque_distancias_extra = (
                 '<div style="margin-top: 8px; padding: 8px 10px; background: rgba(0, 180, 216, 0.08); border-radius: 6px; border-left: 3px solid #00B4D8; font-size: 12.2px;">'
-                '<strong>📐 Matriz Geodésica Oficial (Presa Embalse ➔ Las Majadas ➔ Captación Bosconia):</strong><br>'
+                '<strong>📐 Matriz Geodésica Oficial (Presa Embalse ➔ Las Majadas ➔ Captación Bosconia ➔ PTAP Bosconia & RAD Angelinos):</strong><br>'
                 '• <strong>Presa Embalse Tona:</strong> <code>7°09\'25.00"N 73°05\'15.00"W</code> (<strong>885.75 msnm</strong>)<br>'
                 '• <strong>Estación Las Majadas (<code>Surata</code>):</strong> <code>7°09\'30.58"N 73°05\'54.45"W</code> (<strong>756.53 msnm</strong>)<br>'
                 '• <strong>Captación Bosconia (Bocatoma):</strong> <code>7°09\'20.26"N 73°06\'41.51"W</code> (<strong>698.72 msnm</strong>)<br>'
-                '• <strong>Tramo Presa ➔ Descarga de Fondos ➔ Puente Tona ➔ Majadas:</strong> <code>~400 m</code> + <code>~500 m</code> + <code>~350 m</code> = <strong>1.18 km rectos (1.35 km por cauce)</strong><br>'
-                '• <strong>Tramo Majadas ➔ Captación Bosconia:</strong> <strong>1.48 km rectos (1.82 km por cauce)</strong> | Caída <strong>ΔZ = 57.81 m</strong> (Pendiente <strong>3.17%</strong>) | Tránsito: <strong>11–14 min</strong> (creciente) / <strong>19–23 min</strong> (flujo base)'
+                '• <strong>PTAP Bosconia:</strong> <code>7°09\'12.97"N 73°06\'55.75"W</code> (<strong>691.00 msnm</strong> • a <strong>0.49 km</strong> de Bocatoma | ΔZ = <strong>7.72 m</strong>)<br>'
+                '• <strong>PTAP RAD Los Angelinos:</strong> <code>7°09\'29.35"N 73°07\'05.21"W</code> (<strong>841.63 msnm</strong> • Nivel mín. Embalse: 841.00 msnm • a <strong>3.38 km</strong> de Presa | ΔZ = <strong>44.12 m</strong> gravedad)<br>'
+                '• <strong>Tramo Presa ➔ Descarga Fondos ➔ Puente Tona ➔ Majadas:</strong> <code>~400 m</code> + <code>~500 m</code> + <code>~350 m</code> = <strong>1.18 km rectos (1.35 km cauce)</strong><br>'
+                '• <strong>Tramo Majadas ➔ Captación Bosconia:</strong> <strong>1.48 km rectos (1.82 km cauce)</strong> | Caída <strong>ΔZ = 57.81 m</strong> (<strong>3.17%</strong>) | Tránsito: <strong>11–14 min</strong> (creciente) / <strong>19–23 min</strong> (base)'
+                '</div>'
+            )
+        elif nombre_estacion == "La_Mariana":
+            bloque_distancias_extra = (
+                '<div style="margin-top: 8px; padding: 8px 10px; background: rgba(139, 92, 246, 0.08); border-radius: 6px; border-left: 3px solid #8B5CF6; font-size: 12.2px;">'
+                '<strong>📐 Eje Geodésico Cuenca Río Frío (Estación La Mariana ➔ Bocatoma ➔ PTAP Floridablanca):</strong><br>'
+                '• <strong>Estación Centinela La Mariana:</strong> <code>7°07\'21.86"N 73°00\'25.27"W</code> (<strong>2,436.00 msnm</strong>)<br>'
+                '• <strong>PTAP Floridablanca (Planta Florida):</strong> <code>7°04\'12.99"N 73°04\'38.51"W</code> (<strong>1,042.87 msnm</strong>)<br>'
+                '• <strong>Distancia y Desnivel:</strong> <strong>9.71 km en línea recta (~12.8 km por cauce/aducción)</strong> | Caída topográfica <strong>ΔZ = 1,393.13 m</strong> | Arquitectura lista para batimetría de bocatoma y sensor radar de caudal.'
+                '</div>'
+            )
+        elif nombre_estacion in ["El_Pajal", "Vegas_del_Quemado", "Yerbabuena"]:
+            dist_fl = {"El_Pajal": ("11.53 km", "983.89 m", "Captación Golondrinas (RQ-30)"), "Vegas_del_Quemado": ("13.43 km", "580.13 m", "Captación Arnania (RQ-30)"), "Yerbabuena": ("21.97 km", "2,221.14 m", "Captación Carrizal (RQ-30)")}[nombre_estacion]
+            bloque_distancias_extra = (
+                '<div style="margin-top: 8px; padding: 8px 10px; background: rgba(14, 165, 233, 0.08); border-radius: 6px; border-left: 3px solid #0EA5E9; font-size: 12.2px;">'
+                f'<strong>📐 Eje Geodésico Sistema Tona ({meta["nombre_completo"]} ➔ {dist_fl[2]} ➔ PTAP La Flora & PTAP Morrorico):</strong><br>'
+                f'• <strong>Captación Asociada (Lista para Batimetría y Radar Sommer RQ-30):</strong> <strong>{dist_fl[2]}</strong> (remanentes drenan al Embalse Tona 885.75 msnm)<br>'
+                f'• <strong>PTAP La Flora:</strong> <code>7°08\'06.20"N 73°06\'14.44"W</code> (<strong>1,179.11 msnm</strong> • Distancia recta: <strong>{dist_fl[0]}</strong> | Caída <strong>ΔZ = {dist_fl[1]}</strong>)<br>'
+                '• <strong>PTAP Morrorico (Parque del Agua):</strong> <code>7°07\'48.02"N 73°06\'33.11"W</code> (<strong>1,054.73 msnm</strong> • a <strong>0.80 km</strong> de PTAP La Flora | Caída <strong>ΔZ = 124.38 m</strong>)'
+                '</div>'
+            )
+        elif nombre_estacion == "Monsalve":
+            bloque_distancias_extra = (
+                '<div style="margin-top: 8px; padding: 8px 10px; background: rgba(16, 185, 129, 0.08); border-radius: 6px; border-left: 3px solid #10B981; font-size: 12.2px;">'
+                '<strong>📐 Eje Geodésico Cuenca Alta Río Suratá (Monsalve ➔ Las Majadas ➔ Captación Bosconia ➔ PTAP Bosconia & RAD Angelinos):</strong><br>'
+                '• <strong>Estación Las Majadas (<code>756.53 msnm</code>):</strong> <code>7°09\'30.58"N 73°05\'54.45"W</code> (Caída desde Monsalve: <strong>ΔZ = 2,583.26 m</strong>)<br>'
+                '• <strong>PTAP Bosconia (<code>691.00 msnm</code>):</strong> <code>7°09\'12.97"N 73°06\'55.75"W</code> (Distancia recta desde Monsalve: <strong>37.92 km</strong> | Caída total <strong>ΔZ = 2,648.79 m</strong>)<br>'
+                '• <strong>PTAP RAD Los Angelinos (<code>841.63 msnm</code>):</strong> <code>7°09\'29.35"N 73°07\'05.21"W</code> (a <strong>0.58 km</strong> rectos de PTAP Bosconia | +150.63 m bombeo)'
                 '</div>'
             )
         st.markdown(
@@ -3040,12 +3295,21 @@ def mostrar_ficha_geografica_estacion(nombre_estacion):
             'color': meta['color']
         }]
         if nombre_estacion in ["Surata", "Embalse"]:
-            # Incluir todo el eje hidráulico (Presa Embalse, Majadas y Captación Bosconia) para trazabilidad visual exacta
             puntos_mapa = [
                 {'lat': METADATA_ESTACIONES_AMB["Embalse"]["lat"], 'lon': METADATA_ESTACIONES_AMB["Embalse"]["lon"], 'color': '#005073'},
                 {'lat': METADATA_ESTACIONES_AMB["Surata"]["lat"], 'lon': METADATA_ESTACIONES_AMB["Surata"]["lon"], 'color': '#00B4D8'},
-                {'lat': 7.155628, 'lon': -73.111531, 'color': '#FF4B4B'}  # Captación Bosconia (698.72 msnm)
+                {'lat': 7.155628, 'lon': -73.111531, 'color': '#FF4B4B'},  # Captación Bosconia (698.72 msnm)
+                {'lat': 7.153603, 'lon': -73.115486, 'color': '#10B981'},  # PTAP Bosconia (691.00 msnm)
+                {'lat': 7.158153, 'lon': -73.118114, 'color': '#6366F1'}   # PTAP RAD Angelinos (841.63 msnm)
             ]
+        elif nombre_estacion == "La_Mariana":
+            puntos_mapa.append({'lat': 7.070275, 'lon': -73.077364, 'color': '#8B5CF6'})  # PTAP Floridablanca (1,042.87 msnm)
+        elif nombre_estacion in ["El_Pajal", "Vegas_del_Quemado", "Yerbabuena"]:
+            puntos_mapa.append({'lat': 7.135056, 'lon': -73.104011, 'color': '#0EA5E9'})  # PTAP La Flora (1,179.11 msnm)
+            puntos_mapa.append({'lat': 7.130006, 'lon': -73.109197, 'color': '#0284C7'})  # PTAP Morrorico (1,054.73 msnm)
+        elif nombre_estacion == "Monsalve":
+            puntos_mapa.append({'lat': 7.158494, 'lon': -73.098458, 'color': '#00B4D8'})  # Las Majadas (756.53 msnm)
+            puntos_mapa.append({'lat': 7.153603, 'lon': -73.115486, 'color': '#10B981'})  # PTAP Bosconia (691.00 msnm)
         df_punto = pd.DataFrame(puntos_mapa)
         st.map(
             df_punto,
@@ -3053,7 +3317,7 @@ def mostrar_ficha_geografica_estacion(nombre_estacion):
             longitude='lon',
             color='color',
             size=35,
-            zoom=13 if nombre_estacion in ["Surata", "Embalse"] else 12
+            zoom=13 if nombre_estacion in ["Surata", "Embalse"] else 11
         )
 def mapear_codigo_wmo(codigo):
     """Mapeo estándar OMM/WMO a ícono y descripción meteorológica en español"""
@@ -7540,26 +7804,36 @@ with tab_radar_72h:
 
         # ------------------------------------------------------------
         # SUBSECCIÓN INTERACTIVA: TABLAS PERSONALIZADAS DE PREDICCIÓN
-        # (DÍAS MENOS LLUVIOSOS • DÍAS MÁS LLUVIOSOS • DIARIO • SEMANAL • QUINCENAL/MENSUAL • PERSONALIZADO)
+        # (7 ESTACIONES + 5 PLANTAS PTAP • DÍAS MENOS LLUVIOSOS • DÍAS MÁS LLUVIOSOS • DIARIO • SEMANAL • MENSUAL)
         # ------------------------------------------------------------
         st.markdown("---")
         st.markdown("### 📊 Tablas Personalizadas de Predicción")
         st.caption(
-            "Consulte, filtre y descargue las proyecciones meteorológicas (**Días Menos Lluviosos**, **Días Más Lluviosos**, "
-            "**Diario 30d**, **Semanal**, **Quincenal/Mensual**, **Rango Personalizado** y **Matriz de 7 Estaciones**) en "
-            "**Excel Institucional Multi-Hoja (`.xlsx`)** y **`.csv`** para la gestión del recurso hídrico en tiempos críticos y la programación operativa de plantas."
+            "Consulte, filtre y descargue las proyecciones meteorológicas para cualquiera de las **7 Estaciones Hidrometeorológicas** o "
+            "de las **5 Plantas de Tratamiento (`PTAP La Flora`, `PTAP Morrorico`, `PTAP Bosconia`, `PTAP RAD Angelinos`, `PTAP Floridablanca`)** "
+            "en **Excel Institucional Multi-Hoja (`.xlsx`)** y **`.csv`** (**Días Menos Lluviosos**, **Días Más Lluviosos**, **Diario 30d**, **Semanal**, **Quincenal/Mensual** y **Rango Personalizado**)."
         )
 
-        lista_est_plan = ["La_Mariana", "Embalse", "Surata", "El_Pajal", "Vegas_del_Quemado", "Yerbabuena", "Monsalve"]
+        lista_est_plan = [
+            "La_Mariana", "Embalse", "Surata", "El_Pajal", "Vegas_del_Quemado", "Yerbabuena", "Monsalve",
+            "PTAP_La_Flora", "PTAP_Morrorico", "PTAP_Bosconia", "PTAP_RAD_Angelinos", "PTAP_Floridablanca"
+        ]
         idx_est_def = lista_est_plan.index(seleccion) if seleccion in lista_est_plan else 0
 
-        cp1, cp2, cp3 = st.columns([1.2, 1.5, 1.1])
+        def _fmt_nodo_pred(x_id: str) -> str:
+            m_x = obtener_metadata_punto_mimat(x_id)
+            pref = "🏭 " if x_id.startswith("PTAP_") else "📡 "
+            nom_c = m_x.get("nombre_completo", x_id.replace("_", " "))
+            alt_c = m_x.get("altitud_msnm", 0.0)
+            return f"{pref}{nom_c} ({alt_c:,.2f} msnm)"
+
+        cp1, cp2, cp3 = st.columns([1.25, 1.45, 1.1])
         with cp1:
             est_plan_sel = st.selectbox(
-                "📍 Estación para Consulta / Descarga:",
+                "📍 Estación o Planta (PTAP) para Consulta / Descarga:",
                 lista_est_plan,
                 index=idx_est_def,
-                format_func=lambda x: f"{x.replace('_', ' ')} — ({METADATA_ESTACIONES_AMB.get(x, {}).get('subsistema_abastecimiento', '')[:38]}...)",
+                format_func=_fmt_nodo_pred,
                 key="sel_est_planificador_om"
             )
         with cp2:
@@ -7572,7 +7846,8 @@ with tab_radar_72h:
                     "📆 4. Semanal (Semanas 1 a 4 del Mes)",
                     "🌓 5. Quincenal y Mensual (15d y 30d)",
                     "🎯 6. Rango de Fechas Personalizado",
-                    "🌐 7. Matriz Comparativa 7 Estaciones (30 Días)"
+                    "🌐 7. Matriz Comparativa 7 Estaciones (30 Días)",
+                    "🏭 8. Matriz Comparativa 5 Plantas PTAP (30 Días)"
                 ],
                 index=0,
                 key="sel_modo_vista_pred_om"
@@ -7659,7 +7934,7 @@ with tab_radar_72h:
             vent_2d = paquete_tablas_pred["mejor_ventana_2d"]
             vent_3d = paquete_tablas_pred["mejor_ventana_3d"]
             pulso_3d = paquete_tablas_pred["mayor_pulso_3d"]
-            meta_plan = METADATA_ESTACIONES_AMB.get(est_plan_sel, {})
+            meta_plan = obtener_metadata_punto_mimat(est_plan_sel)
 
             # 4 Tarjetas KPI de Gestión Hídrica & Operación (Días Menos Lluviosos vs. Días Más Lluviosos)
             kp1, kp2, kp3, kp4 = st.columns(4)
@@ -7728,10 +8003,14 @@ with tab_radar_72h:
                 df_vista_activa = paquete_tablas_pred["df_personalizada"]
                 titulo_tabla_activa = f"🎯 Consulta Personalizada ({f_ini_usr} al {f_fin_usr}) — {meta_plan.get('nombre_completo', est_plan_sel)}"
                 sub_archivo = f"prediccion_personalizada_{est_plan_sel}_{f_ini_usr}_{f_fin_usr}"
-            else:
+            elif modo_vista_pred.startswith("🌐 7."):
                 df_vista_activa = paquete_tablas_pred["df_matriz_7"]
                 titulo_tabla_activa = "🌐 Matriz Comparativa Diaria de Precipitación en las 7 Estaciones amb (30 Días)"
                 sub_archivo = "matriz_prediccion_7_estaciones_30d"
+            else:
+                df_vista_activa = paquete_tablas_pred["df_matriz_5_ptap"]
+                titulo_tabla_activa = "🏭 Matriz Comparativa Diaria de Precipitación In Situ sobre las 5 Plantas de Tratamiento PTAP (30 Días)"
+                sub_archivo = "matriz_prediccion_5_plantas_ptap_30d"
 
             st.markdown(f"#### {titulo_tabla_activa}")
             if not df_vista_activa.empty:
@@ -7783,14 +8062,14 @@ with tab_radar_72h:
                 df_tabla_exec=df_tabla_mostrar,
                 umbral_seco_mm=umbral_seco_sel,
                 umbral_lluvioso_mm=umbral_lluvioso_sel,
-                periodo_desc=f"{modo_vista_pred} | Estación: {est_plan_sel}"
+                periodo_desc=f"{modo_vista_pred} | Nodo: {est_plan_sel}"
             )
             csv_vista_bytes = df_vista_activa.to_csv(index=False).encode("utf-8-sig") if not df_vista_activa.empty else b""
 
             b_dl1, b_dl2 = st.columns(2)
             with b_dl1:
                 st.download_button(
-                    label=f"📗 Descargar Libro Excel Completo (.xlsx Multi-Hoja: Menos Lluviosos + Más Lluviosos + Diario + Semanal + Mensual)",
+                    label=f"📗 Descargar Libro Excel Completo (.xlsx Multi-Hoja: Menos Lluviosos + Más Lluviosos + Diario + Semanal + 7 Estaciones + 5 PTAPs)",
                     data=excel_pred_bytes,
                     file_name=f"Tablas_Prediccion_MIMAT_C26_{est_plan_sel}_{datetime.now(colombia_tz).strftime('%Y%m%d')}.xlsx",
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -7807,6 +8086,216 @@ with tab_radar_72h:
                         use_container_width=True,
                         key="btn_dl_csv_pred_activa"
                     )
+
+        # ------------------------------------------------------------
+        # NUEVA SECCIÓN COMPLEMENTARIA: PRONÓSTICOS METEOROLÓGICOS INDIVIDUALES POR PLANTA DE TRATAMIENTO (5 PTAPs)
+        # Y ARQUITECTURA GEODÉSICA PREPARADA PARA CAPTACIONES & SENSORES RADAR SOMMER RQ-30
+        # ------------------------------------------------------------
+        st.markdown("---")
+        st.markdown("### 🏭 Pronósticos Individuales por Planta de Tratamiento (5 PTAPs In Situ vs. Cuenca Abastecedora & Ruta RQ-30)")
+        st.caption(
+            "Georreferenciación satelital oficial (*Google Earth*) y pronóstico meteorológico dedicado para las **5 Plantas de Tratamiento de Agua Potable del `amb`** "
+            "(`PTAP La Flora`, `PTAP Morrorico`, `PTAP Bosconia`, `PTAP RAD Los Angelinos` y `PTAP Floridablanca`), comparando el clima **In Situ sobre los tanques de la planta** "
+            "(para lavados de estructuras, paradas y mantenimientos locativos) frente a la lluvia proyectada en su **Cuenca Abastecedora Aguas Arriba** (que gobierna la turbiedad y el caudal en las captaciones y futuros sensores **`RQ-30`**)."
+        )
+
+        df_ptap_res = info_multi_om.get("df_resumen_ptap", pd.DataFrame()).copy()
+        if not df_ptap_res.empty:
+            # Calcular para cada PTAP el acumulado proyectado en su Cuenca Abastecedora Aguas Arriba (7d, 15d y 30d)
+            filas_dual_ptap = []
+            for _, r_p in df_ptap_res.iterrows():
+                pid_k = r_p["id_estacion"]
+                m_pt = METADATA_PLANTAS_PTAP_AMB.get(pid_k, {})
+                cents = m_pt.get("estaciones_centinela", [])
+                df_c_up = df_multi_res[df_multi_res["id_estacion"].isin(cents)] if not df_multi_res.empty else pd.DataFrame()
+                c_7d = round(float(df_c_up["Semanal 7d (mm)"].mean()), 1) if not df_c_up.empty else float(r_p["Semanal 7d (mm)"])
+                c_15d = round(float(df_c_up["Quincenal 15d (mm)"].mean()), 1) if not df_c_up.empty else float(r_p["Quincenal 15d (mm)"])
+                c_30d = round(float(df_c_up["Mensual 30d (mm)"].mean()), 1) if not df_c_up.empty else float(r_p["Mensual 30d (mm)"])
+                filas_dual_ptap.append({
+                    "Planta de Tratamiento (PTAP)": m_pt.get("nombre_completo", pid_k),
+                    "Coordenadas Oficiales (DMS)": m_pt.get("dms", ""),
+                    "Elevación (msnm)": m_pt.get("altitud_msnm", 0.0),
+                    "Estaciones Centinela (Cuenca Alta)": ", ".join(c.replace("_", " ") for c in cents),
+                    "Lluvia In Situ Planta 7d (mm)": r_p["Semanal 7d (mm)"],
+                    "Lluvia Cuenca Alta 7d (mm)": c_7d,
+                    "Lluvia In Situ Planta 15d (mm)": r_p["Quincenal 15d (mm)"],
+                    "Lluvia Cuenca Alta 15d (mm)": c_15d,
+                    "Lluvia In Situ Planta 30d (mm)": r_p["Mensual 30d (mm)"],
+                    "Lluvia Cuenca Alta 30d (mm)": c_30d,
+                    "Día Pico en Planta (7d)": r_p["Día Pico (Próx. 7d)"]
+                })
+            df_dual_ptap = pd.DataFrame(filas_dual_ptap)
+            st.markdown("#### 📋 Matriz Dual de las 5 Plantas PTAP: Clima In Situ sobre la Planta vs. Lluvia en su Cuenca Abastecedora (7d • 15d • 30d)")
+            st.dataframe(df_dual_ptap, use_container_width=True, hide_index=True)
+
+        orden_ptap_ui = ["PTAP_La_Flora", "PTAP_Morrorico", "PTAP_Bosconia", "PTAP_RAD_Angelinos", "PTAP_Floridablanca"]
+        map_est_a_ptap = {
+            "La_Mariana": "PTAP_Floridablanca",
+            "El_Pajal": "PTAP_La_Flora",
+            "Vegas_del_Quemado": "PTAP_La_Flora",
+            "Yerbabuena": "PTAP_Morrorico",
+            "Surata": "PTAP_Bosconia",
+            "Monsalve": "PTAP_Bosconia",
+            "Embalse": "PTAP_RAD_Angelinos"
+        }
+        ptap_def_idx = orden_ptap_ui.index(map_est_a_ptap.get(seleccion, "PTAP_La_Flora"))
+
+        ptap_sel_id = st.radio(
+            "🏭 Seleccione la Planta de Tratamiento (PTAP) para ver su Pronóstico Horario 72h, Comparativa a 30 Días y Mapa del Eje Hidráulico:",
+            orden_ptap_ui,
+            index=ptap_def_idx,
+            horizontal=True,
+            format_func=lambda k: f"🏭 {METADATA_PLANTAS_PTAP_AMB[k]['nombre_completo'].split('(')[0].strip()} ({METADATA_PLANTAS_PTAP_AMB[k]['altitud_msnm']:,.2f} msnm)",
+            key="radio_ptap_individual_om"
+        )
+        m_ptap_act = METADATA_PLANTAS_PTAP_AMB[ptap_sel_id]
+        df_fc_ptap_all = obtener_pronostico_open_meteo(m_ptap_act["lat"], m_ptap_act["lon"], past_days=2, forecast_days=3)
+        ahora_pt = datetime.now()
+        df_fc_ptap_72 = pd.DataFrame()
+        if not df_fc_ptap_all.empty:
+            df_fc_ptap_all["time_dt"] = pd.to_datetime(df_fc_ptap_all["time"])
+            df_fc_ptap_72 = df_fc_ptap_all[df_fc_ptap_all["time_dt"] >= (ahora_pt - timedelta(hours=1))].head(72).copy()
+            if df_fc_ptap_72.empty:
+                df_fc_ptap_72 = df_fc_ptap_all.tail(72).copy()
+
+        if not df_fc_ptap_72.empty:
+            p24_pt = float(df_fc_ptap_72.head(24)["precipitation"].sum())
+            p72_pt = float(df_fc_ptap_72["precipitation"].sum())
+            tmin_pt = float(df_fc_ptap_72["temperature_2m"].min())
+            tmax_pt = float(df_fc_ptap_72["temperature_2m"].max())
+            hmed_pt = float(df_fc_ptap_72["relative_humidity_2m"].mean())
+            vmax_pt = float(df_fc_ptap_72["wind_speed_10m"].max())
+
+            pk1, pk2, pk3, pk4 = st.columns(4)
+            pk1.metric(
+                f"🌧️ Lluvia 24h In Situ ({ptap_sel_id.replace('PTAP_', '')})",
+                f"{p24_pt:.1f} mm",
+                delta="Óptimo lavado/mant. en planta" if p24_pt <= 1.5 else "Lluvia sobre estructuras",
+                help=f"Precipitación prevista directamente sobre los sedimentadores y tanques de {m_ptap_act['nombre_completo']} en las próximas 24 horas."
+            )
+            pk2.metric(
+                "🌧️ Lluvia 72h In Situ en Planta",
+                f"{p72_pt:.1f} mm",
+                delta=f"Cota planta: {m_ptap_act['altitud_msnm']:,.2f} msnm"
+            )
+            pk3.metric(
+                "🌡️ Temperatura Prevista en Planta",
+                f"{tmin_pt:.1f} / {tmax_pt:.1f} °C",
+                delta=f"Humedad media: {hmed_pt:.0f}%"
+            )
+            pk4.metric(
+                "💨 Viento Máx. en Planta (72h)",
+                f"{vmax_pt:.1f} km/h",
+                delta=f"DMS: {m_ptap_act['dms']}"
+            )
+
+            col_pt_g1, col_pt_g2 = st.columns(2)
+            with col_pt_g1:
+                fig_pt_72 = go.Figure()
+                fig_pt_72.add_trace(go.Bar(
+                    x=df_fc_ptap_72["time"],
+                    y=df_fc_ptap_72["precipitation"],
+                    name="Lluvia Horaria en Planta (mm/h)",
+                    marker_color=m_ptap_act["color"]
+                ))
+                fig_pt_72.add_trace(go.Scatter(
+                    x=df_fc_ptap_72["time"],
+                    y=df_fc_ptap_72["temperature_2m"],
+                    name="Temperatura (°C)",
+                    yaxis="y2",
+                    line=dict(color="#EF4444", width=2)
+                ))
+                fig_pt_72.update_layout(
+                    title=f"⏱️ Pronóstico Horario 72h In Situ: {m_ptap_act['nombre_completo']}",
+                    xaxis_title="Fecha / Hora",
+                    yaxis=dict(title="Lluvia (mm/h)"),
+                    yaxis2=dict(title="Temp (°C)", overlaying="y", side="right"),
+                    template="plotly_white",
+                    height=330,
+                    legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+                    margin=dict(t=45, b=20, l=15, r=15)
+                )
+                st.plotly_chart(fig_pt_72, use_container_width=True)
+
+            with col_pt_g2:
+                df_s_ptap = series_multi_map.get(ptap_sel_id, pd.DataFrame())
+                cents_act = m_ptap_act.get("estaciones_centinela", ["La_Mariana"])
+                est_cent_prin = cents_act[0]
+                df_s_cent = series_multi_map.get(est_cent_prin, pd.DataFrame())
+                if not df_s_ptap.empty and not df_s_cent.empty:
+                    fig_comp_pt = go.Figure()
+                    fig_comp_pt.add_trace(go.Bar(
+                        x=df_s_ptap["fecha_str"],
+                        y=df_s_ptap["precip_mm"],
+                        name=f"In Situ en {ptap_sel_id.replace('_', ' ')} ({m_ptap_act['altitud_msnm']:.0f}m)",
+                        marker_color=m_ptap_act["color"]
+                    ))
+                    fig_comp_pt.add_trace(go.Scatter(
+                        x=df_s_cent["fecha_str"],
+                        y=df_s_cent["precip_mm"],
+                        mode="lines+markers",
+                        name=f"Cuenca Alta: {est_cent_prin.replace('_', ' ')}",
+                        line=dict(color="#0F172A", width=2.2, dash="dot")
+                    ))
+                    fig_comp_pt.update_layout(
+                        title=f"🗓️ 30 Días: Lluvia In Situ en Planta vs. Cuenca Abastecedora ({est_cent_prin.replace('_', ' ')})",
+                        xaxis_title="Fecha Proyectada (30 Días)",
+                        yaxis_title="Precipitación Diaria (mm/día)",
+                        template="plotly_white",
+                        height=330,
+                        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+                        margin=dict(t=45, b=20, l=15, r=15)
+                    )
+                    st.plotly_chart(fig_comp_pt, use_container_width=True)
+
+        # Ficha Geodésica y Mapa del Eje Hidráulico de la PTAP Seleccionada + Preparación RQ-30
+        col_pt_info, col_pt_map = st.columns([1.3, 1.0])
+        with col_pt_info:
+            st.markdown(
+                f'<div style="background: rgba(0,80,115,0.05); padding: 14px 18px; border-radius: 10px; border-left: 5px solid {m_ptap_act["color"]}; font-size: 13px; line-height: 1.6;">'
+                f'<strong>🏭 Planta de Tratamiento (PTAP):</strong> <span style="color: #005073; font-weight: 800;">{m_ptap_act["nombre_completo"]}</span><br>'
+                f'<strong>🏔️ Elevación Oficial del Suelo (Google Earth):</strong> <strong>{m_ptap_act["altitud_msnm"]:,.2f} msnm</strong><br>'
+                f'<strong>📍 Coordenadas Sexagesimales (DMS):</strong> <code>{m_ptap_act["dms"]}</code> &nbsp;|&nbsp; <strong>Decimales:</strong> <code>{m_ptap_act["lat"]:.6f}°N, {m_ptap_act["lon"]:.6f}°W</code><br>'
+                f'<strong>🏞️ Cuenca & Captaciones Asociadas (Ruta RQ-30):</strong> {m_ptap_act["captaciones_asociadas"]}<br>'
+                f'<strong>📡 Estaciones Centinela Aguas Arriba:</strong> <code>{", ".join(c.replace("_", " ") for c in m_ptap_act["estaciones_centinela"])}</code><br>'
+                f'<strong>📐 Distancias Exactas y Caídas Topográficas (ΔZ):</strong> {m_ptap_act["distancias_geodesicas"]}<br>'
+                f'<div style="margin-top: 8px; padding-top: 6px; border-top: 1px dashed rgba(0,80,115,0.2); font-style: italic; color: #334155;">'
+                f'{m_ptap_act["descripcion"]}'
+                f'</div>'
+                f'</div>',
+                unsafe_allow_html=True
+            )
+        with col_pt_map:
+            pts_ptap_map = [{
+                "lat": m_ptap_act["lat"],
+                "lon": m_ptap_act["lon"],
+                "color": m_ptap_act["color"]
+            }]
+            for c_est in m_ptap_act.get("estaciones_centinela", []):
+                m_ce = obtener_metadata_punto_mimat(c_est)
+                if m_ce:
+                    pts_ptap_map.append({
+                        "lat": m_ce["lat"],
+                        "lon": m_ce["lon"],
+                        "color": m_ce.get("color", "#005073")
+                    })
+            if ptap_sel_id in ["PTAP_Bosconia", "PTAP_RAD_Angelinos"]:
+                pts_ptap_map.append({"lat": 7.155628, "lon": -73.111531, "color": "#FF4B4B"})  # Captación Bosconia
+            st.map(pd.DataFrame(pts_ptap_map), latitude="lat", longitude="lon", color="color", size=35, zoom=12)
+
+        with st.expander("🔌 Ver Arquitectura Preparada para Integración de Captaciones, Batimetrías de Bocatoma y Caudalímetros Radar Sommer RQ-30", expanded=False):
+            df_rq30_arch = pd.DataFrame([
+                {
+                    "Captación / Bocatoma": v["nombre"],
+                    "Ubicación / Coordenadas": v["dms"],
+                    "Cota (msnm)": f"{v['altitud_msnm']:,.2f} msnm",
+                    "Estación Centinela Aguas Arriba": v["estacion_centinela"],
+                    "Planta(s) PTAP Abastecida(s)": v["ptap_destino"],
+                    "Estado de Integración en MIMAT-C26": v["estado_sensor"]
+                }
+                for _, v in METADATA_CAPTACIONES_RQ30_AMB.items()
+            ])
+            st.dataframe(df_rq30_arch, use_container_width=True, hide_index=True)
 # ------------------------------------------------------------
 # TAB 4: SERIES DE TIEMPO, ROSA DE VIENTOS Y DESCARGAS
 # ------------------------------------------------------------
