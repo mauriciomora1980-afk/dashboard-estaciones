@@ -1542,6 +1542,9 @@ METADATA_PLANTAS_PTAP_AMB = {
         "lat": 7.135056,
         "lon": -73.104011,
         "altitud_msnm": 1179.11,
+        "peso_cuenca": 0.0,
+        "lag_horas": "1.2 - 2.2 h desde cuenca alta Tona (Golondrinas, Arnania y Carrizal)",
+        "microcuencas": "Quebradas Golondrinas, Arnania y Río Tona Cabecera (Carrizal)",
         "estaciones_centinela": ["El_Pajal", "Vegas_del_Quemado", "Yerbabuena"],
         "captaciones_asociadas": "Captación Golondrinas (RQ-30) • Captación Arnania (RQ-30) • Captación Carrizal (RQ-30)",
         "distancias_geodesicas": "A 11.53 km rectos de El Pajal (ΔZ = 983.89 m), 13.43 km de Vegas del Quemado (ΔZ = 580.13 m) y 21.97 km de Yerbabuena (ΔZ = 2,221.14 m). A 0.80 km (802 m) arriba de PTAP Morrorico (ΔZ = 124.38 m).",
@@ -1558,6 +1561,9 @@ METADATA_PLANTAS_PTAP_AMB = {
         "lat": 7.130006,
         "lon": -73.109197,
         "altitud_msnm": 1054.73,
+        "peso_cuenca": 0.0,
+        "lag_horas": "1.3 - 2.3 h desde cuenca alta Tona (Golondrinas, Arnania y Carrizal)",
+        "microcuencas": "Quebradas Golondrinas, Arnania y Río Tona Cabecera (Carrizal)",
         "estaciones_centinela": ["El_Pajal", "Vegas_del_Quemado", "Yerbabuena"],
         "captaciones_asociadas": "Captación Golondrinas (RQ-30) • Captación Arnania (RQ-30) • Captación Carrizal (RQ-30)",
         "distancias_geodesicas": "A solo 0.80 km (802 m) en línea recta de PTAP La Flora con caída por gravedad de ΔZ = 124.38 m (1,179.11 ➔ 1,054.73 msnm). A 12.12 km de El Pajal (ΔZ = 1,108.27 m).",
@@ -1574,6 +1580,9 @@ METADATA_PLANTAS_PTAP_AMB = {
         "lat": 7.153603,
         "lon": -73.115486,
         "altitud_msnm": 691.00,
+        "peso_cuenca": 0.0,
+        "lag_horas": "15 - 25 min desde Las Majadas | 2.5 - 3.5 h desde Páramo de Monsalve",
+        "microcuencas": "Río Suratá (Las Majadas / Monsalve) y Confluencia Río Tona (Puente Tona / Válvula CRC)",
         "estaciones_centinela": ["Surata", "Embalse", "Monsalve"],
         "captaciones_asociadas": "Captación Bosconia (7°09'20.26\"N 73°06'41.51\"W • 698.72 msnm) + Válvula CRC Embalse Tona (ET_FIT401)",
         "distancias_geodesicas": "A 0.49 km (491 m) de Captación Bosconia (ΔZ = 7.72 m por gravedad), a 1.96 km rectos (~2.40 km por cauce+aducción) de Las Majadas (ΔZ = 65.53 m), y a 3.11 km rectos de Presa Embalse Tona (ΔZ = 194.75 m).",
@@ -1590,6 +1599,9 @@ METADATA_PLANTAS_PTAP_AMB = {
         "lat": 7.158153,
         "lon": -73.118114,
         "altitud_msnm": 841.63,
+        "peso_cuenca": 0.0,
+        "lag_horas": "Entrega regulada desde Embalse de Bucaramanga (885.75 ➔ 841.63 msnm)",
+        "microcuencas": "Cuenca Regulada Embalse de Bucaramanga (Río Tona) y Sistema Bombeo Bosconia",
         "estaciones_centinela": ["Embalse", "Surata", "Yerbabuena", "Vegas_del_Quemado", "El_Pajal"],
         "captaciones_asociadas": "Torre de Captación Embalse de Bucaramanga (Cota mín. 841.00 msnm) & Línea Bombeo Bosconia",
         "distancias_geodesicas": "Ubicada exactamente en la cota 841.63 msnm (coincidente con el Nivel Mínimo de Operación del Embalse: 841.00 msnm). A 3.38 km rectos de Presa Embalse Tona (ΔZ = 44.12 m de carga por gravedad) y a 0.58 km rectos (~1.45 km por vía en zigzag) arriba de PTAP Bosconia (+150.63 m por bombeo).",
@@ -1606,6 +1618,9 @@ METADATA_PLANTAS_PTAP_AMB = {
         "lat": 7.070275,
         "lon": -73.077364,
         "altitud_msnm": 1042.87,
+        "peso_cuenca": 0.0,
+        "lag_horas": "1.2 - 2.0 h desde Estación La Mariana (2,436 msnm) | 10 - 15 min desde Bocatoma Florida RQ-30",
+        "microcuencas": "Cuenca Alta y Media del Río Frío (Cabecera La Mariana ➔ Bocatoma Florida RQ-30)",
         "estaciones_centinela": ["La_Mariana"],
         "captaciones_asociadas": "Bocatoma Floridablanca — Río Frío (Preparada para integración batimétrica y sensor RQ-30)",
         "distancias_geodesicas": "A 9.71 km en línea recta (~12.8 km siguiendo el cauce del Río Frío y conducción) de su estación centinela La Mariana (2,436.00 msnm), con una caída topográfica de ΔZ = 1,393.13 m.",
@@ -2324,6 +2339,30 @@ def construir_tablas_prediccion_personalizadas(
         fila_tot_5p[c_np] = round(float(df_matriz_5_ptap[c_np].sum()), 1)
     df_matriz_5_ptap_con_tot = pd.concat([df_matriz_5_ptap, pd.DataFrame([fila_prom_5p, fila_tot_5p])], ignore_index=True)
 
+    # 9. MATRIZ CRUZADA DE LAS 5 CAPTACIONES RQ-30 (30 DÍAS x 5 CAPTACIONES) + FILA PROMEDIO Y FILA TOTAL
+    orden_5_capt = ["Arnania", "Golondrinas", "Carrizal", "Florida_Rio_Frio", "Captacion_Bosconia"]
+    df_matriz_5_capt = pd.DataFrame({
+        "Fecha": [f.strftime("%Y-%m-%d") for f in df_s["fecha_dt"]],
+        "Día Semana": df_s["dia_semana"].values,
+        "Horizonte": df_s["quincena"].values
+    })
+    for c_k in orden_5_capt:
+        sc_k = series_multi_map.get(c_k, pd.DataFrame())
+        col_nom_c = f"{c_k.replace('_', ' ')} (mm)"
+        if not sc_k.empty and len(sc_k) == len(df_s):
+            df_matriz_5_capt[col_nom_c] = sc_k["precip_mm"].round(1).values
+        else:
+            df_matriz_5_capt[col_nom_c] = 0.0
+    cols_num_5c = [f"{c_k.replace('_', ' ')} (mm)" for c_k in orden_5_capt]
+    df_matriz_5_capt["Promedio 5 Captaciones (mm/día)"] = df_matriz_5_capt[cols_num_5c].mean(axis=1).round(1)
+
+    fila_prom_5c = {"Fecha": "📊 PROMEDIO DIARIO (30d)", "Día Semana": "Media", "Horizonte": "30 Días"}
+    fila_tot_5c = {"Fecha": "📊 TOTAL ACUMULADO MES (30d)", "Día Semana": "Suma", "Horizonte": "30 Días"}
+    for c_nc in cols_num_5c + ["Promedio 5 Captaciones (mm/día)"]:
+        fila_prom_5c[c_nc] = round(float(df_matriz_5_capt[c_nc].mean()), 1)
+        fila_tot_5c[c_nc] = round(float(df_matriz_5_capt[c_nc].sum()), 1)
+    df_matriz_5_capt_con_tot = pd.concat([df_matriz_5_capt, pd.DataFrame([fila_prom_5c, fila_tot_5c])], ignore_index=True)
+
     # Cálculo de la Mejor Ventana Continua Seca (48h / 72h) y del Pulso Húmedo de Mayor Recarga (72h)
     mejor_ventana_2d_txt = "N/A"
     mejor_ventana_3d_txt = "N/A"
@@ -2355,6 +2394,7 @@ def construir_tablas_prediccion_personalizadas(
         "df_quincenal_mensual": df_quincenal_mensual,
         "df_personalizada": df_custom_con_tot,
         "df_matriz_7": df_matriz_7_con_tot,
+        "df_matriz_5_capt": df_matriz_5_capt_con_tot,
         "df_matriz_5_ptap": df_matriz_5_ptap_con_tot,
         "dias_secos_30d": dias_secos_30d,
         "dias_lluviosos_30d": dias_lluviosos_30d,
@@ -7852,15 +7892,16 @@ with tab_radar_72h:
                 </div>
                 """, unsafe_allow_html=True)
             else:
+                micro_txt = meta_sel.get("microcuencas", meta_sel.get("cuenca_principal", "cuenca tributaria"))
                 st.markdown(f"""
                 <div style="font-size: 12.5px; line-height: 1.6; background: white; padding: 14px 18px; border-radius: 10px; border: 1px solid #cce0eb; box-shadow: 0 2px 6px rgba(0,0,0,0.04);">
                     <ul style="margin: 0; padding-left: 18px;">
                         <li><strong>Tomero / Operador en Bocatoma ({meta_sel['subsistema_abastecimiento']}):</strong><br>
                         Ventana de <strong>{lag_estacion}</strong> previa al pico para realizar purga preventiva de desarenadores, verificar rejillas y alistar cierre de compuertas ante picos de turbiedad.</li>
-                        <li style="margin-top: 6px;"><strong>Operadores de Planta (PTAP Florida / La Flora / Morrorico / Bosconia):</strong><br>
+                        <li style="margin-top: 6px;"><strong>Operadores de Planta (PTAP Florida / La Flora / Morrorico / Bosconia / RAD Angelinos):</strong><br>
                         Alistamiento anticipado de dosificación de coagulantes y regulación de niveles en tanques de almacenamiento.</li>
                         <li style="margin-top: 6px;"><strong>Gestión del Riesgo & Comunidades Ribereñas:</strong><br>
-                        Aviso preventivo en microcuenca <em>{meta_sel['microcuencas']}</em> ante posible aumento súbito de nivel en quebradas tributarias.</li>
+                        Aviso preventivo en microcuenca <em>{micro_txt}</em> ante posible aumento súbito de nivel en quebradas tributarias.</li>
                     </ul>
                 </div>
                 """, unsafe_allow_html=True)
@@ -7942,59 +7983,77 @@ with tab_radar_72h:
     # (SEMANAL 7 DÍAS • QUINCENAL 15 DÍAS • MENSUAL 30 DÍAS — TODAS LAS ESTACIONES)
     # ------------------------------------------------------------
     st.markdown("---")
-    st.markdown("### 🗓️ Resumen Consolidado de Predicciones de Precipitación Open-Meteo (Semanal • Quincenal • Mensual)")
-    st.caption(
-        "Síntesis multitemporal de precipitación proyectada para las **7 estaciones de la red hidrometeorológica amb** "
-        "(Horizonte **Semanal 7 días**, **Quincenal 15 días** y **Mensual 30 días** vía *Open-Meteo Forecast 16d + Seasonal ECMWF SEAS5*)."
-    )
-
     info_multi_om = obtener_predicciones_multitemporales_open_meteo()
-    df_multi_res = info_multi_om.get("df_resumen", pd.DataFrame()).copy()
+    df_res_est7 = info_multi_om.get("df_resumen", pd.DataFrame()).copy()
+    df_res_cap5 = info_multi_om.get("df_resumen_cap", pd.DataFrame()).copy()
+    df_res_ptap5 = info_multi_om.get("df_resumen_ptap", pd.DataFrame()).copy()
     series_multi_map = info_multi_om.get("series_diarias", {})
     origen_multi = info_multi_om.get("origen", "OPEN_METEO_VIVO")
 
+    if seleccion in METADATA_CAPTACIONES_RQ30_AMB and not df_res_cap5.empty:
+        df_multi_res = df_res_cap5
+        etq_grupo_multi = "las 5 Captaciones (RQ-30)"
+        etq_fila_prom = "📊 PROMEDIO 5 CAPTACIONES RQ-30 (Arnania • Golondrinas • Carrizal • Florida • Bosconia)"
+    elif seleccion in METADATA_PLANTAS_PTAP_AMB and not df_res_ptap5.empty:
+        df_multi_res = df_res_ptap5
+        etq_grupo_multi = "las 5 Plantas de Tratamiento (PTAPs)"
+        etq_fila_prom = "📊 PROMEDIO 5 PLANTAS DE TRATAMIENTO (La Flora • Morrorico • Bosconia • RAD Angelinos • Floridablanca)"
+    else:
+        df_multi_res = df_res_est7
+        etq_grupo_multi = "las 7 Estaciones Hidrometeorológicas amb"
+        etq_fila_prom = "📊 PROMEDIO GENERAL RED MIMAT-C26 (7 Estaciones)"
+
+    st.markdown(f"### 🗓️ Resumen Consolidado de Predicciones de Precipitación Open-Meteo — {meta_sel['nombre_completo']} (Semanal • Quincenal • Mensual)")
+    st.caption(
+        f"Síntesis multitemporal de precipitación proyectada para **{meta_sel['nombre_completo']}** y comparativa con **{etq_grupo_multi}** "
+        "(Horizonte **Semanal 7 días**, **Quincenal 15 días** y **Mensual 30 días** vía *Open-Meteo Forecast 16d + Seasonal ECMWF SEAS5*)."
+    )
+
     if not df_multi_res.empty:
-        # Cálculo de promedios por subsistema hidrográfico
-        est_cuenca_tona = ["El_Pajal", "Vegas_del_Quemado", "La_Mariana", "Yerbabuena"]
-        df_tona_m = df_multi_res[df_multi_res["id_estacion"].isin(est_cuenca_tona)]
-        df_surata_m = df_multi_res[df_multi_res["id_estacion"].isin(["Monsalve", "Surata"])]
+        # Fila individual del nodo seleccionado (siempre refleja exactamente el punto elegido arriba)
+        df_sel_row = df_multi_res[df_multi_res["id_estacion"] == seleccion]
+        prom_sem_grupo = float(df_multi_res["Semanal 7d (mm)"].mean())
+        prom_qui_grupo = float(df_multi_res["Quincenal 15d (mm)"].mean())
+        prom_men_grupo = float(df_multi_res["Mensual 30d (mm)"].mean())
 
-        prom_sem_red = float(df_multi_res["Semanal 7d (mm)"].mean())
-        prom_qui_red = float(df_multi_res["Quincenal 15d (mm)"].mean())
-        prom_men_red = float(df_multi_res["Mensual 30d (mm)"].mean())
-
-        prom_sem_tona = float(df_tona_m["Semanal 7d (mm)"].mean()) if not df_tona_m.empty else prom_sem_red
-        prom_qui_tona = float(df_tona_m["Quincenal 15d (mm)"].mean()) if not df_tona_m.empty else prom_qui_red
-        prom_men_tona = float(df_tona_m["Mensual 30d (mm)"].mean()) if not df_tona_m.empty else prom_men_red
+        if not df_sel_row.empty:
+            r_sel_m = df_sel_row.iloc[0]
+            val_sem_sel = float(r_sel_m["Semanal 7d (mm)"])
+            val_qui_sel = float(r_sel_m["Quincenal 15d (mm)"])
+            val_men_sel = float(r_sel_m["Mensual 30d (mm)"])
+        else:
+            val_sem_sel = prom_sem_grupo
+            val_qui_sel = prom_qui_grupo
+            val_men_sel = prom_men_grupo
 
         idx_max_sem = df_multi_res["Semanal 7d (mm)"].idxmax()
         row_max_sem = df_multi_res.loc[idx_max_sem]
 
-        # Tarjetas KPI Ejecutivas de los 3 Horizontes
+        # Tarjetas KPI Ejecutivas de los 3 Horizontes centradas en el punto seleccionado
         km1, km2, km3, km4 = st.columns(4)
         km1.metric(
-            "🌧️ Predicción Semanal (Próx. 7 Días)",
-            f"{prom_sem_red:.1f} mm",
-            delta=f"Cuenca Tona: {prom_sem_tona:.1f} mm",
-            help="Lámina media de precipitación prevista en los próximos 7 días sobre las 7 estaciones de la red amb."
+            f"🌧️ Predicción Semanal 7d ({seleccion.replace('_', ' ')})",
+            f"{val_sem_sel:.1f} mm",
+            delta=f"Media grupo: {prom_sem_grupo:.1f} mm",
+            help=f"Lámina acumulada de precipitación prevista en los próximos 7 días en {meta_sel['nombre_completo']}."
         )
         km2.metric(
-            "📆 Predicción Quincenal (Próx. 15 Días)",
-            f"{prom_qui_red:.1f} mm",
-            delta=f"Cuenca Tona: {prom_qui_tona:.1f} mm",
-            help="Acumulado quincenal previsto (Días 1 a 15) integrando Semana 1 y Semana 2 del modelo determinístico Open-Meteo."
+            f"📆 Predicción Quincenal 15d ({seleccion.replace('_', ' ')})",
+            f"{val_qui_sel:.1f} mm",
+            delta=f"Media grupo: {prom_qui_grupo:.1f} mm",
+            help=f"Acumulado quincenal previsto (Días 1 a 15) en {meta_sel['nombre_completo']}."
         )
         km3.metric(
-            "🗓️ Proyección Mensual (Próx. 30 Días)",
-            f"{prom_men_red:.1f} mm",
-            delta=f"Cuenca Tona: {prom_men_tona:.1f} mm",
-            help="Lámina acumulada proyectada a 30 días (Días 1 a 30) combinando Open-Meteo 16d + Proyección Estacional ECMWF SEAS5."
+            f"🗓️ Proyección Mensual 30d ({seleccion.replace('_', ' ')})",
+            f"{val_men_sel:.1f} mm",
+            delta=f"Media grupo: {prom_men_grupo:.1f} mm",
+            help=f"Lámina acumulada proyectada a 30 días (Días 1 a 30) en {meta_sel['nombre_completo']}."
         )
         km4.metric(
-            "⛰️ Estación de Mayor Lluvia (7d)",
+            "⛰️ Punto de Mayor Lluvia en el Grupo (7d)",
             f"{row_max_sem['Semanal 7d (mm)']:.1f} mm",
             delta=f"{row_max_sem['id_estacion'].replace('_', ' ')} ({row_max_sem['Día Pico (Próx. 7d)']})",
-            help="Estación donde Open-Meteo proyecta el mayor acumulado pluvial durante los próximos 7 días."
+            help="Punto del grupo activo donde Open-Meteo proyecta el mayor acumulado pluvial durante los próximos 7 días."
         )
 
         # Enriquecer tabla ejecutiva con fila de Promedio General de Red para lectura gerencial inmediata
@@ -8012,20 +8071,20 @@ with tab_radar_72h:
         ]].copy()
 
         fila_prom = pd.DataFrame([{
-            "Estación": "📊 PROMEDIO GENERAL RED MIMAT-C26 (7 Estaciones)",
+            "Estación": etq_fila_prom,
             "Cuenca / Subsistema": "Síntesis Consolidada Cuencas Tona, Río Frío y Suratá",
             "Altitud (msnm)": round(float(df_multi_res["Altitud (msnm)"].mean()), 1),
-            "Semanal 7d (mm)": round(prom_sem_red, 1),
+            "Semanal 7d (mm)": round(prom_sem_grupo, 1),
             "Semana 2 (Días 8-15 mm)": round(float(df_multi_res["Semana 2 (Días 8-15 mm)"].mean()), 1),
-            "Quincenal 15d (mm)": round(prom_qui_red, 1),
-            "Mensual 30d (mm)": round(prom_men_red, 1),
+            "Quincenal 15d (mm)": round(prom_qui_grupo, 1),
+            "Mensual 30d (mm)": round(prom_men_grupo, 1),
             "Día Pico (Próx. 7d)": f"Máx en {row_max_sem['id_estacion'].replace('_', ' ')}",
             "Prob. Máx 7d (%)": int(round(float(df_multi_res["Prob. Máx 7d (%)"].max()))),
             "Días Lluvia (≥1mm / 15d)": int(round(float(df_multi_res["Días Lluvia (≥1mm / 15d)"].mean())))
         }])
         df_tabla_mostrar = pd.concat([df_tabla_exec, fila_prom], ignore_index=True)
 
-        st.markdown("#### 📋 Matriz Ejecutiva de Predicciones por Estación (Semanal 7d • Quincenal 15d • Mensual 30d)")
+        st.markdown(f"#### 📋 Matriz Ejecutiva de Predicciones ({etq_grupo_multi} — Semanal 7d • Quincenal 15d • Mensual 30d)")
         st.dataframe(df_tabla_mostrar, use_container_width=True, hide_index=True)
 
         col_dl_om1, col_dl_om2 = st.columns([1.2, 2.8])
@@ -8034,7 +8093,7 @@ with tab_radar_72h:
             st.download_button(
                 label="📥 Descargar Resumen Predicciones (CSV)",
                 data=csv_multi_bytes,
-                file_name=f"predicciones_open_meteo_7d_15d_30d_amb_{datetime.now(colombia_tz).strftime('%Y%m%d')}.csv",
+                file_name=f"predicciones_open_meteo_7d_15d_30d_{seleccion}_{datetime.now(colombia_tz).strftime('%Y%m%d')}.csv",
                 mime="text/csv",
                 use_container_width=True
             )
@@ -8050,10 +8109,10 @@ with tab_radar_72h:
                 unsafe_allow_html=True
             )
 
-        # Gráficas Interactivas Comparativas: (1) Barras Agrupadas por Estación y (2) Serie Diaria 30 Días
+        # Gráficas Interactivas Comparativas: (1) Barras Agrupadas del Grupo Activo y (2) Serie Diaria 30 Días del Punto Seleccionado
         col_g_om1, col_g_om2 = st.columns([1.15, 1.0])
         with col_g_om1:
-            nombres_cortos = [e.replace("_", " ") for e in df_multi_res["id_estacion"]]
+            nombres_cortos = [e.replace("PTAP_", "PTAP ").replace("_", " ") for e in df_multi_res["id_estacion"]]
             fig_bar_multi = go.Figure()
             fig_bar_multi.add_trace(go.Bar(
                 x=nombres_cortos,
@@ -8080,8 +8139,8 @@ with tab_radar_72h:
                 textposition="outside"
             ))
             fig_bar_multi.update_layout(
-                title="📊 Comparativa de Lluvia Proyectada por Estación: 7d vs. 15d vs. 30d (mm)",
-                xaxis_title="Estación de la Red amb",
+                title=f"📊 Comparativa de Lluvia Proyectada ({etq_grupo_multi}): 7d vs. 15d vs. 30d (mm)",
+                xaxis_title="Punto de Monitoreo amb",
                 yaxis_title="Precipitación Acumulada Prevista (mm)",
                 barmode="group",
                 template="plotly_white",
@@ -8105,7 +8164,7 @@ with tab_radar_72h:
                     y="precip_mm",
                     color="horizonte",
                     color_discrete_map=colores_horiz,
-                    title=f"🗓️ Distribución Diaria a 30 Días en {seleccion.replace('_', ' ')} (mm/día)",
+                    title=f"🗓️ Distribución Diaria a 30 Días en {meta_sel['nombre_completo']} (mm/día)",
                     labels={"fecha_str": "Fecha", "precip_mm": "Lluvia Diaria (mm)", "horizonte": "Horizonte"}
                 )
                 fig_d30.update_layout(
@@ -8117,48 +8176,21 @@ with tab_radar_72h:
                 st.plotly_chart(fig_d30, use_container_width=True)
 
         # ------------------------------------------------------------
-        # SUBSECCIÓN INTERACTIVA: TABLAS PERSONALIZADAS DE PREDICCIÓN
-        # (7 ESTACIONES + 5 PLANTAS PTAP • DÍAS MENOS LLUVIOSOS • DÍAS MÁS LLUVIOSOS • DIARIO • SEMANAL • MENSUAL)
+        # SUBSECCIÓN INTERACTIVA: TABLAS PERSONALIZADAS DE PREDICCIÓN DEL PUNTO SELECCIONADO
+        # (VINCULADA DIRECTAMENTE A `seleccion` PARA TODAS LAS ESTACIONES, CAPTACIONES Y PTAPs)
         # ------------------------------------------------------------
         st.markdown("---")
-        st.markdown("### 📊 Tablas Personalizadas de Predicción")
+        st.markdown(f"### 📊 Tablas Personalizadas de Predicción — {meta_sel['nombre_completo']}")
         st.caption(
-            "Consulte, filtre y descargue las proyecciones meteorológicas para cualquiera de las **7 Estaciones Hidrometeorológicas** o "
-            "de las **5 Plantas de Tratamiento (`PTAP La Flora`, `PTAP Morrorico`, `PTAP Bosconia`, `PTAP RAD Angelinos`, `PTAP Floridablanca`)** "
-            "en **Excel Institucional Multi-Hoja (`.xlsx`)** y **`.csv`** (**Días Menos Lluviosos**, **Días Más Lluviosos**, **Diario 30d**, **Semanal**, **Quincenal/Mensual** y **Rango Personalizado**)."
+            f"Proyecciones meteorológicas individuales de **{meta_sel['nombre_completo']}** (`{meta_sel['altitud_msnm']:,.2f} msnm` • `{meta_sel['dms']}`) "
+            "para consulta y descarga en **Excel Institucional Multi-Hoja (`.xlsx`)** y **`.csv`** "
+            "(**Días Menos Lluviosos**, **Días Más Lluviosos**, **Diario 30d**, **Semanal**, **Quincenal/Mensual** y **Rango Personalizado**)."
         )
 
-        lista_est_plan = [
-            "Embalse", "Surata",
-            "La_Mariana", "Yerbabuena", "Vegas_del_Quemado", "El_Pajal", "Monsalve",
-            "Arnania", "Golondrinas", "Carrizal", "Florida_Rio_Frio", "Captacion_Bosconia",
-            "PTAP_La_Flora", "PTAP_Morrorico", "PTAP_Bosconia", "PTAP_RAD_Angelinos", "PTAP_Floridablanca"
-        ]
-        idx_est_def = lista_est_plan.index(seleccion) if seleccion in lista_est_plan else 0
+        # Vincular siempre est_plan_sel al punto seleccionado arriba (`seleccion`) para todas las estaciones, captaciones y PTAPs
+        est_plan_sel = seleccion
 
-        def _fmt_nodo_pred(x_id: str) -> str:
-            m_x = obtener_metadata_punto_mimat(x_id)
-            if x_id.startswith("PTAP_"):
-                pref = "🏭 "
-            elif x_id in METADATA_CAPTACIONES_RQ30_AMB:
-                pref = "🚰 "
-            elif x_id in ["Embalse", "Surata"]:
-                pref = "🌊 "
-            else:
-                pref = "🌦️ "
-            nom_c = m_x.get("nombre_completo", x_id.replace("_", " "))
-            alt_c = m_x.get("altitud_msnm", 0.0)
-            return f"{pref}{nom_c} ({alt_c:,.2f} msnm)"
-
-        cp1, cp2, cp3 = st.columns([1.25, 1.45, 1.1])
-        with cp1:
-            est_plan_sel = st.selectbox(
-                "📍 Estación o Planta (PTAP) para Consulta / Descarga:",
-                lista_est_plan,
-                index=idx_est_def,
-                format_func=_fmt_nodo_pred,
-                key="sel_est_planificador_om"
-            )
+        cp2, cp3 = st.columns([1.6, 1.4])
         with cp2:
             modo_vista_pred = st.selectbox(
                 "📊 Escala y Tipo de Tabla a Visualizar:",
@@ -8170,7 +8202,8 @@ with tab_radar_72h:
                     "🌓 5. Quincenal y Mensual (15d y 30d)",
                     "🎯 6. Rango de Fechas Personalizado",
                     "🌐 7. Matriz Comparativa 7 Estaciones (30 Días)",
-                    "🏭 8. Matriz Comparativa 5 Plantas PTAP (30 Días)"
+                    "🚰 8. Matriz Comparativa 5 Captaciones RQ-30 (30 Días)",
+                    "🏭 9. Matriz Comparativa 5 Plantas PTAP (30 Días)"
                 ],
                 index=0,
                 key="sel_modo_vista_pred_om"
@@ -8330,6 +8363,10 @@ with tab_radar_72h:
                 df_vista_activa = paquete_tablas_pred["df_matriz_7"]
                 titulo_tabla_activa = "🌐 Matriz Comparativa Diaria de Precipitación en las 7 Estaciones amb (30 Días)"
                 sub_archivo = "matriz_prediccion_7_estaciones_30d"
+            elif modo_vista_pred.startswith("🚰 8."):
+                df_vista_activa = paquete_tablas_pred["df_matriz_5_capt"]
+                titulo_tabla_activa = "🚰 Matriz Comparativa Diaria de Precipitación en las 5 Captaciones RQ-30 (30 Días)"
+                sub_archivo = "matriz_prediccion_5_captaciones_rq30_30d"
             else:
                 df_vista_activa = paquete_tablas_pred["df_matriz_5_ptap"]
                 titulo_tabla_activa = "🏭 Matriz Comparativa Diaria de Precipitación In Situ sobre las 5 Plantas de Tratamiento PTAP (30 Días)"
