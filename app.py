@@ -7067,6 +7067,7 @@ with tab_situacion:
                     </div>
                     """, unsafe_allow_html=True)
                 else:
+                    alt_ref_nodo = float(meta_nodo.get("altitud_referencia_proyecto_msnm", meta_nodo["altitud_msnm"]))
                     st.markdown(f"""
                     <div class="alert-box alert-yellow" style="border-left: 5px solid #0284C7; background: rgba(2, 132, 199, 0.08); margin-bottom: 14px; display: flex; gap: 12px; align-items: flex-start;">
                         <span style="font-size: 30px; line-height: 1;">🚰</span>
@@ -7074,7 +7075,7 @@ with tab_situacion:
                             <strong style="font-size: 16px; color: #005073;">{meta_nodo['nombre_completo']} — Predicciones Individuales & Hoja de Metadatos Activas</strong><br>
                             <span style="font-size: 13.5px; color: #1E293B;">
                                 📍 <strong>Coordenadas Oficiales (Autor: Ing. Edgar Mauricio Mora Rivera):</strong> <code>{meta_nodo['dms']}</code> &nbsp;|&nbsp;
-                                🏔️ <strong>Elevación del Suelo:</strong> <strong>{meta_nodo['altitud_msnm']:,.2f} msnm</strong> (Altitud ref.: {meta_nodo['altitud_referencia_msnm']:,.1f} msnm)<br>
+                                🏔️ <strong>Elevación del Suelo:</strong> <strong>{meta_nodo['altitud_msnm']:,.2f} msnm</strong> (Altitud ref.: {alt_ref_nodo:,.1f} msnm)<br>
                                 🔌 <strong>Estado de Telemetría Hidrométrica:</strong> <strong>{meta_nodo['estado_sensor']}</strong> (Abastece a: <strong>{meta_nodo['ptap_destino']}</strong> | Estación centinela aguas arriba: <strong>{meta_nodo['estacion_centinela']}</strong>). Mientras se conecta el sensor radar <strong>Sommer RQ-30</strong> y su batimetría de sección transversal, el nodo opera con <strong>predicción meteorológica horaria y multitemporal dedicada</strong> sobre sus coordenadas exactas.
                             </span>
                         </div>
@@ -7491,9 +7492,9 @@ with tab_radar_72h:
     st.caption("Auditoría retrospectiva de exactitud hidrometeorológica: Contraste hora a hora entre el pronóstico satelital numérico y la medición física real registrada en el pluviómetro de terreno (Pluvio² / balancín).")
     col_int_opt1, col_int_opt2 = st.columns([1, 1])
     if seleccion in ["Embalse", "Surata"] or seleccion in METADATA_CAPTACIONES_RQ30_AMB or seleccion in METADATA_PLANTAS_PTAP_AMB:
-        cents_def = meta_sel.get("estaciones_centinela", ["Yerbabuena", "Vegas_del_Quemado", "El_Pajal", "La_Mariana", "Monsalve"])
+        cents_def = meta_sel.get("estaciones_centinela", [meta_sel["estacion_centinela"]] if "estacion_centinela" in meta_sel else ["Yerbabuena", "Vegas_del_Quemado", "El_Pajal", "La_Mariana", "Monsalve"])
         todas_pluv = ["La_Mariana", "Yerbabuena", "Vegas_del_Quemado", "El_Pajal", "Monsalve"]
-        if seleccion == "Surata":
+        if seleccion in ["Surata", "Captacion_Bosconia"]:
             lista_aud = ["Monsalve", "Yerbabuena", "Vegas_del_Quemado", "El_Pajal", "La_Mariana"]
         elif seleccion == "Embalse":
             lista_aud = ["Yerbabuena", "Vegas_del_Quemado", "El_Pajal", "La_Mariana", "Monsalve"]
