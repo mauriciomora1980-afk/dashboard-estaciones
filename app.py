@@ -2507,8 +2507,8 @@ def calcular_interventoria_satelital_vs_terreno(df_hist, lat, lon, horas_eval=72
             df_obs_hourly = pd.DataFrame(columns=['time_bin', 'precip_obs_mm'])
     # Unir ambas series temporales hora a hora
     df_merged = pd.merge(df_sat_hourly, df_obs_hourly, on='time_bin', how='left')
-    df_merged['precip_obs_mm'] = df_merged['precip_obs_mm'].fillna(0.0)
-    df_merged['precip_sat_mm'] = df_merged['precip_sat_mm'].fillna(0.0)
+    df_merged['precip_obs_mm'] = pd.to_numeric(df_merged['precip_obs_mm'], errors='coerce').fillna(0.0).astype(float)
+    df_merged['precip_sat_mm'] = pd.to_numeric(df_merged['precip_sat_mm'], errors='coerce').fillna(0.0).astype(float)
     df_merged.sort_values('time_bin', inplace=True)
     # Conteo de la Matriz de Contingencia 2x2
     s_rain = df_merged['precip_sat_mm'] >= umbral_mm
@@ -2547,9 +2547,11 @@ def calcular_interventoria_satelital_vs_terreno(df_hist, lat, lon, horas_eval=72
     horas_con_lluvia_obs = int(o_rain.sum())
     horas_con_lluvia_sat = int(s_rain.sum())
     muestra_robusta = bool(total_eventos_reales >= 3)
-    if total_horas >= 3 and (df_merged['precip_sat_mm'].std() > 0 or df_merged['precip_obs_mm'].std() > 0):
-        corr_val = np.corrcoef(df_merged['precip_sat_mm'], df_merged['precip_obs_mm'])[0, 1]
-        corr_pearson = float(corr_val) if not np.isnan(corr_val) else (1.0 if abs(lluvia_tot_obs - lluvia_tot_sat) < 0.1 else 0.0)
+    arr_sat = df_merged['precip_sat_mm'].to_numpy(dtype=float)
+    arr_obs = df_merged['precip_obs_mm'].to_numpy(dtype=float)
+    if total_horas >= 3 and np.std(arr_sat) > 1e-9 and np.std(arr_obs) > 1e-9:
+        corr_val = float(np.corrcoef(arr_sat, arr_obs)[0, 1])
+        corr_pearson = corr_val if not np.isnan(corr_val) else (1.0 if abs(lluvia_tot_obs - lluvia_tot_sat) < 0.1 else 0.0)
     else:
         corr_pearson = 1.0 if hits > 0 or (lluvia_tot_obs == 0 and lluvia_tot_sat == 0) else 0.0
     return {
@@ -3729,8 +3731,58 @@ def _obtener_grupo_de_nodo(nodo_id: str) -> str:
             return g_nom
     return "🌊 Estaciones Hidrológicas (Limnimétricas)"
 
-grupo_actual_init = _obtener_grupo_de_nodo(st.session_state.estacion_seleccionada)
 lista_grupos_nombres = list(GRUPOS_NODOS_MIMAT.keys())
+
+if 'grupo_seleccionado' not in st.session_state or st.session_state.grupo_seleccionado not in lista_grupos_nombres:
+    st.session_state.grupo_seleccionado = _obtener_grupo_de_nodo(st.session_state.estacion_seleccionada)
+
+# Asegurar coherencia entre grupo_seleccionado y estacion_seleccionada
+if st.session_state.estacion_seleccionada not in GRUPOS_NODOS_MIMAT[st.session_state.grupo_seleccionado]:
+    st.session_state.grupo_seleccionado = _obtener_grupo_de_nodo(st.session_state.estacion_seleccionada)
+
+# Inicializar llaves de los widgets sincronizados (Top y Sidebar)
+st.session_state["ui_grupo_top"] = st.session_state.grupo_seleccionado
+st.session_state["ui_grupo_side"] = st.session_state.grupo_seleccionado
+st.session_state["ui_nodo_top"] = st.session_state.estacion_seleccionada
+st.session_state["ui_nodo_side"] = st.session_state.estacion_seleccionada
+
+def _cb_cambio_grupo_top():
+    g_nuevo = st.session_state["ui_grupo_top"]
+    st.session_state.grupo_seleccionado = g_nuevo
+    st.session_state["ui_grupo_side"] = g_nuevo
+    nodos_g = GRUPOS_NODOS_MIMAT[g_nuevo]
+    if st.session_state.estacion_seleccionada not in nodos_g:
+        st.session_state.estacion_seleccionada = nodos_g[0]
+    st.session_state["ui_nodo_top"] = st.session_state.estacion_seleccionada
+    st.session_state["ui_nodo_side"] = st.session_state.estacion_seleccionada
+
+def _cb_cambio_nodo_top():
+    n_nuevo = st.session_state["ui_nodo_top"]
+    st.session_state.estacion_seleccionada = n_nuevo
+    st.session_state["ui_nodo_side"] = n_nuevo
+    g_corr = _obtener_grupo_de_nodo(n_nuevo)
+    st.session_state.grupo_seleccionado = g_corr
+    st.session_state["ui_grupo_top"] = g_corr
+    st.session_state["ui_grupo_side"] = g_corr
+
+def _cb_cambio_grupo_side():
+    g_nuevo = st.session_state["ui_grupo_side"]
+    st.session_state.grupo_seleccionado = g_nuevo
+    st.session_state["ui_grupo_top"] = g_nuevo
+    nodos_g = GRUPOS_NODOS_MIMAT[g_nuevo]
+    if st.session_state.estacion_seleccionada not in nodos_g:
+        st.session_state.estacion_seleccionada = nodos_g[0]
+    st.session_state["ui_nodo_top"] = st.session_state.estacion_seleccionada
+    st.session_state["ui_nodo_side"] = st.session_state.estacion_seleccionada
+
+def _cb_cambio_nodo_side():
+    n_nuevo = st.session_state["ui_nodo_side"]
+    st.session_state.estacion_seleccionada = n_nuevo
+    st.session_state["ui_nodo_top"] = n_nuevo
+    g_corr = _obtener_grupo_de_nodo(n_nuevo)
+    st.session_state.grupo_seleccionado = g_corr
+    st.session_state["ui_grupo_top"] = g_corr
+    st.session_state["ui_grupo_side"] = g_corr
 
 st.markdown("""
 <div style="background: rgba(0,80,115,0.08); padding: 8px 14px; border-radius: 10px; margin-bottom: 8px; border-left: 5px solid #005073; display: flex; justify-content: space-between; align-items: center;">
@@ -3739,47 +3791,44 @@ st.markdown("""
 </div>
 """, unsafe_allow_html=True)
 
-grupo_sel_top = st.radio(
+st.radio(
     "Categoría de Monitoreo:",
     lista_grupos_nombres,
-    index=lista_grupos_nombres.index(grupo_actual_init),
+    key="ui_grupo_top",
+    on_change=_cb_cambio_grupo_top,
     horizontal=True,
     label_visibility="collapsed"
 )
-nodos_del_grupo = GRUPOS_NODOS_MIMAT[grupo_sel_top]
-idx_nodo_top = nodos_del_grupo.index(st.session_state.estacion_seleccionada) if st.session_state.estacion_seleccionada in nodos_del_grupo else 0
+nodos_del_grupo = GRUPOS_NODOS_MIMAT[st.session_state.grupo_seleccionado]
 
-seleccion = st.radio(
+st.radio(
     "Punto Seleccionado:",
     nodos_del_grupo,
-    index=idx_nodo_top,
+    key="ui_nodo_top",
+    on_change=_cb_cambio_nodo_top,
     format_func=lambda k: ETIQUETAS_CORTAS_NODOS.get(k, k),
     horizontal=True,
     label_visibility="collapsed"
 )
-if seleccion != st.session_state.estacion_seleccionada:
-    st.session_state.estacion_seleccionada = seleccion
-    st.rerun()
 
 # Sincronizar barra lateral con la misma estructura por Categoría -> Punto
 st.sidebar.markdown("---")
 st.sidebar.markdown("### 📍 Selector por Categoría")
-grupo_sidebar = st.sidebar.selectbox(
+st.sidebar.selectbox(
     "1. Categoría:",
     lista_grupos_nombres,
-    index=lista_grupos_nombres.index(_obtener_grupo_de_nodo(seleccion))
+    key="ui_grupo_side",
+    on_change=_cb_cambio_grupo_side
 )
-nodos_sidebar = GRUPOS_NODOS_MIMAT[grupo_sidebar]
-idx_sidebar_n = nodos_sidebar.index(seleccion) if seleccion in nodos_sidebar else 0
-seleccion_sidebar = st.sidebar.selectbox(
+st.sidebar.selectbox(
     "2. Estación / Captación / PTAP:",
-    nodos_sidebar,
-    index=idx_sidebar_n,
+    nodos_del_grupo,
+    key="ui_nodo_side",
+    on_change=_cb_cambio_nodo_side,
     format_func=lambda k: ETIQUETAS_CORTAS_NODOS.get(k, k)
 )
-if seleccion_sidebar != seleccion:
-    st.session_state.estacion_seleccionada = seleccion_sidebar
-    st.rerun()
+
+seleccion = st.session_state.estacion_seleccionada
 horas = st.sidebar.slider("⏱️ Horas históricas:", 1, 168, 24, step=1, help="Rango de horas para consultar y graficar telemetría histórica")
 caudal_scada_crc, ts_crc_scada = get_caudal_crc_bosconia_actual()
 q_salida_crc_actual = round(float(caudal_scada_crc), 1) if caudal_scada_crc is not None else 25.0
@@ -3818,6 +3867,17 @@ with st.spinner("🔄 Consultando telemetría en tiempo real..."):
             "velocidad_viento": np.nan,
             "direccion_viento": np.nan,
             "voltaje_bateria": np.nan
+        }])
+    if df_hist.empty and (seleccion in METADATA_CAPTACIONES_RQ30_AMB or seleccion in METADATA_PLANTAS_PTAP_AMB):
+        df_hist = pd.DataFrame([{
+            "timestamp": fecha_inicio,
+            "precipitacion": 0.0,
+            "temperatura": 0.0,
+            "humedad": 0.0,
+            "presion": 0.0,
+            "velocidad_viento": 0.0,
+            "direccion_viento": 0.0,
+            "voltaje_bateria": 0.0
         }])
 # ============================================================
 # 6. EXPORTACIÓN Y EXCEL OPENPYXL (CON BALANCE BOSCONIA 24H & RÍO SURATÁ)
@@ -7430,13 +7490,21 @@ with tab_radar_72h:
     st.markdown(f"### 🔬 Interventoría & Validación Ex-Post: Satélite vs. Pluviómetro Físico ({seleccion.replace('_', ' ')})")
     st.caption("Auditoría retrospectiva de exactitud hidrometeorológica: Contraste hora a hora entre el pronóstico satelital numérico y la medición física real registrada en el pluviómetro de terreno (Pluvio² / balancín).")
     col_int_opt1, col_int_opt2 = st.columns([1, 1])
-    if seleccion in ["Embalse", "Surata"]:
+    if seleccion in ["Embalse", "Surata"] or seleccion in METADATA_CAPTACIONES_RQ30_AMB or seleccion in METADATA_PLANTAS_PTAP_AMB:
+        cents_def = meta_sel.get("estaciones_centinela", ["Yerbabuena", "Vegas_del_Quemado", "El_Pajal", "La_Mariana", "Monsalve"])
+        todas_pluv = ["La_Mariana", "Yerbabuena", "Vegas_del_Quemado", "El_Pajal", "Monsalve"]
+        if seleccion == "Surata":
+            lista_aud = ["Monsalve", "Yerbabuena", "Vegas_del_Quemado", "El_Pajal", "La_Mariana"]
+        elif seleccion == "Embalse":
+            lista_aud = ["Yerbabuena", "Vegas_del_Quemado", "El_Pajal", "La_Mariana", "Monsalve"]
+        else:
+            primarias = [c for c in cents_def if c in todas_pluv]
+            lista_aud = primarias + [c for c in todas_pluv if c not in primarias]
         st.markdown(f"""
         <div style="background: rgba(0, 80, 115, 0.06); padding: 12px 16px; border-radius: 8px; border-left: 4px solid #005073; font-size: 13px; margin-bottom: 12px;">
-            <strong>ℹ️ Nota Hidrométrica de Campo:</strong> La estación <strong>{meta_sel['nombre_completo']}</strong> opera con sensor hidrométrico <strong>Radar OTT</strong> de nivel/caudal y no dispone de pluviómetro físico in situ. Para auditar la exactitud satelital en las cuencas tributarias que alimentan este punto, selecciona una de las estaciones pluviométricas de cabecera:
+            <strong>ℹ️ Nota Hidrométrica de Campo:</strong> El nodo <strong>{meta_sel['nombre_completo']}</strong> no dispone de pluviómetro físico conectado en BigQuery en este punto. Para auditar la exactitud satelital en la cuenca tributaria que lo abastece, se evalúa su estación pluviométrica centinela aguas arriba:
         </div>
         """, unsafe_allow_html=True)
-        lista_aud = ["Monsalve", "Yerbabuena", "Vegas_del_Quemado", "El_Pajal", "La_Mariana"] if seleccion == "Surata" else ["Yerbabuena", "Vegas_del_Quemado", "El_Pajal", "La_Mariana", "Monsalve"]
         est_auditar = col_int_opt1.selectbox(
             "🏞️ Microcuenca Afluente a Auditar:",
             lista_aud,
